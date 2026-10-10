@@ -23,8 +23,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 5c-1 any 401 → `expireSession()`: picker with the expired notice, token dropped; late 401s from a previous user's client are ignored.
     - 5c-2 Home wired to real data, androidtv row titles, error rows with Retry, spinner, "Nothing here yet", focused-card backdrop (300 ms debounce), refetch on return.
   - App pill: the launcher shows only the middle 16:9 strip of `assets/image/app_icon.png`, so the icon is now Sail + "Caravela" on navy (`assets/brand/caravela-pill.svg`).
-- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 316 passing, the Release build installs and runs on the Fire TV.
-- **In progress: 5d**, the coloured frame around unfocused cards (placeholder colour showing through the transparent focus border in `FocusableCard`). Worktree `../caravela-wt/task-05d`, brief `docs/tasks/05d-card-frame.md`.
+- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 319 passing, the Release build installs and runs on the Fire TV.
+  - 5d: the card placeholder colour now sits inside the focus border, so unfocused cards have no frame.
 - **Then task 5.5: replace the side menu with an androidtv-style top toolbar** (user avatar left; Home and Search centre; Settings icon and clock right; Movies/Shows reached from My Media). Describe the approach and wait for approval.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
