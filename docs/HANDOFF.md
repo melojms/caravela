@@ -1,6 +1,6 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 3d).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after task 5.5).
 
 ## Status
 - **Done and merged to `main`:**
@@ -23,10 +23,18 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 5c-1 any 401 → `expireSession()`: picker with the expired notice, token dropped; late 401s from a previous user's client are ignored.
     - 5c-2 Home wired to real data, androidtv row titles, error rows with Retry, spinner, "Nothing here yet", focused-card backdrop (300 ms debounce), refetch on return.
   - App pill: the launcher shows only the middle 16:9 strip of `assets/image/app_icon.png`, so the icon is now Sail + "Caravela" on navy (`assets/brand/caravela-pill.svg`).
-- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 319 passing, the Release build installs and runs on the Fire TV.
   - 5d: the card placeholder colour now sits inside the focus border, so unfocused cards have no frame.
-- **Next: task 5.5, top toolbar. APPROVED** (2026-10-10). Runs as 5.5a (Toolbar component) → 5.5b (drawer → stack, mount toolbar, delete side menu) → 5.5c (Home/Search integration, Up/Down focus, My media → library screens). Briefs `docs/tasks/055*.md`.
-  - Decisions: avatar press → picker (switch user); Settings stays a full screen; clock follows the device 12/24 h setting if Vega exposes it, else 24 h; Movies/Shows only reachable from My media; Back on Home exits the app with no confirmation; toolbar only on Home and Search; the Home backdrop fills the whole screen.
+  - Task 5.5: androidtv-style top toolbar instead of the side menu (briefs `docs/tasks/055*.md`).
+    - 5.5a `src/components/Toolbar.tsx` + `ToolbarClock.tsx` (avatar, Home/Search, settings gear via `@amazon-devices/react-native-svg`, clock following the device 12/24 h via `@amazon-devices/react-native-localize`).
+    - 5.5b the root stack holds Home / Search / Settings / Movies / Shows / DetailsPlaceholder directly; `ScreenContainer` takes `toolbar="home" | "search"`. Back pops; Back on Home exits the app.
+    - 5.5c-2 removed the bottom-tabs dependency, its manifest module and `layout.menuWidth`.
+    - **5.5c-1 (focus) may still be in progress**: worktree `../caravela-wt/task-055c1`, branch `task/055c1-focus`, brief `docs/tasks/055c1-focus.md`, herdr pane `w3:pR`. It fixes: Up from the first row lands on Home (not the avatar); Down returns to the rows; Search opens focused; the backdrop fills the screen behind the toolbar; focus returns to the last card after Back (touches `FocusableCard`/`renderCard`, approved); My media cards open Movies / Shows. **Check `git log main` first**: if `task/055c1-focus` isn't merged, read its report in the pane (or its commits), verify (lint, tsc, tests, build, TV check with screenshots, avatar blurred), merge with `--ff-only`, remove the worktree. If the worktree is gone and the branch merged, it's done.
+  - Decisions for 5.5: avatar press → picker (switch user); Settings stays a full screen; Movies/Shows only reachable from My media; Back on Home exits with no confirmation; toolbar only on Home and Search; the Home backdrop fills the whole screen.
+- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 349 passing, the Release build installs and runs on the Fire TV. The TV is signed in as `melojms` (every `run-app` wipes that).
+- **Next: the user wants the movie details screen, then movie playback** (requested 2026-10-10). Start with the approach for the details screen and wait for approval; split into subtasks of ≤3 source files, parallel where file scopes don't overlap.
+  - **Task 7 (movies first): movie details.** Replace `DetailsPlaceholder` for movies (episodes/series stay on the placeholder until later). Port androidtv's `ui/itemdetail/FullDetailsFragment.java`, `FullDetailsFragmentHelper.kt`, `MyDetailsOverviewRow.kt` (and the details presenters under `ui/presentation/`): backdrop, logo/title, info row (year, rating, runtime, "ends at", community/critic rating, resolution/audio badges), overview, genres, director/cast, actions (Resume / Play / Restart, Watched, Favorite, audio/subtitle/version pickers later), rows for cast and similar items (`getSimilarItems`). Data via TanStack Query like `src/api/home.ts`.
+  - **Task 8: playback MVP for movies.** See docs/PLAN.md "Playback design" steps 1–5 and 9 (device profile from `MediaSource.isTypeSupported`, `getPostedPlaybackInfo` resolver, URL-mode direct play first, reporting start/progress/stopped, resume with pre-roll). androidtv references: `ui/playback/PlaybackManager.kt`, `PlaybackController.java`, `VideoManager.java`, `util/profile/` (device profile), `ui/playback/rewrite/`. Vega references: the `amazon-devices-vega-media-player` skill and `react_native_for_vega_media_player.md` (Amazon Devices MCP). Shaka/HLS transcoding is task 9.
+  - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Home doesn't remember the last-focused card: it focuses the first card after you come back.
