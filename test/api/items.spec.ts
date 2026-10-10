@@ -1,11 +1,13 @@
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import type {UserItemDataDto} from '@jellyfin/sdk/lib/generated-client/models/user-item-data-dto';
 import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+import {LocationType} from '@jellyfin/sdk/lib/generated-client/models/location-type';
 
 import {createJellyfin} from '../../src/api/client';
 import {
   BACKDROP_MAX_WIDTH,
   cardImageSize,
+  cardText,
   IMAGE_QUALITY,
   PLACEHOLDER_COLORS,
   placeholderColor,
@@ -56,96 +58,143 @@ describe('toCardItem titles and subtitles', () => {
     return {title, subtitle};
   };
 
-  it('shows a movie with its production year', () => {
+  it('shows a movie with its official rating', () => {
     expect(
       text({
         Id: 'm',
         Type: BaseItemKind.Movie,
         Name: 'Dune',
         ProductionYear: 2021,
+        OfficialRating: 'PG-13',
       }),
-    ).toEqual({title: 'Dune', subtitle: '2021'});
+    ).toEqual({title: 'Dune', subtitle: 'PG-13'});
   });
 
-  it('shows a movie without a year with no subtitle', () => {
+  it('shows no subtitle without an official rating', () => {
     expect(text({Id: 'm', Type: BaseItemKind.Movie, Name: 'Dune'})).toEqual({
       title: 'Dune',
       subtitle: undefined,
     });
+    expect(
+      text({
+        Id: 'm',
+        Type: BaseItemKind.Movie,
+        Name: 'Dune',
+        OfficialRating: '',
+      }).subtitle,
+    ).toBeUndefined();
   });
 
-  it('shows an ended series with its year range', () => {
+  it('shows a series with its official rating', () => {
     expect(
       text({
         Id: 's',
         Type: BaseItemKind.Series,
         Name: 'Lost',
-        ProductionYear: 2004,
-        EndDate: '2010-05-23T00:00:00.0000000Z',
         Status: 'Ended',
-      }).subtitle,
-    ).toBe('2004 – 2010');
+        OfficialRating: 'TV-14',
+      }),
+    ).toEqual({title: 'Lost', subtitle: 'TV-14'});
   });
 
-  it('shows a continuing series as running to Present', () => {
+  it('shows another kind with its official rating', () => {
     expect(
       text({
-        Id: 's',
-        Type: BaseItemKind.Series,
-        Name: 'Severance',
-        ProductionYear: 2022,
-        Status: 'Continuing',
-      }).subtitle,
-    ).toBe('2022 – Present');
+        Id: 'b',
+        Type: BaseItemKind.BoxSet,
+        Name: 'Alien',
+        OfficialRating: 'R',
+      }),
+    ).toEqual({title: 'Alien', subtitle: 'R'});
   });
 
-  it('shows one year for an ended series without an end date or ending the year it started', () => {
-    const base = {
-      Id: 's',
-      Type: BaseItemKind.Series,
-      Name: 'X',
-      ProductionYear: 2019,
-    };
-    expect(text({...base, Status: 'Ended'}).subtitle).toBe('2019');
-    expect(text({...base, EndDate: '2019-12-01T00:00:00Z'}).subtitle).toBe(
-      '2019',
-    );
+  it('shows a season with its episode count', () => {
+    const season = {Id: 's1', Type: BaseItemKind.Season, Name: 'Season 1'};
+    expect(text({...season, ChildCount: 12})).toEqual({
+      title: 'Season 1',
+      subtitle: '12 episodes',
+    });
+    expect(text({...season, ChildCount: 1}).subtitle).toBe('1 episode');
+    expect(text({...season, ChildCount: 0}).subtitle).toBeUndefined();
+    expect(text(season).subtitle).toBeUndefined();
   });
 
-  it('shows no subtitle for a series without any year', () => {
-    expect(
-      text({Id: 's', Type: BaseItemKind.Series, Name: 'X'}).subtitle,
-    ).toBeUndefined();
+  it('shows an episode as series, season and episode, then its name', () => {
+    expect(text(episode())).toEqual({title: 'Lost S1 E2', subtitle: 'Pilot'});
   });
 
-  it('shows an episode as the series, then season, episode and name', () => {
-    expect(text(episode())).toEqual({title: 'Lost', subtitle: 'S1:E2 · Pilot'});
-  });
-
-  it('shows an episode range', () => {
-    expect(text(episode({IndexNumberEnd: 3})).subtitle).toBe('S1:E2-3 · Pilot');
+  it('shows an episode range with an en dash', () => {
+    expect(text(episode({IndexNumberEnd: 3})).title).toBe('Lost S1 E2–3');
   });
 
   it('handles missing season or episode numbers', () => {
-    expect(text(episode({ParentIndexNumber: null})).subtitle).toBe(
-      'E2 · Pilot',
+    expect(text(episode({ParentIndexNumber: null})).title).toBe('Lost E2');
+    expect(text(episode({IndexNumber: null})).title).toBe('Lost S1');
+    expect(text(episode({IndexNumber: null, IndexNumberEnd: 3})).title).toBe(
+      'Lost S1',
     );
-    expect(text(episode({IndexNumber: null})).subtitle).toBe('S1 · Pilot');
     expect(
-      text(episode({ParentIndexNumber: null, IndexNumber: null})).subtitle,
+      text(episode({ParentIndexNumber: null, IndexNumber: null})).title,
+    ).toBe('Lost');
+  });
+
+  it('labels season 0 episodes as special', () => {
+    expect(text(episode({ParentIndexNumber: 0})).title).toBe('Lost special');
+  });
+
+  it('leaves out a missing series name', () => {
+    expect(text(episode({SeriesName: null})).title).toBe('S1 E2');
+    expect(text(episode({SeriesName: '  '})).title).toBe('S1 E2');
+  });
+
+  it('falls back to the episode name when there is nothing else', () => {
+    expect(
+      text(
+        episode({SeriesName: null, ParentIndexNumber: null, IndexNumber: null}),
+      ).title,
     ).toBe('Pilot');
   });
 
-  it('labels season 0 episodes as specials', () => {
-    expect(text(episode({ParentIndexNumber: 0})).subtitle).toBe(
-      'Special · Pilot',
-    );
+  it('has no subtitle for an episode without a name', () => {
+    expect(text(episode({Name: null})).subtitle).toBeUndefined();
   });
 
-  it('falls back to the episode name when the series name is missing', () => {
-    expect(text(episode({SeriesName: null}))).toEqual({
-      title: 'Pilot',
-      subtitle: 'S1:E2',
+  describe('virtual (upcoming) episodes', () => {
+    const now = new Date('2026-10-10T15:00:00Z');
+    const upcoming = (PremiereDate: string, extra: Partial<BaseItemDto> = {}) =>
+      cardText(
+        episode({LocationType: LocationType.Virtual, PremiereDate, ...extra}),
+        now,
+      ).subtitle;
+
+    it('adds Today, Tomorrow or a weekday within the week', () => {
+      expect(upcoming('2026-10-10T00:00:00Z')).toBe('Pilot (Today)');
+      expect(upcoming('2026-10-11T00:00:00Z')).toBe('Pilot (Tomorrow)');
+      expect(upcoming('2026-10-14T00:00:00Z')).toBe('Pilot (Wed)');
+    });
+
+    it('adds a short date and time otherwise', () => {
+      expect(upcoming('2026-10-20T21:05:00Z')).toBe(
+        'Pilot (10/20/26, 9:05 PM)',
+      );
+      expect(upcoming('2026-10-01T00:00:00Z')).toBe(
+        'Pilot (10/1/26, 12:00 AM)',
+      );
+      expect(upcoming('2027-01-02T12:30:00Z')).toBe('Pilot (1/2/27, 12:30 PM)');
+    });
+
+    it('shows only the name without a date, or when not virtual', () => {
+      expect(upcoming('')).toBe('Pilot');
+      expect(upcoming('not a date')).toBe('Pilot');
+      expect(
+        cardText(
+          episode({
+            LocationType: LocationType.FileSystem,
+            PremiereDate: '2026-10-10T00:00:00Z',
+          }),
+          now,
+        ).subtitle,
+      ).toBe('Pilot');
     });
   });
 
@@ -153,7 +202,7 @@ describe('toCardItem titles and subtitles', () => {
     'shows a %s library by name only',
     (Type) => {
       expect(
-        text({Id: 'v', Type, Name: 'Movies', ProductionYear: 2020}),
+        text({Id: 'v', Type, Name: 'Movies', OfficialRating: 'PG'}),
       ).toEqual({
         title: 'Movies',
         subtitle: undefined,

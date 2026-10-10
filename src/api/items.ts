@@ -2,6 +2,7 @@ import type {Api} from '@jellyfin/sdk';
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import {ImageType} from '@jellyfin/sdk/lib/generated-client/models/image-type';
+import {LocationType} from '@jellyfin/sdk/lib/generated-client/models/location-type';
 import {getImageApi} from '@jellyfin/sdk/lib/utils/api/image-api';
 
 import type {CardVariant} from '../components/FocusableCard';
@@ -201,76 +202,115 @@ export function placeholderColor(id: string): string {
   return PLACEHOLDER_COLORS[hash % PLACEHOLDER_COLORS.length];
 }
 
-const yearOf = (date?: string | null): number | undefined => {
-  if (!date) {
-    return undefined;
-  }
-  const year = new Date(date).getUTCFullYear();
-  return Number.isNaN(year) ? undefined : year;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const dayOfYear = (date: Date) =>
+  Math.floor(
+    (Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) -
+      Date.UTC(date.getUTCFullYear(), 0, 1)) /
+      86400000,
+  ) + 1;
+
+/** en-US short date and time, e.g. `3/14/25, 9:05 PM`. */
+const shortDateTime = (date: Date) => {
+  const hours = date.getUTCHours();
+  const minutes = `${date.getUTCMinutes()}`.padStart(2, '0');
+  const year = `${date.getUTCFullYear() % 100}`.padStart(2, '0');
+  return (
+    `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${year}, ` +
+    `${hours % 12 || 12}:${minutes} ${hours < 12 ? 'AM' : 'PM'}`
+  );
 };
 
-/** `S1:E2`, `S1:E2-3`, `E2`, `S1`, `Special`, or undefined without numbers. */
-export function episodeNumber(item: BaseItemDto): string | undefined {
-  const season = item.ParentIndexNumber;
-  const episode = item.IndexNumber;
-  if (season === 0) {
-    return 'Special';
+/**
+ * androidtv's `TimeUtils.getFriendlyDate`: Today, Tomorrow, a weekday within
+ * the next week, otherwise a short date and time. Jellyfin dates are UTC and
+ * are read as such.
+ */
+export function friendlyDate(date: Date, now: Date = new Date()): string {
+  if (date.getUTCFullYear() === now.getUTCFullYear()) {
+    const day = dayOfYear(date);
+    const today = dayOfYear(now);
+    if (day === today) {
+      return 'Today';
+    }
+    if (day === today + 1) {
+      return 'Tomorrow';
+    }
+    if (day > today && day < today + 7) {
+      return WEEKDAYS[date.getUTCDay()];
+    }
   }
-  let episodePart: string | undefined;
-  if (episode != null) {
-    episodePart =
-      item.IndexNumberEnd != null && item.IndexNumberEnd !== episode
-        ? `E${episode}-${item.IndexNumberEnd}`
-        : `E${episode}`;
-  }
-  const seasonPart = season != null ? `S${season}` : undefined;
-  if (seasonPart && episodePart) {
-    return `${seasonPart}:${episodePart}`;
-  }
-  return seasonPart ?? episodePart;
+  return shortDateTime(date);
 }
 
-/** `2010 – 2015`, `2019 – Present` while continuing, or just the start year. */
-export function seriesYears(item: BaseItemDto): string | undefined {
-  const start = item.ProductionYear ?? yearOf(item.PremiereDate);
-  if (start == null) {
-    return undefined;
+/**
+ * androidtv's `getFullName` for an episode: the series name, then `S1 E2`,
+ * `S1 E2–3` or `special`, joined with spaces.
+ */
+export function episodeFullName(item: BaseItemDto): string {
+  const parts: (string | null | undefined)[] = [item.SeriesName];
+  if (item.ParentIndexNumber === 0) {
+    parts.push('special');
+  } else {
+    if (item.ParentIndexNumber != null) {
+      parts.push(`S${item.ParentIndexNumber}`);
+    }
+    if (item.IndexNumber != null && item.IndexNumberEnd != null) {
+      parts.push(`E${item.IndexNumber}–${item.IndexNumberEnd}`);
+    } else if (item.IndexNumber != null) {
+      parts.push(`E${item.IndexNumber}`);
+    }
   }
-  if (item.Status === 'Continuing') {
-    return `${start} – Present`;
-  }
-  const end = yearOf(item.EndDate);
-  return end != null && end !== start ? `${start} – ${end}` : `${start}`;
+  return parts.filter((part) => part && part.trim()).join(' ');
 }
 
-const joinParts = (parts: (string | null | undefined)[]) => {
-  const text = parts.filter(Boolean).join(' · ');
-  return text || undefined;
+/** androidtv's `getSubName` for an episode: its name, plus the premiere date when it isn't in the library yet. */
+const episodeSubName = (item: BaseItemDto, now?: Date) => {
+  if (
+    item.LocationType === LocationType.Virtual &&
+    item.Name &&
+    item.PremiereDate
+  ) {
+    const date = new Date(item.PremiereDate);
+    if (!Number.isNaN(date.getTime())) {
+      return `${item.Name} (${friendlyDate(date, now)})`;
+    }
+  }
+  return item.Name || undefined;
 };
 
-/** Card title and subtitle, following androidtv's `getCardName` / `getSubText` (with years for movies and series). */
-export function cardText(item: BaseItemDto): {
-  title: string;
-  subtitle?: string;
-} {
+const episodeCount = (count?: number | null) =>
+  count != null && count > 0
+    ? `${count} ${count === 1 ? 'episode' : 'episodes'}`
+    : undefined;
+
+/**
+ * Card title and subtitle, following androidtv's `getCardName` / `getSubText`:
+ * - episode: `Lost S1 E2`, then the episode name;
+ * - season: its name, then `N episodes`;
+ * - library: its name only;
+ * - anything else: its name, then its official rating.
+ */
+export function cardText(
+  item: BaseItemDto,
+  now?: Date,
+): {title: string; subtitle?: string} {
   const name = item.Name ?? '';
+  if (isLibrary(item)) {
+    return {title: name};
+  }
   switch (item.Type) {
     case BaseItemKind.Episode:
-      return item.SeriesName
-        ? {
-            title: item.SeriesName,
-            subtitle: joinParts([episodeNumber(item), item.Name]),
-          }
-        : {title: name, subtitle: episodeNumber(item)};
-    case BaseItemKind.Movie:
       return {
-        title: name,
-        subtitle: item.ProductionYear ? `${item.ProductionYear}` : undefined,
+        // androidtv would show a blank title; fall back to the episode name.
+        title: episodeFullName(item) || name,
+        subtitle: episodeSubName(item, now),
       };
-    case BaseItemKind.Series:
-      return {title: name, subtitle: seriesYears(item)};
+    case BaseItemKind.Season:
+      return {title: name, subtitle: episodeCount(item.ChildCount)};
     default:
-      return {title: name};
+      return {title: name, subtitle: item.OfficialRating || undefined};
   }
 }
 
