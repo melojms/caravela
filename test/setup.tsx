@@ -22,6 +22,22 @@ jest.mock('@amazon-devices/vega-carousel', () => {
   };
 });
 
+// react-native-svg draws natively. Stand in plain Views that keep their props,
+// so tests can find an icon and read its fill.
+jest.mock('@amazon-devices/react-native-svg', () => {
+  const {View} = require('react-native');
+  const element = ({children, ...props}: any) => (
+    <View {...props}>{children}</View>
+  );
+  return {Svg: element, Path: element};
+});
+
+// The device's 12/24 h setting; 24 h unless a test says otherwise with
+// jest.mocked(uses24HourClock).mockReturnValue(false).
+jest.mock('@amazon-devices/react-native-localize', () => ({
+  uses24HourClock: jest.fn(() => true),
+}));
+
 // The Vega Jest preset mocks BackHandler without a default export and has
 // Dimensions.addEventListener return nothing. React Navigation needs both to
 // hand back a subscription, so replace them with RN 0.83-shaped mocks.

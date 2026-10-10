@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 
-import {colors, focus, px, radius} from '../theme';
+import {colors, focus, layout, px, radius} from '../theme';
 import {ToolbarClock} from './ToolbarClock';
 
 export type ToolbarProps = {
@@ -262,7 +262,11 @@ export const Toolbar = memo(
             round
             {...focusProps}>
             {(highlighted) => (
-              <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24">
+              <Svg
+                testID={`${testID}-settings-icon`}
+                width={ICON_SIZE}
+                height={ICON_SIZE}
+                viewBox="0 0 24 24">
                 <Path
                   d={SETTINGS_PATH}
                   fill={highlighted ? colors.text : colors.textMuted}
@@ -278,11 +282,13 @@ export const Toolbar = memo(
 );
 
 const styles = StyleSheet.create({
-  // androidtv: 95 dp tall including its 48 x 27 dp overscan padding.
+  // androidtv: 95 dp tall including its 27 dp vertical overscan padding.
+  // The sides use our screen padding, so the toolbar lines up with the
+  // content below it (androidtv's lines up with its own 48 dp content edge).
   toolbar: {
     width: '100%',
     height: px(190),
-    paddingHorizontal: px(96),
+    paddingHorizontal: layout.screenPadding,
     paddingVertical: px(54),
     flexDirection: 'row',
     alignItems: 'center',

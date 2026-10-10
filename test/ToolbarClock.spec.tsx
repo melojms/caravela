@@ -1,13 +1,12 @@
 import 'react-native';
 import {act, render} from '@testing-library/react-native';
+import {uses24HourClock} from '@amazon-devices/react-native-localize';
 import * as React from 'react';
 
 import {ToolbarClock, formatClock} from '../src/components/ToolbarClock';
 
-const mockUses24HourClock = jest.fn(() => true);
-jest.mock('@amazon-devices/react-native-localize', () => ({
-  uses24HourClock: () => mockUses24HourClock(),
-}));
+// test/setup.tsx mocks the device setting.
+const mockUses24HourClock = jest.mocked(uses24HourClock);
 
 // Local time, so the expectations don't depend on the machine's timezone.
 const at = (h: number, m: number, s = 0, ms = 0) =>

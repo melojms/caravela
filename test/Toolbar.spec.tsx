@@ -5,18 +5,6 @@ import * as React from 'react';
 import {Toolbar, ToolbarProps} from '../src/components/Toolbar';
 import {colors} from '../src/theme';
 
-// react-native-svg draws natively; stand in plain Views so the icon renders.
-jest.mock('@amazon-devices/react-native-svg', () => {
-  const {View} = require('react-native');
-  return {
-    Svg: ({children}: any) => <View testID="svg">{children}</View>,
-    Path: ({fill}: any) => <View testID="svg-path" fill={fill} />,
-  };
-});
-jest.mock('@amazon-devices/react-native-localize', () => ({
-  uses24HourClock: () => true,
-}));
-
 // The Vega Jest preset's StyleSheet.flatten mock returns arrays untouched.
 const flatStyle = (style: unknown): Record<string, unknown> =>
   Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
@@ -55,7 +43,9 @@ describe('Toolbar', () => {
     const end = screen.getByTestId('toolbar-end');
     expect(end).toContainElement(screen.getByLabelText('Settings'));
     expect(end).toContainElement(screen.getByTestId('toolbar-clock'));
-    expect(screen.getByTestId('svg-path')).toBeTruthy();
+    expect(screen.getByLabelText('Settings')).toContainElement(
+      screen.getByTestId('toolbar-settings-icon'),
+    );
   });
 
   it('calls each handler on press', () => {
