@@ -32,6 +32,40 @@ export class AuthError extends Error {
   }
 }
 
+/** A user the server lists on its login screen. */
+export interface PublicUser {
+  id: string;
+  name: string;
+  primaryImageTag?: string;
+  hasPassword: boolean;
+}
+
+export interface UserImageOptions {
+  /** The image tag from the server; it busts the cache when the image changes. */
+  tag?: string;
+  /** A saved token, for servers that hide images from anonymous requests. */
+  accessToken?: string;
+  maxHeight: number;
+}
+
+/** URL of a user's primary image (avatar). */
+export function getUserImageUrl(
+  server: Pick<StoredServer, 'address'>,
+  userId: string,
+  {tag, accessToken, maxHeight}: UserImageOptions,
+): string {
+  let url =
+    `${server.address}/Users/${encodeURIComponent(userId)}/Images/Primary` +
+    `?maxHeight=${Math.round(maxHeight)}&quality=90`;
+  if (tag) {
+    url += `&tag=${encodeURIComponent(tag)}`;
+  }
+  if (accessToken) {
+    url += `&api_key=${encodeURIComponent(accessToken)}`;
+  }
+  return url;
+}
+
 export interface QuickConnectOptions {
   /** How often to ask the server whether the code was approved. */
   pollIntervalMs?: number;
@@ -69,6 +103,11 @@ export interface AuthService {
     serverId: string,
     userId: string,
   ): Promise<Session | undefined>;
+  /**
+   * The users the server shows on its login screen, fetched without a token.
+   * Entries without an ID or name are skipped. Network errors are rethrown.
+   */
+  getPublicUsers(serverId: string): Promise<PublicUser[]>;
 }
 
 export interface AuthServiceDeps {
@@ -286,6 +325,24 @@ export function createAuthService({
         }
         throw error;
       }
+    },
+
+    async getPublicUsers(serverId) {
+      const server = await requireServer(serverId);
+      const api = await createApi(server.address);
+      const {data} = await getUserApi(api).getPublicUsers();
+      return data.flatMap((user) =>
+        user.Id && user.Name
+          ? [
+              {
+                id: user.Id,
+                name: user.Name,
+                primaryImageTag: user.PrimaryImageTag ?? undefined,
+                hasPassword: user.HasPassword ?? true,
+              },
+            ]
+          : [],
+      );
     },
   };
 }

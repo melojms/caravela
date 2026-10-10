@@ -15,6 +15,7 @@ import {FocusableButton} from '../components/FocusableButton';
 import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
 import {AddServerScreen} from '../screens/auth/AddServerScreen';
 import {LaunchScreen} from '../screens/auth/LaunchScreen';
+import {UserPickerScreen} from '../screens/auth/UserPickerScreen';
 import {colors, layout, spacing, typography} from '../theme';
 import {MainMenu} from './MainMenu';
 import {
@@ -116,7 +117,7 @@ const RootStack = () => {
           {status === 'needsServer' ? addServer : null}
           <Stack.Screen
             name="UserPicker"
-            component={AuthPlaceholder}
+            component={UserPickerScreen}
             initialParams={serverId ? {serverId} : undefined}
           />
           {status === 'needsServer' ? null : addServer}

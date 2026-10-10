@@ -47,6 +47,7 @@ export const sessionFor = (
 export const fakeStore = (state: AuthState) =>
   ({
     getState: jest.fn(async () => state),
+    getServer: jest.fn(async (serverId: string) => state.servers[serverId]),
     clearToken: jest.fn(async () => undefined),
   } as unknown as jest.Mocked<AuthStore>);
 
@@ -56,6 +57,7 @@ export const fakeService = () =>
     logout: jest.fn(async () => undefined),
     loginWithPassword: jest.fn(),
     startQuickConnect: jest.fn(),
+    getPublicUsers: jest.fn(async () => []),
   } as unknown as jest.Mocked<AuthService>);
 
 export const networkError = () =>

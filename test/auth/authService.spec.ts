@@ -3,7 +3,11 @@ import {getAuthenticationApi} from '@jellyfin/sdk/lib/utils/api/authentication-a
 import {getSessionApi} from '@jellyfin/sdk/lib/utils/api/session-api';
 import {getUserApi} from '@jellyfin/sdk/lib/utils/api/user-api';
 
-import {AuthError, createAuthService} from '../../src/auth/authService';
+import {
+  AuthError,
+  createAuthService,
+  getUserImageUrl,
+} from '../../src/auth/authService';
 import type {Session} from '../../src/auth/authService';
 import {createAuthStore} from '../../src/auth/store';
 import type {AuthStore, KeyValueStorage} from '../../src/auth/store';
@@ -26,6 +30,7 @@ const authApi = {
 };
 const userApi = {
   getCurrentUser: jest.fn(),
+  getPublicUsers: jest.fn(),
 };
 const sessionApi = {
   reportSessionEnded: jest.fn(),
@@ -281,5 +286,78 @@ describe('logout', () => {
     expect(getSessionApi).toHaveBeenCalledWith(api);
     expect(sessionApi.reportSessionEnded).toHaveBeenCalled();
     expect(await store.getToken('srv1', 'u1')).toBeUndefined();
+  });
+});
+
+describe('getPublicUsers', () => {
+  it('fetches the users without a token and skips incomplete entries', async () => {
+    const auth = await setup();
+    await store.saveLogin('srv1', {id: 'u1', name: 'melojms'}, 'token-1');
+    userApi.getPublicUsers.mockResolvedValue({
+      data: [
+        {
+          Id: 'u1',
+          Name: 'melojms',
+          PrimaryImageTag: 'tag-1',
+          HasPassword: true,
+        },
+        {Id: 'u2', Name: 'guest', PrimaryImageTag: null, HasPassword: false},
+        {Id: 'u3'},
+        {Name: 'nameless'},
+      ],
+    });
+
+    const users = await auth.getPublicUsers('srv1');
+
+    expect(createApi).toHaveBeenCalledWith(SERVER.address);
+    expect(getUserApi).toHaveBeenCalledWith(
+      expect.objectContaining({accessToken: undefined}),
+    );
+    expect(users).toEqual([
+      {id: 'u1', name: 'melojms', primaryImageTag: 'tag-1', hasPassword: true},
+      {id: 'u2', name: 'guest', primaryImageTag: undefined, hasPassword: false},
+    ]);
+  });
+
+  it('rejects an unknown server', async () => {
+    const auth = await setup();
+    await expect(auth.getPublicUsers('nope')).rejects.toMatchObject({
+      code: 'unknown-server',
+    });
+    expect(userApi.getPublicUsers).not.toHaveBeenCalled();
+  });
+
+  it('rethrows network errors', async () => {
+    const auth = await setup();
+    userApi.getPublicUsers.mockRejectedValue(networkError());
+    await expect(auth.getPublicUsers('srv1')).rejects.toThrow('Network Error');
+  });
+});
+
+describe('getUserImageUrl', () => {
+  const server = {address: 'https://jellyfin.example.com'};
+
+  it('builds the URL without a tag or token', () => {
+    expect(getUserImageUrl(server, 'u1', {maxHeight: 180})).toBe(
+      'https://jellyfin.example.com/Users/u1/Images/Primary?maxHeight=180&quality=90',
+    );
+  });
+
+  it('adds the tag and the token when given', () => {
+    expect(
+      getUserImageUrl(server, 'u1', {
+        tag: 'tag-1',
+        accessToken: 'token-1',
+        maxHeight: 180,
+      }),
+    ).toBe(
+      'https://jellyfin.example.com/Users/u1/Images/Primary?maxHeight=180&quality=90&tag=tag-1&api_key=token-1',
+    );
+  });
+
+  it('rounds the height and encodes the values', () => {
+    expect(getUserImageUrl(server, 'u 1', {tag: 'a/b', maxHeight: 90.4})).toBe(
+      'https://jellyfin.example.com/Users/u%201/Images/Primary?maxHeight=90&quality=90&tag=a%2Fb',
+    );
   });
 });
