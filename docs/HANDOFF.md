@@ -18,7 +18,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 3d-2 `active` FocusableButton (not focused) gets a violet outline, including the side menu. Disabled+active keeps the outline, dimmed.
   - Task 4: side menu (Home / Movies / Shows / Search / Settings), theme, FocusableCard / ContentRow / PosterGrid / FocusableButton, with mock data in `src/dev/mockItems.ts`.
 - **Checks on `main`:** lint 0 errors, Jest 210 passing, the Release build installs and runs on the Fire TV. The TV is signed out (the last install wiped storage).
-- **Next: task 5, Home rows.** Describe the approach and wait for approval.
+- **Next: task 5, Home rows. APPROVED** (2026-10-10), running as 5a ‖ 5b, then 5c (briefs `docs/tasks/05*.md`).
+- **Then task 5.5: replace the side menu with an androidtv-style top toolbar** (user avatar left; Home and Search centre; Settings icon and clock right; Movies/Shows reached from My Media). Describe the approach and wait for approval.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Home doesn't remember the last-focused card: it focuses the first card after you come back.
@@ -34,7 +35,9 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - Deferred: UDP server discovery (the user types the server address) and websocket remote control.
 - **Jellyfin:** 12.0+ (the test server `https://jellyfin.example.lan` runs 12.2) with `@jellyfin/sdk` 1.0.0. Storage is Vega's async-storage. Tokens are unencrypted for now, which the user accepted.
 - **Login:** test user `melojms`. **Never ask for or use the password**; use Quick Connect and the user approves it.
-- **UI:** the side menu changes section on press, not on focus.
+- **Look and feel: match the official jellyfin-androidtv app.** When in doubt, check how it's done there. A shallow clone lives at `../caravela-wt/ref/jellyfin-androidtv` (Home: `app/src/main/java/org/jellyfin/androidtv/ui/home/`, cards: `ui/presentation/CardPresenter.kt`, `ui/composable/item/`, backdrop: `data/service/BackgroundService.kt`, `ui/background/AppBackground.kt`).
+- **UI:** the side menu changes section on press, not on focus. It will be replaced by a top toolbar in task 5.5.
+- **Data:** TanStack Query for server data. Home rows load 20 items each. A 401 mid-session sends the user to the picker with the "expired" notice. My Media shows only Movies and TV libraries. Next Up stays separate from Continue Watching.
 - **User rules** (see also `~/.claude/CLAUDE.md`):
   - Describe the approach and wait for approval before coding.
   - Split work that touches more than 3 files into smaller tasks.
