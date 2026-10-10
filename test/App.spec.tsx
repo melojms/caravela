@@ -5,16 +5,9 @@ import * as React from 'react';
 import {App} from '../src/App';
 
 describe('App', () => {
-  it('matches snapshot', () => {
+  it('renders the Caravela splash', () => {
     const screen = render(<App />);
-    expect(screen).toMatchSnapshot();
-  });
-
-  it('renders all tiles', () => {
-    const screen = render(<App />);
-    expect(screen.getByTestId('tile-home')).toBeTruthy();
-    expect(screen.getByTestId('tile-get-started')).toBeTruthy();
-    expect(screen.getByTestId('tile-debug')).toBeTruthy();
-    expect(screen.getByTestId('tile-learn-more')).toBeTruthy();
+    expect(screen.getByTestId('splash-icon')).toBeTruthy();
+    expect(screen.getByText('Caravela')).toBeTruthy();
   });
 });

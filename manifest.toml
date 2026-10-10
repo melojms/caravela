@@ -1,9 +1,10 @@
 schema-version = 1
 
 [package]
-title = "Basic UI React Native Application for project caravela"
+title = "Caravela"
 version = "0.1.0"
 id = "com.melojms.caravela"
+icon = "@image/app_icon.png"
 
 [os.version]
 min = "1.2"
@@ -13,9 +14,44 @@ target = "1.2"
 [[needs.module]]
 id = "/com.amazon.vega.os@IVega_1_2"
 
+[[needs.module]]
+id = "/com.amazon.kepler.keplerscript_4@IKeplerScript_0"
+
+
 [components]
 [[components.interactive]]
 id = "com.melojms.caravela.main"
 runtime-module = "/com.amazon.kepler.runtime.react_native_kepler_4@IReactNativeKepler_0"
 launch-type = "singleton"
 categories = ["com.amazon.category.main"]
+
+[wants]
+# W3C media playback
+[[wants.service]]
+id = "com.amazon.media.server"
+
+[[wants.service]]
+id = "com.amazon.mediabuffer.service"
+
+[[wants.service]]
+id = "com.amazon.mediatransform.service"
+
+[[wants.service]]
+id = "com.amazon.mediametrics.service"
+
+[[wants.service]]
+id = "com.amazon.gipc.uuid.*"
+
+[[wants.service]]
+id = "com.amazon.audio.stream"
+
+[[wants.service]]
+id = "com.amazon.audio.control"
+
+# Captions and subtitles
+[[wants.privilege]]
+id = "com.amazon.devconf.privilege.accessibility"
+
+[offers]
+[[offers.service]]
+id = "com.amazon.gipc.uuid.*"
