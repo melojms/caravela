@@ -115,9 +115,6 @@ type MovieDetailsProps = {
   navigation: DetailsProps['navigation'];
 };
 
-// Playback arrives in task 8; until then Resume and Play do nothing.
-const onPlay = (_startMs: number) => undefined;
-
 const MovieDetails = ({item, navigation}: MovieDetailsProps) => {
   const {session} = useSession();
   const api = session?.api as Api;
@@ -139,6 +136,10 @@ const MovieDetails = ({item, navigation}: MovieDetailsProps) => {
   const backdropUri = useMemo(() => backdropUris(item, api)[0], [item, api]);
   const infoRow = useMemo(() => infoRowEntries(item), [item]);
   const infoItems = detailsInfoItems(item, {use24Hour: uses24HourClock()});
+
+  // `navigate`, not `push`: pressing Play twice mustn't stack two players.
+  const onPlay = (startMs: number) =>
+    navigation.navigate('Player', {itemId, title: item.Name ?? '', startMs});
 
   const resumeMs = resumePositionMs(item);
   const actions: DetailsAction[] = [];

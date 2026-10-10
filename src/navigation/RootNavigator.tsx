@@ -15,6 +15,7 @@ import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
 import {DetailsScreen} from '../screens/DetailsScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {MoviesScreen} from '../screens/MoviesScreen';
+import {PlayerScreen} from '../screens/PlayerScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SettingsScreen} from '../screens/SettingsScreen';
 import {ShowsScreen} from '../screens/ShowsScreen';
@@ -78,6 +79,12 @@ const RootStack = () => {
           <Stack.Screen
             name="DetailsPlaceholder"
             component={DetailsPlaceholder}
+          />
+          {/* Full-screen video: cut straight to it rather than sliding in. */}
+          <Stack.Screen
+            name="Player"
+            component={PlayerScreen}
+            options={{animation: 'none'}}
           />
         </>
       ) : (

@@ -106,11 +106,12 @@ let favorite: {toggle: jest.Mock; isPending: boolean};
 let played: {toggle: jest.Mock; isPending: boolean};
 let push: jest.Mock;
 let goBack: jest.Mock;
+let navigate: jest.Mock;
 
 const renderDetails = () =>
   render(
     <DetailsScreen
-      navigation={{push, goBack, navigate: jest.fn()} as never}
+      navigation={{push, goBack, navigate} as never}
       route={
         {
           key: 'Details-1',
@@ -134,6 +135,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   push = jest.fn();
   goBack = jest.fn();
+  navigate = jest.fn();
   itemQuery = loaded(movie());
   similarQuery = loaded([
     {Id: 's1', Name: 'Similar One', Type: BaseItemKind.Movie},
@@ -272,10 +274,35 @@ describe('DetailsScreen', () => {
     expect(preferred('play')).toBe(false);
   });
 
-  it('Resume and Play do nothing until playback exists', () => {
+  it('Play opens the player from the start with the title', () => {
     renderDetails();
     fireEvent.press(screen.getByTestId('details-actions-play'));
+    expect(navigate).toHaveBeenCalledWith('Player', {
+      itemId: 'm1',
+      title: 'The Movie',
+      startMs: 0,
+    });
+    // `navigate`, so a second press reuses the player rather than stacking one.
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('Resume opens the player at the resume position', () => {
+    const resumeMs = (62 * 60 + 10) * 1000;
+    itemQuery = loaded(
+      movie({
+        UserData: userData({
+          Played: false,
+          PlaybackPositionTicks: resumeMs * TICKS_PER_MS,
+        }),
+      }),
+    );
+    renderDetails();
+    fireEvent.press(screen.getByTestId('details-actions-resume'));
+    expect(navigate).toHaveBeenCalledWith('Player', {
+      itemId: 'm1',
+      title: 'The Movie',
+      startMs: resumeMs,
+    });
   });
 
   it('toggles watched and favorite', () => {
