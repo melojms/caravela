@@ -148,6 +148,7 @@ describe('RootNavigator', () => {
     let approve!: (session: Session) => void;
     const attempt: QuickConnectAttempt & {cancel: jest.Mock} = {
       code: '482913',
+      expiresAt: Date.now() + 5 * 60 * 1000,
       session: new Promise<Session>((done) => {
         approve = done;
       }),

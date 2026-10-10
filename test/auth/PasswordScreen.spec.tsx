@@ -194,11 +194,28 @@ describe('PasswordScreen', () => {
 
     const button = screen.getByTestId('password-sign-in');
     expect(button).toHaveTextContent('Signing in…');
+    expect(button.props.accessibilityState).toMatchObject({disabled: true});
     expect(service.loginWithPassword).toHaveBeenCalledTimes(1);
 
     const signedIn = sessionFor();
     await act(async () => resolve(signedIn));
     expect(session.signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('enables Sign in again after a failed attempt', async () => {
+    service.loginWithPassword.mockRejectedValue(
+      new AuthError('invalid-credentials', 'Nope.'),
+    );
+    await renderScreen();
+    expect(
+      screen.getByTestId('password-sign-in').props.accessibilityState,
+    ).toMatchObject({disabled: false});
+
+    await submit();
+
+    const button = screen.getByTestId('password-sign-in');
+    expect(button).toHaveTextContent('Sign in');
+    expect(button.props.accessibilityState).toMatchObject({disabled: false});
   });
 
   it('does not sign in when the login resolves after unmount', async () => {
@@ -228,6 +245,62 @@ describe('PasswordScreen', () => {
       'Quick Connect is turned off on this server.',
     );
     expect(screen.queryByTestId('password-use-quick-connect')).toBeNull();
+    expect(service.isQuickConnectEnabled).not.toHaveBeenCalled();
+  });
+
+  it('shows Use Quick Connect when the server has it on', async () => {
+    service.isQuickConnectEnabled.mockResolvedValue(true);
+    await renderScreen();
+
+    expect(service.isQuickConnectEnabled).toHaveBeenCalledWith('srv1');
+    expect(screen.getByTestId('password-use-quick-connect')).toBeTruthy();
+  });
+
+  it('hides Use Quick Connect when the server has it off', async () => {
+    service.isQuickConnectEnabled.mockResolvedValue(false);
+    await renderScreen();
+
+    expect(screen.queryByTestId('password-use-quick-connect')).toBeNull();
+  });
+
+  it('hides Use Quick Connect while the check is pending', async () => {
+    service.isQuickConnectEnabled.mockReturnValue(new Promise(() => {}));
+    await renderScreen();
+
+    expect(screen.queryByTestId('password-use-quick-connect')).toBeNull();
+  });
+
+  it('hides Use Quick Connect when the check fails, and still signs in', async () => {
+    service.isQuickConnectEnabled.mockRejectedValue(networkError());
+    await renderScreen();
+
+    expect(screen.queryByTestId('password-use-quick-connect')).toBeNull();
+    expect(screen.queryByTestId('password-error')).toBeNull();
+
+    await submit();
+    expect(service.loginWithPassword).toHaveBeenCalledWith(
+      'srv1',
+      'melojms',
+      '',
+    );
+    expect(session.signIn).toHaveBeenCalled();
+  });
+
+  it('ignores a Quick Connect check that settles after unmount', async () => {
+    let settle!: (enabled: boolean) => void;
+    service.isQuickConnectEnabled.mockReturnValue(
+      new Promise((done) => {
+        settle = done;
+      }),
+    );
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const {unmount} = await renderScreen();
+
+    unmount();
+    await act(async () => settle(true));
+
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
   });
 
   it('shows no notice by default', async () => {

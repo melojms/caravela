@@ -1,7 +1,11 @@
 /* eslint-env jest */
 import type {Api} from '@jellyfin/sdk';
 
-import type {AuthService, Session} from '../../src/auth/authService';
+import type {
+  AuthService,
+  QuickConnectAttempt,
+  Session,
+} from '../../src/auth/authService';
 import type {AuthState, AuthStore, StoredServer} from '../../src/auth/store';
 
 export const server = (
@@ -57,8 +61,31 @@ export const fakeService = () =>
     logout: jest.fn(async () => undefined),
     loginWithPassword: jest.fn(),
     startQuickConnect: jest.fn(),
+    isQuickConnectEnabled: jest.fn(async () => true),
     getPublicUsers: jest.fn(async () => []),
   } as unknown as jest.Mocked<AuthService>);
 
 export const networkError = () =>
   Object.assign(new Error('Network Error'), {isAxiosError: true});
+
+/** A Quick Connect attempt whose session the test settles by hand. */
+export const fakeAttempt = (
+  code = '123456',
+  expiresAt = Date.now() + 5 * 60 * 1000,
+) => {
+  let resolve!: (session: Session) => void;
+  let reject!: (error: Error) => void;
+  const session = new Promise<Session>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  // Silences the unhandled rejection when a test never awaits it.
+  session.catch(() => undefined);
+  const attempt: QuickConnectAttempt & {cancel: jest.Mock} = {
+    code,
+    expiresAt,
+    session,
+    cancel: jest.fn(),
+  };
+  return {attempt, resolve, reject};
+};

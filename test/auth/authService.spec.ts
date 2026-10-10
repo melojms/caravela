@@ -27,6 +27,7 @@ const authApi = {
   authenticateWithQuickConnect: jest.fn(),
   initiateQuickConnect: jest.fn(),
   getQuickConnectState: jest.fn(),
+  getQuickConnectEnabled: jest.fn(),
 };
 const userApi = {
   getCurrentUser: jest.fn(),
@@ -214,6 +215,34 @@ describe('Quick Connect', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  it('sets expiresAt to the start time plus timeoutMs', async () => {
+    const auth = await setup();
+    authApi.initiateQuickConnect.mockResolvedValue({
+      data: {Code: '123456', Secret: 'secret'},
+    });
+    jest.useFakeTimers({now: 1_000_000});
+
+    const attempt = await auth.startQuickConnect('srv1', {timeoutMs: TIMEOUT});
+
+    expect(attempt.expiresAt).toBe(1_000_000 + TIMEOUT);
+    attempt.session.catch(() => undefined);
+    attempt.cancel();
+  });
+
+  it('defaults expiresAt to five minutes from the start', async () => {
+    const auth = await setup();
+    authApi.initiateQuickConnect.mockResolvedValue({
+      data: {Code: '123456', Secret: 'secret'},
+    });
+    jest.useFakeTimers({now: 1_000_000});
+
+    const attempt = await auth.startQuickConnect('srv1');
+
+    expect(attempt.expiresAt).toBe(1_000_000 + 5 * 60 * 1000);
+    attempt.session.catch(() => undefined);
+    attempt.cancel();
+  });
+
   it('reports Quick Connect disabled on the server', async () => {
     const auth = await setup();
     authApi.initiateQuickConnect.mockRejectedValue(httpError(401));
@@ -331,6 +360,43 @@ describe('getPublicUsers', () => {
     const auth = await setup();
     userApi.getPublicUsers.mockRejectedValue(networkError());
     await expect(auth.getPublicUsers('srv1')).rejects.toThrow('Network Error');
+  });
+});
+
+describe('isQuickConnectEnabled', () => {
+  it('asks the server without a token and returns true when enabled', async () => {
+    const auth = await setup();
+    authApi.getQuickConnectEnabled.mockResolvedValue({data: true});
+
+    expect(await auth.isQuickConnectEnabled('srv1')).toBe(true);
+    expect(createApi).toHaveBeenCalledWith(SERVER.address);
+    expect(getAuthenticationApi).toHaveBeenCalledWith(
+      expect.objectContaining({accessToken: undefined}),
+    );
+  });
+
+  it('returns false when disabled', async () => {
+    const auth = await setup();
+    authApi.getQuickConnectEnabled.mockResolvedValue({data: false});
+
+    expect(await auth.isQuickConnectEnabled('srv1')).toBe(false);
+  });
+
+  it('rethrows network errors', async () => {
+    const auth = await setup();
+    authApi.getQuickConnectEnabled.mockRejectedValue(networkError());
+
+    await expect(auth.isQuickConnectEnabled('srv1')).rejects.toThrow(
+      'Network Error',
+    );
+  });
+
+  it('rejects an unknown server', async () => {
+    const auth = await setup();
+    await expect(auth.isQuickConnectEnabled('nope')).rejects.toMatchObject({
+      code: 'unknown-server',
+    });
+    expect(authApi.getQuickConnectEnabled).not.toHaveBeenCalled();
   });
 });
 

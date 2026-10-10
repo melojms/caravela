@@ -71,6 +71,8 @@ export const PasswordScreen = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string>();
   const [signingIn, setSigningIn] = useState(false);
+  // Hidden until the server says it's on, and when the check fails.
+  const [quickConnectEnabled, setQuickConnectEnabled] = useState(false);
   const [focused, setFocused] = useState<'username' | 'password'>();
   const passwordInput = useRef<TextInput>(null);
   // A ref as well as state, so a second press in the same frame is ignored.
@@ -98,6 +100,26 @@ export const PasswordScreen = ({
       cancelled = true;
     };
   }, [store, serverId]);
+
+  const quickConnectOff = notice === QUICK_CONNECT_OFF;
+
+  useEffect(() => {
+    if (quickConnectOff) {
+      return;
+    }
+    let cancelled = false;
+    service.isQuickConnectEnabled(serverId).then(
+      (enabled) => {
+        if (!cancelled) {
+          setQuickConnectEnabled(enabled);
+        }
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [service, serverId, quickConnectOff]);
 
   const submit = useCallback(async () => {
     if (busy.current) {
@@ -170,8 +192,6 @@ export const PasswordScreen = ({
     setPassword(text);
     setError(undefined);
   }, []);
-
-  const quickConnectOff = notice === QUICK_CONNECT_OFF;
 
   return (
     <View style={styles.container} testID="password-screen">
@@ -255,9 +275,10 @@ export const PasswordScreen = ({
         <FocusableButton
           testID="password-sign-in"
           label={signingIn ? 'Signing in…' : 'Sign in'}
-          onPress={signingIn ? undefined : submit}
+          disabled={signingIn}
+          onPress={submit}
         />
-        {quickConnectOff ? null : (
+        {quickConnectOff || !quickConnectEnabled ? null : (
           <>
             <View style={styles.actionGap} />
             <FocusableButton

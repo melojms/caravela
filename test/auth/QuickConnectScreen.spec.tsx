@@ -2,12 +2,13 @@ import {act, fireEvent, render, screen} from '@testing-library/react-native';
 import React from 'react';
 
 import {AuthError} from '../../src/auth/authService';
-import type {QuickConnectAttempt, Session} from '../../src/auth/authService';
+import type {QuickConnectAttempt} from '../../src/auth/authService';
 import type {SessionContextValue} from '../../src/auth/SessionContext';
 import {useSession} from '../../src/auth/SessionContext';
 import {QUICK_CONNECT_OFF} from '../../src/screens/auth/PasswordScreen';
 import {QuickConnectScreen} from '../../src/screens/auth/QuickConnectScreen';
 import {
+  fakeAttempt,
   fakeService,
   fakeStore,
   networkError,
@@ -16,24 +17,6 @@ import {
 } from './fakes';
 
 jest.mock('../../src/auth/SessionContext', () => ({useSession: jest.fn()}));
-
-/** An attempt whose session the test settles by hand. */
-const fakeAttempt = (code = '123456') => {
-  let resolve!: (session: Session) => void;
-  let reject!: (error: Error) => void;
-  const session = new Promise<Session>((done, fail) => {
-    resolve = done;
-    reject = fail;
-  });
-  // Silences the unhandled rejection when a test never awaits it.
-  session.catch(() => undefined);
-  const attempt: QuickConnectAttempt & {cancel: jest.Mock} = {
-    code,
-    session,
-    cancel: jest.fn(),
-  };
-  return {attempt, resolve, reject};
-};
 
 let session: jest.Mocked<Pick<SessionContextValue, 'signIn'>>;
 let service: ReturnType<typeof fakeService>;
@@ -44,7 +27,6 @@ const renderScreen = async (
     serverId: 'srv1',
     userId: 'u1',
   },
-  timeoutMs?: number,
 ) => {
   const result = render(
     <QuickConnectScreen
@@ -54,7 +36,6 @@ const renderScreen = async (
       } as any)}
       authService={service}
       authStore={fakeStore(signedInState())}
-      timeoutMs={timeoutMs}
     />,
   );
   // Let the attempt, the server and the user load.
@@ -79,9 +60,7 @@ describe('QuickConnectScreen', () => {
     service.startQuickConnect.mockResolvedValue(attempt);
     await renderScreen();
 
-    expect(service.startQuickConnect).toHaveBeenCalledWith('srv1', {
-      timeoutMs: 5 * 60 * 1000,
-    });
+    expect(service.startQuickConnect).toHaveBeenCalledWith('srv1');
     expect(screen.getByText('Sign in with Quick Connect')).toBeTruthy();
     expect(screen.getByTestId('quick-connect-code')).toHaveTextContent(
       '482913',
@@ -99,14 +78,13 @@ describe('QuickConnectScreen', () => {
     ).toBe(true);
   });
 
-  it('counts down to the timeout', async () => {
-    jest.useFakeTimers();
-    service.startQuickConnect.mockResolvedValue(fakeAttempt().attempt);
-    await renderScreen(undefined, 2 * 60 * 1000);
+  it("counts down to the attempt's expiresAt", async () => {
+    jest.useFakeTimers({now: 1_000_000});
+    service.startQuickConnect.mockResolvedValue(
+      fakeAttempt('123456', 1_000_000 + 2 * 60 * 1000).attempt,
+    );
+    await renderScreen();
 
-    expect(service.startQuickConnect).toHaveBeenCalledWith('srv1', {
-      timeoutMs: 120000,
-    });
     expect(screen.getByTestId('quick-connect-countdown')).toHaveTextContent(
       'Expires in 2:00',
     );
@@ -230,6 +208,47 @@ describe('QuickConnectScreen', () => {
       '222222',
     );
     expect(screen.queryByTestId('quick-connect-error')).toBeNull();
+  });
+
+  it('keeps Try again focused but disabled while the new code loads', async () => {
+    const first = fakeAttempt('111111');
+    let startSecond!: (value: QuickConnectAttempt) => void;
+    service.startQuickConnect
+      .mockResolvedValueOnce(first.attempt)
+      .mockReturnValueOnce(
+        new Promise((done) => {
+          startSecond = done;
+        }),
+      );
+    await renderScreen();
+    await act(async () =>
+      first.reject(new AuthError('quick-connect-timeout', 'Expired.')),
+    );
+    expect(
+      screen.getByTestId('quick-connect-retry').props.accessibilityState,
+    ).toMatchObject({disabled: false});
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('quick-connect-retry'));
+    });
+
+    const retry = screen.getByTestId('quick-connect-retry');
+    expect(retry.props.accessibilityState).toMatchObject({disabled: true});
+    expect(retry.props.hasTVPreferredFocus).toBe(true);
+    expect(
+      screen.getByTestId('quick-connect-cancel').props.hasTVPreferredFocus,
+    ).toBe(false);
+    expect(screen.getByTestId('quick-connect-loading')).toBeTruthy();
+
+    // Pressing it again does nothing while the code loads.
+    fireEvent.press(retry);
+    expect(service.startQuickConnect).toHaveBeenCalledTimes(2);
+
+    await act(async () => startSecond(fakeAttempt('222222').attempt));
+    expect(screen.queryByTestId('quick-connect-retry')).toBeNull();
+    expect(screen.getByTestId('quick-connect-code')).toHaveTextContent(
+      '222222',
+    );
   });
 
   it('shows other errors with Try again', async () => {

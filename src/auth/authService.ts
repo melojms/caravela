@@ -76,6 +76,8 @@ export interface QuickConnectOptions {
 export interface QuickConnectAttempt {
   /** Code the user enters in another Jellyfin client. */
   code: string;
+  /** When the attempt times out (epoch ms); `session` then rejects. */
+  expiresAt: number;
   /** Resolves with the new session once approved. */
   session: Promise<Session>;
   /** Stops polling; `session` rejects with `quick-connect-cancelled`. */
@@ -92,6 +94,11 @@ export interface AuthService {
     serverId: string,
     options?: QuickConnectOptions,
   ): Promise<QuickConnectAttempt>;
+  /**
+   * Whether the server has Quick Connect turned on, asked without a token.
+   * Network errors are rethrown.
+   */
+  isQuickConnectEnabled(serverId: string): Promise<boolean>;
   /** Ends the server session (best effort) and forgets the local token. */
   logout(session: Session): Promise<void>;
   /**
@@ -203,6 +210,7 @@ export function createAuthService({
         );
       }
 
+      const expiresAt = Date.now() + timeoutMs;
       let settled = false;
       let pollTimer: ReturnType<typeof setTimeout> | undefined;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
@@ -277,6 +285,7 @@ export function createAuthService({
 
       return {
         code,
+        expiresAt,
         session,
         cancel: () =>
           rejectSession(
@@ -286,6 +295,13 @@ export function createAuthService({
             ),
           ),
       };
+    },
+
+    async isQuickConnectEnabled(serverId) {
+      const server = await requireServer(serverId);
+      const api = await createApi(server.address);
+      const {data} = await getAuthenticationApi(api).getQuickConnectEnabled();
+      return data === true;
     },
 
     async logout(session) {

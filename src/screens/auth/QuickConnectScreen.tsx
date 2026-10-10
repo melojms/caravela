@@ -15,9 +15,6 @@ import type {
 import {colors, layout, px, radius, spacing, typography} from '../../theme';
 import {QUICK_CONNECT_OFF} from './PasswordScreen';
 
-/** The service's default; the server itself expires codes after 10 minutes. */
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
-
 const GENERIC_ERROR = 'Something went wrong. Try again.';
 
 /** m:ss, rounded up so the countdown shows 0:00 only at the end. */
@@ -31,13 +28,12 @@ type QuickConnectScreenProps = RootStackScreenProps<'QuickConnect'> & {
   /** Injected in tests; the app uses the default service and store. */
   authService?: AuthService;
   authStore?: AuthStore;
-  /** How long a code stays valid before the screen offers Try again. */
-  timeoutMs?: number;
 };
 
 type Status =
-  | {kind: 'starting'}
-  | {kind: 'waiting'; code: string; deadline: number}
+  // After Try again, the button stays on screen (disabled) so focus stays put.
+  | {kind: 'starting'; retrying?: boolean}
+  | {kind: 'waiting'; code: string; expiresAt: number}
   | {kind: 'failed'; message: string}
   // The server name may load after the failure, so it's filled in on render.
   | {kind: 'offline'};
@@ -52,7 +48,6 @@ export const QuickConnectScreen = ({
   navigation,
   authService,
   authStore,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
 }: QuickConnectScreenProps) => {
   const {serverId, userId} = route.params;
   const {signIn} = useSession();
@@ -135,19 +130,18 @@ export const QuickConnectScreen = ({
       );
     };
 
-    service.startQuickConnect(serverId, {timeoutMs}).then((started) => {
+    service.startQuickConnect(serverId).then((started) => {
       if (!isCurrent()) {
         // The screen moved on while the code was being requested.
         started.cancel();
         return;
       }
       attempt.current = started;
-      const startedAt = Date.now();
-      setNow(startedAt);
+      setNow(Date.now());
       setStatus({
         kind: 'waiting',
         code: started.code,
-        deadline: startedAt + timeoutMs,
+        expiresAt: started.expiresAt,
       });
       started.session.then((session) => {
         if (isCurrent()) {
@@ -156,7 +150,13 @@ export const QuickConnectScreen = ({
         }
       }, fail);
     }, fail);
-  }, [cancel, passwordParams, service, serverId, timeoutMs]);
+  }, [cancel, passwordParams, service, serverId]);
+
+  const onRetry = useCallback(() => {
+    start();
+    // Batched with start's own update, so Try again stays on screen.
+    setStatus({kind: 'starting', retrying: true});
+  }, [start]);
 
   useEffect(() => {
     mounted.current = true;
@@ -209,6 +209,7 @@ export const QuickConnectScreen = ({
   }, [waiting]);
 
   const failed = status.kind === 'failed' || status.kind === 'offline';
+  const retrying = status.kind === 'starting' && status.retrying === true;
 
   const onCancel = useCallback(() => {
     cancel();
@@ -235,7 +236,7 @@ export const QuickConnectScreen = ({
               {status.code}
             </Text>
             <Text style={styles.countdown} testID="quick-connect-countdown">
-              Expires in {formatCountdown(status.deadline - now)}
+              Expires in {formatCountdown(status.expiresAt - now)}
             </Text>
           </>
         ) : failed ? (
@@ -254,13 +255,14 @@ export const QuickConnectScreen = ({
       </View>
 
       <View style={styles.actions}>
-        {failed ? (
+        {failed || retrying ? (
           <>
             <FocusableButton
               testID="quick-connect-retry"
               label="Try again"
               hasTVPreferredFocus
-              onPress={start}
+              disabled={retrying}
+              onPress={onRetry}
             />
             <View style={styles.actionGap} />
           </>
@@ -268,7 +270,7 @@ export const QuickConnectScreen = ({
         <FocusableButton
           testID="quick-connect-cancel"
           label="Cancel"
-          hasTVPreferredFocus={!failed}
+          hasTVPreferredFocus={!failed && !retrying}
           onPress={onCancel}
         />
         <View style={styles.actionGap} />
