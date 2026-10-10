@@ -36,6 +36,8 @@ jest.mock('@amazon-devices/react-navigation__native', () => ({
   useFocusEffect: (effect: () => void) => {
     mockFocusEffect = effect;
   },
+  // For the toolbar, which navigates on its own.
+  useNavigation: () => ({popTo: jest.fn(), navigate: jest.fn()}),
 }));
 
 const SERVER = 'https://jf.example.com';

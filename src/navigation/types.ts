@@ -1,17 +1,4 @@
-import type {BottomTabScreenProps} from '@amazon-devices/react-navigation__bottom-tabs';
-import type {
-  CompositeScreenProps,
-  NavigatorScreenParams,
-} from '@amazon-devices/react-navigation__native';
 import type {NativeStackScreenProps} from '@amazon-devices/react-navigation__native-stack';
-
-export type MenuParamList = {
-  Home: undefined;
-  Movies: undefined;
-  Shows: undefined;
-  Search: undefined;
-  Settings: undefined;
-};
 
 export type AuthStackParamList = {
   AddServer: undefined;
@@ -28,18 +15,16 @@ export type AuthStackParamList = {
 
 export type RootStackParamList = AuthStackParamList & {
   Launch: undefined;
-  Main: NavigatorScreenParams<MenuParamList> | undefined;
+  Home: undefined;
+  Search: undefined;
+  Settings: undefined;
+  Movies: undefined;
+  Shows: undefined;
   DetailsPlaceholder: {itemId: string; title: string};
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =
   NativeStackScreenProps<RootStackParamList, T>;
-
-export type MenuScreenProps<T extends keyof MenuParamList> =
-  CompositeScreenProps<
-    BottomTabScreenProps<MenuParamList, T>,
-    RootStackScreenProps<keyof RootStackParamList>
-  >;
 
 declare global {
   namespace ReactNavigation {

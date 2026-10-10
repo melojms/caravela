@@ -28,7 +28,7 @@ import {ContentRow} from '../components/ContentRow';
 import type {CardVariant} from '../components/FocusableCard';
 import {FocusableButton} from '../components/FocusableButton';
 import {CardItem} from '../components/types';
-import {MenuScreenProps} from '../navigation/types';
+import {RootStackScreenProps} from '../navigation/types';
 import {colors, layout, spacing, typography} from '../theme';
 import {ScreenContainer} from './ScreenContainer';
 
@@ -59,7 +59,7 @@ const hasFailed = (query: RowQuery) =>
  * Home: one row per server Home section, in the user's order, over the
  * focused card's backdrop. Row titles follow androidtv.
  */
-export const HomeScreen = ({navigation}: MenuScreenProps<'Home'>) => {
+export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   const {session} = useSession();
   const api = session?.api;
   const serverId = session?.server.id ?? '';
@@ -300,7 +300,7 @@ export const HomeScreen = ({navigation}: MenuScreenProps<'Home'>) => {
   }
 
   return (
-    <ScreenContainer testID="home-screen">
+    <ScreenContainer toolbar="home" testID="home-screen">
       <Backdrop uri={backdropUri} />
       {content}
     </ScreenContainer>

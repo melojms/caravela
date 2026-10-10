@@ -3,10 +3,11 @@ import {StyleSheet, Text, View} from 'react-native';
 
 import {FocusableButton} from '../components/FocusableButton';
 import {colors, spacing, typography} from '../theme';
-import {ScreenContainer} from './ScreenContainer';
+import {ScreenContainer, ScreenToolbar} from './ScreenContainer';
 
 type PlaceholderScreenProps = {
   title: string;
+  toolbar?: ScreenToolbar;
   message: string;
   testID: string;
 };
@@ -14,10 +15,11 @@ type PlaceholderScreenProps = {
 /** Stand-in for sections that are built in later tasks. */
 export const PlaceholderScreen = ({
   title,
+  toolbar,
   message,
   testID,
 }: PlaceholderScreenProps) => (
-  <ScreenContainer title={title} testID={testID}>
+  <ScreenContainer title={title} toolbar={toolbar} testID={testID}>
     <Text style={styles.message}>{message}</Text>
     <View style={styles.actions}>
       <FocusableButton label="Coming soon" testID={`${testID}-button`} />

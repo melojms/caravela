@@ -1,9 +1,9 @@
 import 'react-native';
 import {act, fireEvent, render} from '@testing-library/react-native';
 import * as React from 'react';
+import {BackHandler} from 'react-native';
 
 import {App} from '../src/App';
-import {MENU_ENTRIES} from '../src/navigation/menuEntries';
 
 // Start signed in: the saved token is accepted.
 jest.mock('../src/auth/store', () => {
@@ -20,63 +20,118 @@ jest.mock('../src/auth/authService', () => {
   };
 });
 
-describe('App', () => {
-  it('shows a side menu with the five sections', async () => {
-    const screen = render(<App />);
-    await screen.findByTestId('home-screen');
+const pressBack = async () => {
+  const handlers = (BackHandler.addEventListener as jest.Mock).mock.calls.map(
+    ([, handler]) => handler,
+  );
+  let handled = false;
+  await act(async () => {
+    handled = handlers.some((handler) => handler());
+  });
+  return handled;
+};
 
-    expect(MENU_ENTRIES.map((entry) => entry.route)).toEqual([
-      'Home',
-      'Movies',
-      'Shows',
-      'Search',
-      'Settings',
-    ]);
-    for (const entry of MENU_ENTRIES) {
-      expect(screen.getByTestId(`menu-item-${entry.route}`)).toBeTruthy();
-    }
+const press = async (
+  screen: ReturnType<typeof render>,
+  testID: string,
+): Promise<void> => {
+  await act(async () => {
+    fireEvent.press(screen.getByTestId(testID));
+  });
+};
+
+describe('App', () => {
+  beforeEach(() => {
+    (BackHandler.addEventListener as jest.Mock).mockClear();
   });
 
-  it('starts on Home', async () => {
+  it('starts on Home with the toolbar and no side menu', async () => {
     const screen = render(<App />);
 
     expect(await screen.findByTestId('home-screen')).toBeTruthy();
+    expect(screen.getByTestId('toolbar')).toBeTruthy();
     expect(
-      screen.getByTestId('menu-item-Home').props.accessibilityState,
+      screen.getByTestId('toolbar-home').props.accessibilityState,
     ).toMatchObject({selected: true});
+    expect(screen.getByTestId('toolbar-user-image').props.source).toEqual({
+      uri: expect.stringContaining('/Users/u1/Images/Primary'),
+    });
+    expect(screen.queryByTestId('side-menu')).toBeNull();
   });
 
-  it('switches section from the menu and opens details from a card', async () => {
+  it('opens Search from the toolbar and Back returns to Home', async () => {
     const screen = render(<App />);
     await screen.findByTestId('home-screen');
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('menu-item-Movies'));
-    });
-    expect(screen.getByTestId('movies-screen')).toBeTruthy();
+    await press(screen, 'toolbar-search');
+    expect(screen.getByTestId('search-screen')).toBeTruthy();
+    expect(
+      screen.getByTestId('toolbar-search').props.accessibilityState,
+    ).toMatchObject({selected: true});
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('poster-grid-item-0'));
-    });
-    expect(screen.getByTestId('details-screen')).toBeTruthy();
-    expect(screen.getAllByText('Movie 1').length).toBeGreaterThan(0);
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(screen.queryByTestId('search-screen')).toBeNull();
+
+    // Home is the root: nothing handles Back, so Vega exits the app.
+    expect(await pressBack()).toBe(false);
+  });
+
+  it("goes back to Home from Search's toolbar without a second Home", async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, 'toolbar-search');
+    await press(screen, 'toolbar-home');
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(screen.queryByTestId('search-screen')).toBeNull();
+    expect(await pressBack()).toBe(false);
+  });
+
+  it('pressing the current entry stays put', async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, 'toolbar-home');
+    expect(await pressBack()).toBe(false);
+
+    await press(screen, 'toolbar-search');
+    await press(screen, 'toolbar-search');
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(await pressBack()).toBe(false);
+  });
+
+  it('opens Settings from the toolbar and Back returns to Home', async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, 'toolbar-settings');
+    expect(screen.getByTestId('settings-user-name')).toHaveTextContent(
+      'melojms',
+    );
+    expect(screen.queryByTestId('toolbar')).toBeNull();
+
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+  });
+
+  it('opens the user picker from the avatar', async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, 'toolbar-user');
+    expect(await screen.findByTestId('user-picker')).toBeTruthy();
+    expect(screen.queryByTestId('toolbar')).toBeNull();
   });
 
   it('opens Settings and signs out to the user picker', async () => {
     const screen = render(<App />);
     await screen.findByTestId('home-screen');
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('menu-item-Settings'));
-    });
-    expect(screen.getByTestId('settings-user-name')).toHaveTextContent(
-      'melojms',
-    );
-
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('settings-sign-out'));
-    });
+    await press(screen, 'toolbar-settings');
+    await press(screen, 'settings-sign-out');
     expect(await screen.findByTestId('user-picker')).toBeTruthy();
-    expect(screen.queryByTestId('side-menu')).toBeNull();
+    expect(screen.queryByTestId('toolbar')).toBeNull();
   });
 });

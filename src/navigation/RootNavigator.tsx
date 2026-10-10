@@ -12,13 +12,17 @@ import type {AuthService} from '../auth/authService';
 import {SessionProvider, useSession} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
 import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
+import {HomeScreen} from '../screens/HomeScreen';
+import {MoviesScreen} from '../screens/MoviesScreen';
+import {SearchScreen} from '../screens/SearchScreen';
+import {SettingsScreen} from '../screens/SettingsScreen';
+import {ShowsScreen} from '../screens/ShowsScreen';
 import {AddServerScreen} from '../screens/auth/AddServerScreen';
 import {LaunchScreen} from '../screens/auth/LaunchScreen';
 import {PasswordScreen} from '../screens/auth/PasswordScreen';
 import {QuickConnectScreen} from '../screens/auth/QuickConnectScreen';
 import {UserPickerScreen} from '../screens/auth/UserPickerScreen';
 import {colors} from '../theme';
-import {MainMenu} from './MainMenu';
 import {RootStackParamList} from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,10 +51,10 @@ const addServer = (
 /**
  * Root stack, gated on the session (React Navigation's conditional screens):
  * the launch screen while saved logins load, the auth routes when nobody is
- * signed in, and "Main" plus full-screen pages once signed in. Swapping the
+ * signed in, and Home plus the pages it opens once signed in. Swapping the
  * screen set resets the stack. NavigationContainer pops on the remote Back
- * key; on a root screen it doesn't handle it and Vega's BackHandler exits
- * the app.
+ * key, so Back from any page returns to the one that opened it; on Home (a
+ * root screen) it doesn't handle it and Vega's BackHandler exits the app.
  */
 const RootStack = () => {
   const {status, serverId} = useSession();
@@ -64,7 +68,11 @@ const RootStack = () => {
         <Stack.Screen name="Launch" component={Launch} />
       ) : status === 'signedIn' ? (
         <>
-          <Stack.Screen name="Main" component={MainMenu} />
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="Search" component={SearchScreen} />
+          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen name="Movies" component={MoviesScreen} />
+          <Stack.Screen name="Shows" component={ShowsScreen} />
           <Stack.Screen
             name="DetailsPlaceholder"
             component={DetailsPlaceholder}
