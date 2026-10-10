@@ -184,6 +184,13 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
     preferredRow.current = firstRow;
   }
 
+  // A focused card scrolls the list only as far as the card needs, which can
+  // hide the first row's title; Up then only scrolls the title back in. So a
+  // first-row card scrolls to the top, and one Up reaches the toolbar.
+  const scrollRef = useRef<ScrollView>(null);
+  const firstRowRef = useRef(firstRow);
+  firstRowRef.current = firstRow;
+
   // The last focused row, and each row's last focused card with its native
   // tag, so coming back to Home can focus that card again.
   const lastFocusedRow = useRef<string | undefined>(undefined);
@@ -222,6 +229,9 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
       handler = (item: CardItem, tag?: number) => {
         lastFocusedRow.current = rowKey;
         rowFocus.current.set(rowKey, {id: item.id, tag});
+        if (rowKey === firstRowRef.current) {
+          scrollRef.current?.scrollTo({y: 0});
+        }
         showBackdrop(item.backdropUris?.[0]);
       };
       focusHandlers.current.set(rowKey, handler);
@@ -334,6 +344,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   } else {
     content = (
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}>
         {rows.map((row, index) =>

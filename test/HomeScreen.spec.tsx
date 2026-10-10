@@ -9,6 +9,7 @@ import {
   within,
 } from '@testing-library/react-native';
 import React from 'react';
+import {ScrollView} from 'react-native';
 import type {ReactTestRendererJSON} from 'react-test-renderer';
 
 import {createJellyfin} from '../src/api/client';
@@ -417,6 +418,21 @@ describe('HomeScreen', () => {
       false,
     );
     expect(carouselFocus('row-resume')).toBe(true);
+  });
+
+  it('scrolls to the top when a first-row card gets focus', () => {
+    queries.sections = loaded<HomeSection[]>(['myMedia', 'resume']);
+    renderHome();
+    const scrollTo = jest.fn();
+    screen.UNSAFE_getByType(ScrollView).instance.scrollTo = scrollTo;
+
+    // Below the first row, the list scrolls only as far as the card needs.
+    fireEvent(screen.getByTestId('row-resume-item-0'), 'focus');
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    // In the first row, the row title shows too, so Up reaches the toolbar.
+    fireEvent(screen.getByTestId('row-myMedia-item-1'), 'focus');
+    expect(scrollTo).toHaveBeenCalledWith({y: 0});
   });
 
   describe('coming back to Home', () => {
