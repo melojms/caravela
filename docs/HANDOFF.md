@@ -1,12 +1,12 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after task 7).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 8).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status (task 8, movie playback) and the "Playback design" section in docs/PLAN.md.
-2. Describe the approach for task 8 and **wait for the user's approval** before writing code or briefs.
+1. Read the "Next" item under Status (task 9, Shaka HLS) and the "Playback design" section in docs/PLAN.md.
+2. Describe the approach for task 9 and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
-4. The Vega simulator is stopped; start it with `vega virtual-device start` when a check needs it.
+4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
 
 ## Status
 - **Done and merged to `main`:**
@@ -40,11 +40,28 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 7a `src/api/details.ts` (`useItemDetails` via `getLibraryApi().getItem`, `useSimilarItems` limit 20, optimistic `useToggleFavorite`/`useTogglePlayed` via `getUserDataApi`, which invalidate Home) and `src/api/itemInfo.ts` (androidtv info row and badges, Directed by / Runs / Ends, resume label, people → cards).
     - 7b `src/components/DetailsHeader.tsx`, `DetailsActions.tsx`, `detailsIcons.tsx` (poster, info row with star / tomato / badges, genres, overview, label/value pairs; round icon buttons with the label underneath). Shared view-model types in `src/components/types.ts`.
     - 7c `src/screens/DetailsScreen.tsx`: backdrop, header, Resume (when resumable, focused) / Play / Watched / Favorite, Cast & crew and More like this rows; similar → `push` another Details. Resume/Play are a silent no-op until task 8. Cast card ids are `${id}-${index}` (one person can be Director and Writer).
-- **Checks on `main`:** lint 0 errors (18 warnings, all Vega system-library notices), Jest 516 passing, `npm run build:release` OK. Task 7 was checked on the **Vega simulator** (see Gotchas), signed in as `melojms`.
-- **Next: movie playback (task 8).** Start with the approach and wait for approval; split into subtasks of ≤3 source files, parallel where file scopes don't overlap. Wire it to `onPlay(startMs)` in `DetailsScreen`.
-  - **Task 8: playback MVP for movies.** See docs/PLAN.md "Playback design" steps 1–5 and 9 (device profile from `MediaSource.isTypeSupported`, `getPostedPlaybackInfo` resolver, URL-mode direct play first, reporting start/progress/stopped, resume with pre-roll). androidtv references: `ui/playback/PlaybackManager.kt`, `PlaybackController.java`, `VideoManager.java`, `util/profile/` (device profile), `ui/playback/rewrite/`. Vega references: the `amazon-devices-vega-media-player` skill and `react_native_for_vega_media_player.md` (Amazon Devices MCP). Shaka/HLS transcoding is task 9.
+  - Task 8: movie playback MVP (briefs `docs/tasks/08*.md`). Details' Resume/Play open `Player` (`navigate`, no animation); direct play only, in URL mode.
+    - 8-0 `src/playback/types.ts` (`PlaybackSession`, `PlaybackResolution`, `PlaybackSnapshot`).
+    - 8a `@amazon-devices/react-native-w3cmedia@~2.3.4-rn-83` (PLAN's `~4.0` doesn't exist; Jest mock in `test/__mocks__/react-native-w3cmedia.ts`, mapped in `jest.config.json`), `src/playback/deviceProfile.ts` (probes via `MediaSource.isTypeSupported`, table `PROBES`; HDR10/HDR10+ can't be expressed, so they're treated as unsupported; no AC-3 in TS) and `src/playback/resolver.ts` (`getPostedPlaybackInfo`; direct play → static URL with `api_key`; anything else → "needs transcoding" until task 9).
+    - 8b `src/playback/reporting.ts`: start, progress every 3 s playing / 15 s paused, stopped. Reports are in `getSessionApi` in SDK 1.0.0. **No `stopEncodingProcess`**: SDK 1.0.0 and the 12.2 server don't have it.
+    - 8c-1 `src/playback/PlayerController.ts` (Vega init/teardown order; resume seeks on `loadedmetadata`, plays on `seeked`) and `src/screens/PlayerScreen.tsx` (spinner, errors with Retry/Back, Select/play key toggles pause, paused overlay with times; on exit it invalidates details + Home).
+    - 8c-2 wiring; key names: Select = `select` (TV) / `enter` (simulator), the remote's play/pause = `play`, fast-forward = `skip_forward`.
+  - Pre-roll is 0 (androidtv's default); the setting comes with task 14.
+- **Checks on `main`:** lint 0 errors (26 warnings, all Vega system-library notices), Jest 623 passing, `npm run build:release` OK. Task 8 was checked on the **Fire TV**: plays past 6 min with no stall, Select and play/pause work, Resume on mov lands on the position, "Resume from" moves after Back, no screensaver after 6.5 min, AC-3/E-AC-3 and Dolby Vision probe as supported.
+- **Next: Shaka HLS (task 9).** Start with the approach and wait for approval. See docs/PLAN.md "Playback design" steps 2–4 and the Vega Shaka doc (https://developer.amazon.com/docs/vega/latest/media-player-shaka-player.html).
+  - **Decided:** drop mkv from direct play, so the server remuxes it to HLS. On the Fire TV, URL mode can't seek in mkv (`Seek failed. Internal error 0`, code 50004), so Resume on an mkv starts from 0 until then.
+  - Check that a transcode ends when stopped is reported (Dashboard → Active devices), since there's no `stopEncodingProcess`.
   - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
+  - Playback: on the simulator, playback stalls 3–6 s in (audio clock stops, no event); fine on the TV. Use the TV for playback checks.
+  - Playback: the simulator crashes (Vega screens library) going from Quick Connect to Home; relaunching works. Not on the TV.
+  - Playback: audio/subtitle indexes are fixed per reporter; client-side track switches (task 10) need them in `PlaybackSnapshot`.
+  - Playback: requests have no timeout, so a hung progress report holds back stopped.
+  - Playback: no handling when the app goes to the background (the Vega troubleshooting doc says to release the player).
+  - Playback: Media Controls will need `com.amazon.media.playersession.service` in the manifest.
+  - Playback tests: Play pressed twice opens one player; a resume seek that never gets `seeked` (spinner forever); `startMs` past the end; ending while paused; Back while `initialize()` is pending at the screen level.
+  - Playback: Jellyfin only saves a resume point after 5% played; Paterson lost its resume point during the mkv tests.
+  - The 8c-2 simulator check printed that session's Jellyfin API key into the agent's local transcript; revoke that device session in the dashboard.
   - Details: after Back from a similar movie, no card looks focused (focus likely went back to the card while the page sits scrolled to the top). Refocus by hand like Home does.
   - Details: a cast card press (→ placeholder) was only covered by tests, not checked on the simulator. Person details come with the other details types.
   - Details: tests for a missing item `Id`, Back while a toggle is saving, the cast list changing after a refetch, and "Ends" not updating while the page stays open. Opening a similar movie already in the stack adds another copy.
@@ -97,7 +114,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - Text on the agent's `❯` input line after it finishes is usually Claude Code's prompt suggestion, not something the user sent.
 - **Parallel work:** two independent tasks can run at once. Keep each brief's file scope separate.
   - When two parallel tasks share data shapes, commit the shared types to `main` first (task 7 did this in `src/components/types.ts`), so each brief can build against them without the other's files.
-- **Device checks: use the Vega simulator** (the user's choice since task 7; details in Gotchas). The Fire TV notes below still apply if the user asks for the TV, or for things the simulator can't do (PLAN.md says captions don't render on the simulator, which matters for playback/subtitle tasks; ask the user before switching).
+- **Device checks:** playback checks use the **Fire TV** (the user chose it in task 8; the simulator stalls playback 3–6 s in). UI-only checks can use the Vega simulator (details in Gotchas). Captions also need the TV.
 - **Signing in during a check:** a fresh install wipes the session, so the agent must sign in with Quick Connect. Tell it in the brief to print the code on its own line as `QUICK CONNECT CODE: <code>`, keep polling, and fetch a new code if one expires. The orchestrating session relays the code to the user, who approves it in jellyfin-web. Never use the password.
 - **Shared Fire TV** (`192.168.50.124:5555`): every install, launch, input or screenshot runs inside `flock /tmp/caravela-device.lock -c '…'`.
   - When agents run in parallel, hold the lock for a whole flow (install → navigate → screenshot), not per step. Otherwise agents interleave on the TV.
