@@ -87,16 +87,32 @@ export function parseHomeSections(
   return sections;
 }
 
+/** True for an HTTP 401 from the SDK: the token is no longer valid. */
+export const isUnauthorized = (error: unknown): boolean =>
+  isAxiosError(error) && error.response?.status === 401;
+
+/**
+ * The user's Home section order. When the prefs can't be read, Home still
+ * shows, in the default order; only a 401 is rethrown, so the screen can send
+ * the user to the picker.
+ */
 export async function fetchHomeSections(
   api: Api,
   userId: string,
 ): Promise<HomeSection[]> {
-  const {data} = await getDisplayPreferenceApi(api).getDisplayPreferences({
-    displayPreferencesId: USER_SETTINGS_ID,
-    client: USER_SETTINGS_CLIENT,
-    userId,
-  });
-  return parseHomeSections(data.CustomPrefs);
+  try {
+    const {data} = await getDisplayPreferenceApi(api).getDisplayPreferences({
+      displayPreferencesId: USER_SETTINGS_ID,
+      client: USER_SETTINGS_CLIENT,
+      userId,
+    });
+    return parseHomeSections(data.CustomPrefs);
+  } catch (error) {
+    if (isUnauthorized(error)) {
+      throw error;
+    }
+    return parseHomeSections(undefined);
+  }
 }
 
 /** The user's Movies and TV libraries, for My Media. */
@@ -169,10 +185,6 @@ export function latestLibraries(
       isMovieOrShowLibrary(view) && !!view.Id && !excluded.includes(view.Id),
   );
 }
-
-/** True for an HTTP 401 from the SDK: the token is no longer valid. */
-export const isUnauthorized = (error: unknown): boolean =>
-  isAxiosError(error) && error.response?.status === 401;
 
 /** Query keys; each starts with the server and user so caches never mix. */
 export const homeKeys = {

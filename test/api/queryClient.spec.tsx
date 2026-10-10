@@ -1,9 +1,16 @@
+import {getDisplayPreferenceApi} from '@jellyfin/sdk/lib/utils/api/display-preference-api';
 import {getLibraryApi} from '@jellyfin/sdk/lib/utils/api/library-api';
 import {useQueryClient} from '@tanstack/react-query';
 import {act, renderHook, waitFor} from '@testing-library/react-native';
 import React, {ReactNode} from 'react';
 
-import {homeKeys, useLatest, useResume} from '../../src/api/home';
+import {
+  homeKeys,
+  isUnauthorized,
+  useHomeSections,
+  useLatest,
+  useResume,
+} from '../../src/api/home';
 import {
   createQueryClient,
   SessionQueryClientProvider,
@@ -17,10 +24,14 @@ import {
   signedInState,
 } from '../auth/fakes';
 
+jest.mock('@jellyfin/sdk/lib/utils/api/display-preference-api', () => ({
+  getDisplayPreferenceApi: jest.fn(),
+}));
 jest.mock('@jellyfin/sdk/lib/utils/api/library-api', () => ({
   getLibraryApi: jest.fn(),
 }));
 
+const displayPreferenceApi = {getDisplayPreferences: jest.fn()};
 const libraryApi = {getResumeItems: jest.fn(), getLatestMedia: jest.fn()};
 
 const httpError = (status: number) =>
@@ -47,6 +58,7 @@ beforeEach(() => {
   service = fakeService();
   store = fakeStore(signedInState());
   (getLibraryApi as jest.Mock).mockReturnValue(libraryApi);
+  (getDisplayPreferenceApi as jest.Mock).mockReturnValue(displayPreferenceApi);
 });
 
 describe('createQueryClient', () => {
@@ -137,6 +149,32 @@ describe('Home hooks', () => {
     await waitFor(() =>
       expect(result.current.resume.data).toEqual([{Id: 'item-u2'}]),
     );
+  });
+
+  it('useHomeSections shows the default order when the prefs fail', async () => {
+    displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
+      httpError(500),
+    );
+    const {result} = renderHook(useHomeSections, {wrapper});
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      'myMedia',
+      'resume',
+      'nextUp',
+      'latest',
+    ]);
+  });
+
+  it('useHomeSections reports a 401 as an error', async () => {
+    displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
+      httpError(401),
+    );
+    const {result} = renderHook(useHomeSections, {wrapper});
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(isUnauthorized(result.current.error)).toBe(true);
+    expect(displayPreferenceApi.getDisplayPreferences).toHaveBeenCalledTimes(1);
   });
 
   it('useLatest waits for a library id', async () => {

@@ -170,6 +170,33 @@ describe('fetchHomeSections', () => {
       'latest',
     ]);
   });
+  it('falls back to the defaults when the prefs request fails', async () => {
+    displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
+      httpError(500),
+    );
+    await expect(fetchHomeSections(api, 'u1')).resolves.toEqual([
+      'myMedia',
+      'resume',
+      'nextUp',
+      'latest',
+    ]);
+
+    displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
+      Object.assign(new Error('Network Error'), {isAxiosError: true}),
+    );
+    await expect(fetchHomeSections(api, 'u1')).resolves.toEqual([
+      'myMedia',
+      'resume',
+      'nextUp',
+      'latest',
+    ]);
+  });
+
+  it('rethrows a 401', async () => {
+    const unauthorized = httpError(401);
+    displayPreferenceApi.getDisplayPreferences.mockRejectedValue(unauthorized);
+    await expect(fetchHomeSections(api, 'u1')).rejects.toBe(unauthorized);
+  });
 });
 
 describe('row fetchers', () => {
