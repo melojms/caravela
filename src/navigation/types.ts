@@ -13,7 +13,15 @@ export type MenuParamList = {
   Settings: undefined;
 };
 
-export type RootStackParamList = {
+export type AuthStackParamList = {
+  AddServer: undefined;
+  UserPicker: {serverId: string};
+  Password: {serverId: string; username?: string; userId?: string};
+  QuickConnect: {serverId: string; userId?: string};
+};
+
+export type RootStackParamList = AuthStackParamList & {
+  Launch: undefined;
   Main: NavigatorScreenParams<MenuParamList> | undefined;
   DetailsPlaceholder: {itemId: string; title: string};
 };

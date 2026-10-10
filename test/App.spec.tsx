@@ -5,9 +5,22 @@ import * as React from 'react';
 import {App} from '../src/App';
 import {MENU_ENTRIES} from '../src/navigation/menuEntries';
 
+// Start signed in: the saved token is accepted.
+jest.mock('../src/auth/store', () => {
+  const {fakeStore, signedInState} = require('./auth/fakes');
+  const store = fakeStore(signedInState());
+  return {getAuthStore: () => store};
+});
+jest.mock('../src/auth/authService', () => {
+  const {fakeService} = require('./auth/fakes');
+  const service = fakeService();
+  return {getAuthService: () => service};
+});
+
 describe('App', () => {
-  it('shows a side menu with the five sections', () => {
+  it('shows a side menu with the five sections', async () => {
     const screen = render(<App />);
+    await screen.findByTestId('home-screen');
 
     expect(MENU_ENTRIES.map((entry) => entry.route)).toEqual([
       'Home',
@@ -21,10 +34,10 @@ describe('App', () => {
     }
   });
 
-  it('starts on Home with three rows', () => {
+  it('starts on Home with three rows', async () => {
     const screen = render(<App />);
 
-    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(await screen.findByTestId('home-screen')).toBeTruthy();
     expect(screen.getByTestId('row-continue')).toBeTruthy();
     expect(screen.getByTestId('row-latest-movies')).toBeTruthy();
     expect(screen.getByTestId('row-latest-shows')).toBeTruthy();
@@ -32,6 +45,7 @@ describe('App', () => {
 
   it('switches section from the menu and opens details from a card', async () => {
     const screen = render(<App />);
+    await screen.findByTestId('home-screen');
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('menu-item-Movies'));
