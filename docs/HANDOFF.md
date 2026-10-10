@@ -1,6 +1,6 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after task 5.5).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after task 7).
 
 ## Status
 - **Done and merged to `main`:**
@@ -30,12 +30,20 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 5.5c-2 removed the bottom-tabs dependency, its manifest module and `layout.menuWidth`.
     - 5.5c-1 toolbar focus: Up from the first row lands on the active toolbar button; Down returns to the last card; Search opens focused; the backdrop fills the screen behind a transparent toolbar; focus returns to the last card after Back (`FocusableCard` passes its native tag, Home refocuses it 100 ms after regaining focus; the stack's transitionEnd never fires on Vega); a first-row card scrolls Home to the top; My media cards open Movies / Shows.
   - Decisions for 5.5: avatar press → picker (switch user); Settings stays a full screen; Movies/Shows only reachable from My media; Back on Home exits with no confirmation; toolbar only on Home and Search; the Home backdrop fills the whole screen.
-- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 371 passing, the Release build installs and runs on the Fire TV. The TV is signed in as `melojms` (every `run-app` wipes that).
-- **Next: the user wants the movie details screen, then movie playback** (requested 2026-10-10). Start with the approach for the details screen and wait for approval; split into subtasks of ≤3 source files, parallel where file scopes don't overlap.
-  - **Task 7 (movies first): movie details.** Replace `DetailsPlaceholder` for movies (episodes/series stay on the placeholder until later). Port androidtv's `ui/itemdetail/FullDetailsFragment.java`, `FullDetailsFragmentHelper.kt`, `MyDetailsOverviewRow.kt` (and the details presenters under `ui/presentation/`): backdrop, logo/title, info row (year, rating, runtime, "ends at", community/critic rating, resolution/audio badges), overview, genres, director/cast, actions (Resume / Play / Restart, Watched, Favorite, audio/subtitle/version pickers later), rows for cast and similar items (`getSimilarItems`). Data via TanStack Query like `src/api/home.ts`.
+  - Task 7: movie details (briefs `docs/tasks/07*.md`). Home's cards open `Details`; non-movies (episodes, series, people) and the mock Movies/Shows grids still go to `DetailsPlaceholder`.
+    - 7a `src/api/details.ts` (`useItemDetails` via `getLibraryApi().getItem`, `useSimilarItems` limit 20, optimistic `useToggleFavorite`/`useTogglePlayed` via `getUserDataApi`, which invalidate Home) and `src/api/itemInfo.ts` (androidtv info row and badges, Directed by / Runs / Ends, resume label, people → cards).
+    - 7b `src/components/DetailsHeader.tsx`, `DetailsActions.tsx`, `detailsIcons.tsx` (poster, info row with star / tomato / badges, genres, overview, label/value pairs; round icon buttons with the label underneath). Shared view-model types in `src/components/types.ts`.
+    - 7c `src/screens/DetailsScreen.tsx`: backdrop, header, Resume (when resumable, focused) / Play / Watched / Favorite, Cast & crew and More like this rows; similar → `push` another Details. Resume/Play are a silent no-op until task 8. Cast card ids are `${id}-${index}` (one person can be Director and Writer).
+- **Checks on `main`:** lint 0 errors (18 warnings, all Vega system-library notices), Jest 516 passing, `npm run build:release` OK. Task 7 was checked on the **Vega simulator** (see Gotchas), signed in as `melojms`.
+- **Next: movie playback (task 8).** Start with the approach and wait for approval; split into subtasks of ≤3 source files, parallel where file scopes don't overlap. Wire it to `onPlay(startMs)` in `DetailsScreen`.
   - **Task 8: playback MVP for movies.** See docs/PLAN.md "Playback design" steps 1–5 and 9 (device profile from `MediaSource.isTypeSupported`, `getPostedPlaybackInfo` resolver, URL-mode direct play first, reporting start/progress/stopped, resume with pre-roll). androidtv references: `ui/playback/PlaybackManager.kt`, `PlaybackController.java`, `VideoManager.java`, `util/profile/` (device profile), `ui/playback/rewrite/`. Vega references: the `amazon-devices-vega-media-player` skill and `react_native_for_vega_media_player.md` (Amazon Devices MCP). Shaka/HLS transcoding is task 9.
   - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
+  - Details: after Back from a similar movie, no card looks focused (focus likely went back to the card while the page sits scrolled to the top). Refocus by hand like Home does.
+  - Details: a cast card press (→ placeholder) was only covered by tests, not checked on the simulator. Person details come with the other details types.
+  - Details: tests for a missing item `Id`, Back while a toggle is saving, the cast list changing after a refetch, and "Ends" not updating while the page stays open. Opening a similar movie already in the stack adds another copy.
+  - Details buttons don't return focus to the last focused button (androidtv does).
+  - On the simulator, right after Quick Connect sign-in Caravela went to the background once; relaunching (no reinstall) kept the session.
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Add tests for repeated `onEndReached` calls, the end of paging, and progress values ≤0 or ≥1.
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
@@ -101,6 +109,9 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 - **Manifest:** the build adds `[[needs.module]]` entries for each native package it uses. Keep them when merging.
 - **Untracked files:** the Amazon Builder Tools create an untracked `CLAUDE.md` and `.claude/skills/` in the repo. Leave them uncommitted.
 - **Vega CLI:** read `vega_cli_commands_reference.md` (Amazon Devices MCP) before using new Vega CLI commands.
-- **Vega Virtual Device (simulator):** `vega virtual-device start` works, and `run-app … -d VirtualDevice` installs the x86_64 build (vda serial `emulator-5554`). But agents can't check their work there: `gwsi-tool-screenshooter`, QEMU `screendump` and the emulator console screenshot all give black images, and keys sent with `inputd-cli` don't reach apps. Appium with the Vega driver is the only documented route (Node ≤22, flaky screenshots per the forum). Use the Fire TV; if it's busy, finish code/tests/builds and batch the TV checks.
+- **Vega Virtual Device (simulator)** (the user's choice for checks since task 7): `vega virtual-device start`, then `vega run-app build/x86_64-release/caravela_x86_64.vpkg com.melojms.caravela.main -d VirtualDevice` (wipes storage). Shared: run each flow inside `flock /tmp/caravela-sim.lock -c '…'`.
+  - **Input works** with vda serial `emulator-5554`: `vega exec vda -s emulator-5554 shell inputd-cli button_press KEY_DOWN` (and `send_text`). The old note that keys don't reach apps is wrong on SDK 0.24.
+  - **Screenshots:** `gwsi-tool-screenshooter` is black here, and `grim` doesn't work on GNOME Wayland. Capture the simulator's XWayland window from the host with ImageMagick: `W=$(xwininfo -root -tree | grep '"vega-virtual-device" "vega-virtual-device"' | grep 'Vega Virtual Device' | awk '{print $1}'); import -window "$W" <scratchpad>/x.png`. Look `W` up each time; crop off the on-screen remote on the right.
+  - Quick Connect codes expire; the agent prints the code and the user approves it.
 - **Main checkout:** run `npm ci` before building there; its `node_modules` goes stale as worktrees add packages.
 - **Playback** (task 8+): the research notes are in docs/PLAN.md under "Playback design". Use Shaka 4.16.13-r1.2 for HLS. ASS and PGS subtitles must be burned in by the server.
