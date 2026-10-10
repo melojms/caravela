@@ -44,6 +44,12 @@ id = "/com.amazon.kepler.navigation__routers_8@INavigation__Routers_0"
 [[needs.module]]
 id = "/com.amazon.kepler.async_storage__async_storage_2@IAsyncStorage__AsyncStorage_1"
 
+[[needs.module]]
+id = "/com.amazon.kepler.localize_2@ILocalize_1"
+
+[[needs.module]]
+id = "/com.amazon.kepler.svg_3@ISVG_0"
+
 [components]
 [[components.interactive]]
 id = "com.melojms.caravela.main"
