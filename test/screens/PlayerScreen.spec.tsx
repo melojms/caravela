@@ -275,6 +275,20 @@ describe('PlayerScreen', () => {
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 
+  it("toggles pause on `play`, the Fire TV remote's play/pause key", async () => {
+    const {player} = await renderPlaying();
+    player.paused = false;
+    fire(player, 'playing');
+
+    pressKey('play');
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    player.paused = true;
+    fire(player, 'pause');
+
+    pressKey('play');
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the overlay while loading after a seek', async () => {
     const {player} = await renderPlaying();
     player.paused = false;

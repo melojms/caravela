@@ -179,14 +179,13 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       return;
     }
     switch (event.eventType) {
-      // The simulator's OK key (and a keyboard's Enter) arrives as `enter`.
+      // The simulator's OK key (and a keyboard's Enter) arrives as `enter`,
+      // and the Fire TV remote's play/pause key as `play`.
       case 'select':
       case 'enter':
       case 'playpause':
-        controller.togglePause();
-        break;
       case 'play':
-        controller.play();
+        controller.togglePause();
         break;
       case 'pause':
         controller.pause();
