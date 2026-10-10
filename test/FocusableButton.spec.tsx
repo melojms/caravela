@@ -95,4 +95,103 @@ describe('FocusableButton', () => {
     fireEvent.press(screen.getByTestId('btn'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  describe('style combinations', () => {
+    const renderButton = (props: {active?: boolean; disabled?: boolean}) =>
+      render(<FocusableButton testID="btn" label="Connect" {...props} />);
+    const buttonStyle = (screen: ReturnType<typeof render>) =>
+      flatStyle(screen.getByTestId('btn').props.style);
+    const labelColor = (screen: ReturnType<typeof render>) =>
+      flatStyle(screen.getByText('Connect').props.style).color;
+
+    it('keeps a transparent border of the focus width at rest', () => {
+      const screen = renderButton({});
+      expect(buttonStyle(screen)).toMatchObject({
+        borderWidth: focus.borderWidth,
+        borderColor: colors.transparent,
+        backgroundColor: colors.surface,
+      });
+      expect(buttonStyle(screen).transform).toBeUndefined();
+      expect(labelColor(screen)).toBe(colors.textMuted);
+    });
+
+    it('shows a violet outline and a white label while active', () => {
+      const screen = renderButton({active: true});
+      expect(buttonStyle(screen)).toMatchObject({
+        borderWidth: focus.borderWidth,
+        borderColor: colors.violet,
+        backgroundColor: colors.surfaceRaised,
+      });
+      expect(buttonStyle(screen).transform).toBeUndefined();
+      expect(labelColor(screen)).toBe(colors.text);
+    });
+
+    it('shows the focus ring and a white label while focused', () => {
+      const screen = renderButton({});
+      fireEvent(screen.getByTestId('btn'), 'focus');
+      expect(buttonStyle(screen)).toMatchObject({
+        borderWidth: focus.borderWidth,
+        borderColor: colors.focus,
+        backgroundColor: colors.violet,
+        transform: [{scale: focus.scale}],
+      });
+      expect(labelColor(screen)).toBe(colors.text);
+    });
+
+    it('lets focus win over active', () => {
+      const screen = renderButton({active: true});
+      fireEvent(screen.getByTestId('btn'), 'focus');
+      expect(buttonStyle(screen)).toMatchObject({
+        borderWidth: focus.borderWidth,
+        borderColor: colors.focus,
+        backgroundColor: colors.violet,
+        transform: [{scale: focus.scale}],
+      });
+      expect(labelColor(screen)).toBe(colors.text);
+    });
+
+    it('goes back to the active outline after blur', () => {
+      const screen = renderButton({active: true});
+      const button = screen.getByTestId('btn');
+      fireEvent(button, 'focus');
+      fireEvent(button, 'blur');
+      expect(buttonStyle(screen)).toMatchObject({
+        borderColor: colors.violet,
+        backgroundColor: colors.surfaceRaised,
+      });
+      expect(buttonStyle(screen).transform).toBeUndefined();
+    });
+
+    it('dims a disabled button and keeps its label muted', () => {
+      const screen = renderButton({disabled: true});
+      expect(buttonStyle(screen)).toMatchObject({
+        borderColor: colors.transparent,
+        backgroundColor: colors.surface,
+        opacity: 0.5,
+      });
+      expect(labelColor(screen)).toBe(colors.textMuted);
+    });
+
+    it('keeps the violet outline, dimmed, when disabled and active', () => {
+      const screen = renderButton({active: true, disabled: true});
+      expect(buttonStyle(screen)).toMatchObject({
+        borderWidth: focus.borderWidth,
+        borderColor: colors.violet,
+        backgroundColor: colors.surface,
+        opacity: 0.5,
+      });
+      expect(labelColor(screen)).toBe(colors.textMuted);
+    });
+
+    it('shows the focus ring, dimmed, when disabled, active and focused', () => {
+      const screen = renderButton({active: true, disabled: true});
+      fireEvent(screen.getByTestId('btn'), 'focus');
+      expect(buttonStyle(screen)).toMatchObject({
+        borderColor: colors.focus,
+        backgroundColor: colors.surface,
+        opacity: 0.5,
+      });
+      expect(labelColor(screen)).toBe(colors.textMuted);
+    });
+  });
 });

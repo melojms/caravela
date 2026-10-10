@@ -53,9 +53,11 @@ export const FocusableButton = memo(
         onPress={handlePress}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        // Focus wins over active. Disabled+active keeps the violet outline,
+        // dimmed: the option is still the selection, it just can't be changed.
         style={[
           styles.button,
-          active && styles.active,
+          active && !focused && styles.active,
           focused && styles.focused,
           disabled && styles.disabled,
         ]}>
@@ -78,11 +80,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     justifyContent: 'center',
     borderRadius: radius.md,
+    // Always drawn (transparent at rest), so the active outline and the focus
+    // ring don't resize or shift the button.
     borderWidth: focus.borderWidth,
     borderColor: colors.transparent,
     backgroundColor: colors.surface,
   },
   active: {
+    borderColor: colors.violet,
     backgroundColor: colors.surfaceRaised,
   },
   focused: {
