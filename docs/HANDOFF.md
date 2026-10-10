@@ -1,6 +1,6 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 3d).
 
 ## Status
 - **Done and merged to `main`:**
@@ -13,42 +13,12 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
     - 3b-1 Quick Connect (the default) and Password screens.
     - 3b-2 Settings account section: switch user, sign out, auto-login off / last / specific user.
     - 3c focus ring on user tiles, a `disabled` prop on FocusableButton, keyboard title.
+    - 3d sign-in follow-ups, in parallel (`docs/tasks/03d*.md`):
+    - 3d-1 Quick Connect only shows on Password when the server has it on (`isQuickConnectEnabled`). The countdown reads `attempt.expiresAt` (the service owns the timeout). Sign in and Try again use `disabled` while busy.
+    - 3d-2 `active` FocusableButton (not focused) gets a violet outline, including the side menu. Disabled+active keeps the outline, dimmed.
   - Task 4: side menu (Home / Movies / Shows / Search / Settings), theme, FocusableCard / ContentRow / PosterGrid / FocusableButton, with mock data in `src/dev/mockItems.ts`.
-- **Checks on `main`:** lint shows 0 errors, Jest has 189 passing tests, and the Release build installs and runs on the Fire TV.
-  - The full sign-in flow was checked on the TV: add server, picker, Quick Connect, Home, Settings, auto-login after a restart, switch user, sign out.
-  - The TV is currently signed out.
-- **Next: 3d, sign-in follow-ups. The user has APPROVED the approach below** (2026-10-10). Start it directly; don't ask for approval again.
-  - **Setup:** two subtasks in parallel. Each gets its own worktree, brief (`docs/tasks/03d1-*.md`, `docs/tasks/03d2-*.md`) and herdr pane. Their file scopes don't overlap.
-  - **3d-1: Quick Connect and Password.** Worktree `../caravela-wt/task-03d1`, branch `task/03d1-quick-connect`.
-    - `src/auth/authService.ts`:
-      - Add `isQuickConnectEnabled(serverId)` using the SDK's Quick Connect API `getQuickConnectEnabled`, with no token.
-      - Add `expiresAt: number` (epoch ms) to `QuickConnectAttempt`, set by `startQuickConnect` from its `timeoutMs`.
-      - **Decision:** the service owns the timeout. The screen doesn't export or duplicate the default.
-    - `src/screens/auth/QuickConnectScreen.tsx`:
-      - The countdown reads `attempt.expiresAt`. Remove the screen's own `timeoutMs` prop and default.
-      - Use `FocusableButton disabled` while busy, instead of dropping `onPress`.
-    - `src/screens/auth/PasswordScreen.tsx`:
-      - Call `isQuickConnectEnabled` on mount and show "Use Quick Connect" only when it returns true.
-      - If the check fails, keep the button hidden; sign-in must still work.
-      - The Sign in button uses `disabled` while signing in.
-    - **Tests:**
-      - The service: enabled, disabled, network error, `expiresAt`.
-      - The countdown follows `expiresAt` (fake timers).
-      - Password hides or shows the button for each of enabled / disabled / failed.
-      - The disabled states.
-      - Update `test/auth/fakes.ts`.
-    - **On the TV:** screenshots of the Quick Connect screen (pick `melojms`, then Cancel without approving) and the Password screen (via "Use password"; never type or submit a password). No sign-in is needed.
-  - **3d-2: clearer selected state.** Worktree `../caravela-wt/task-03d2`, branch `task/03d2-active-style`.
-    - `src/components/FocusableButton.tsx`: when `active` but not focused, give it a violet outline (`colors.violet`, `focus.borderWidth`) and a white label, so the selected auto-login option in Settings stands out. Leave the focused style as it is.
-    - **Decision:** this applies everywhere `active` is used, **including the side menu** (Home / Movies / …). The user approved that.
-    - **Tests:** the active, focused, active+focused and disabled style combinations.
-    - **On the TV:** screenshots of the Settings auto-login row (unfocused, with the selection visible) and the side menu.
-      - This needs a sign-in. The TV is signed out, so **ask the user to approve one Quick Connect code** in the Jellyfin dashboard. Print the code and wait.
-      - Don't sign out at the end.
-      - Don't commit screenshots that show avatar photos.
-  - **Merge order:** 3d-2 first (one file), then rebase 3d-1 onto it and merge. Follow "Before merging to `main`" below.
-  - **Then task 5, Home rows.** Describe the approach and wait for approval.
-
+- **Checks on `main`:** lint 0 errors, Jest 210 passing, the Release build installs and runs on the Fire TV. The TV is signed out (the last install wiped storage).
+- **Next: task 5, Home rows.** Describe the approach and wait for approval.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Home doesn't remember the last-focused card: it focuses the first card after you come back.
@@ -56,6 +26,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
   - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
+  - From 3d: tests for a countdown whose `expiresAt` is already past (show 0:00), repeated Try again failures, Sign in pressed while the Quick Connect check is pending, and a button that turns disabled while focused and active.
 
 ## Decisions and preferences
 - **App:** name **Caravela**, package `com.melojms.caravela`, icon concept B "Sail" (`assets/brand/caravela-icon.svg`). Licence GPL-2.0. Unofficial; works with Jellyfin.
