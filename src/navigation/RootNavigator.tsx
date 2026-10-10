@@ -7,6 +7,7 @@ import {
 import {createNativeStackNavigator} from '@amazon-devices/react-navigation__native-stack';
 import React from 'react';
 
+import {SessionQueryClientProvider} from '../api/queryClient';
 import type {AuthService} from '../auth/authService';
 import {SessionProvider, useSession} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
@@ -116,6 +117,8 @@ const Navigation = () => {
 
 export const RootNavigator = ({authService, authStore}: RootNavigatorProps) => (
   <SessionProvider authService={authService} authStore={authStore}>
-    <Navigation />
+    <SessionQueryClientProvider>
+      <Navigation />
+    </SessionQueryClientProvider>
   </SessionProvider>
 );
