@@ -107,7 +107,7 @@
   - Ticks/ms conversion.
   - Reporting cadence.
   - Next-up and segment-skip logic.
-- **Test server:** the user's server https://jellyfin.example.lan (12.2) with a test library: h264/aac mp4, hevc 10-bit mkv, an AV1 file, ac3/eac3/dts audio, SRT / ASS / PGS subtitles, files with intro segments and trickplay, and a multi-season series.
+- **Test server:** the user's server (address in `docs/LOCAL.md`, not committed; 12.2) with a test library: h264/aac mp4, hevc 10-bit mkv, an AV1 file, ac3/eac3/dts audio, SRT / ASS / PGS subtitles, files with intro segments and trickplay, and a multi-season series.
 - **On-device:**
   - Build and install with the Vega CLI, after reading the CLI reference and confirming the commands.
   - Test on a **physical Fire TV**, because captions don't render on the simulator.
@@ -115,7 +115,7 @@
 - **Performance:** run the Vega KPI checks (UI fluidity on grids, time to first frame) before release.
 
 ## Decisions
-- **Test server:** https://jellyfin.example.lan, using a dedicated test user (no main-account password in chat).
+- **Test server:** the address in `docs/LOCAL.md` (not committed), using a dedicated test user (no main-account password in chat).
 - **Device:** physical Fire TV running Vega, connected over the network on port 5555.
 - **Deferred:** UDP server discovery (you type the server address), websocket remote control.
 - **Language:** English only to start.

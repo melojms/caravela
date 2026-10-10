@@ -28,21 +28,22 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 5.5a `src/components/Toolbar.tsx` + `ToolbarClock.tsx` (avatar, Home/Search, settings gear via `@amazon-devices/react-native-svg`, clock following the device 12/24 h via `@amazon-devices/react-native-localize`).
     - 5.5b the root stack holds Home / Search / Settings / Movies / Shows / DetailsPlaceholder directly; `ScreenContainer` takes `toolbar="home" | "search"`. Back pops; Back on Home exits the app.
     - 5.5c-2 removed the bottom-tabs dependency, its manifest module and `layout.menuWidth`.
-    - **5.5c-1 (focus) may still be in progress**: worktree `../caravela-wt/task-055c1`, branch `task/055c1-focus`, brief `docs/tasks/055c1-focus.md`, herdr pane `w3:pR`. It fixes: Up from the first row lands on Home (not the avatar); Down returns to the rows; Search opens focused; the backdrop fills the screen behind the toolbar; focus returns to the last card after Back (touches `FocusableCard`/`renderCard`, approved); My media cards open Movies / Shows. **Check `git log main` first**: if `task/055c1-focus` isn't merged, read its report in the pane (or its commits), verify (lint, tsc, tests, build, TV check with screenshots, avatar blurred), merge with `--ff-only`, remove the worktree. If the worktree is gone and the branch merged, it's done.
+    - 5.5c-1 toolbar focus: Up from the first row lands on the active toolbar button; Down returns to the last card; Search opens focused; the backdrop fills the screen behind a transparent toolbar; focus returns to the last card after Back (`FocusableCard` passes its native tag, Home refocuses it 100 ms after regaining focus; the stack's transitionEnd never fires on Vega); a first-row card scrolls Home to the top; My media cards open Movies / Shows.
   - Decisions for 5.5: avatar press → picker (switch user); Settings stays a full screen; Movies/Shows only reachable from My media; Back on Home exits with no confirmation; toolbar only on Home and Search; the Home backdrop fills the whole screen.
-- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 349 passing, the Release build installs and runs on the Fire TV. The TV is signed in as `melojms` (every `run-app` wipes that).
+- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 371 passing, the Release build installs and runs on the Fire TV. The TV is signed in as `melojms` (every `run-app` wipes that).
 - **Next: the user wants the movie details screen, then movie playback** (requested 2026-10-10). Start with the approach for the details screen and wait for approval; split into subtasks of ≤3 source files, parallel where file scopes don't overlap.
   - **Task 7 (movies first): movie details.** Replace `DetailsPlaceholder` for movies (episodes/series stay on the placeholder until later). Port androidtv's `ui/itemdetail/FullDetailsFragment.java`, `FullDetailsFragmentHelper.kt`, `MyDetailsOverviewRow.kt` (and the details presenters under `ui/presentation/`): backdrop, logo/title, info row (year, rating, runtime, "ends at", community/critic rating, resolution/audio badges), overview, genres, director/cast, actions (Resume / Play / Restart, Watched, Favorite, audio/subtitle/version pickers later), rows for cast and similar items (`getSimilarItems`). Data via TanStack Query like `src/api/home.ts`.
   - **Task 8: playback MVP for movies.** See docs/PLAN.md "Playback design" steps 1–5 and 9 (device profile from `MediaSource.isTypeSupported`, `getPostedPlaybackInfo` resolver, URL-mode direct play first, reporting start/progress/stopped, resume with pre-roll). androidtv references: `ui/playback/PlaybackManager.kt`, `PlaybackController.java`, `VideoManager.java`, `util/profile/` (device profile), `ui/playback/rewrite/`. Vega references: the `amazon-devices-vega-media-player` skill and `react_native_for_vega_media_player.md` (Amazon Devices MCP). Shaka/HLS transcoding is task 9.
   - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
-  - Home doesn't remember the last-focused card: it focuses the first card after you come back.
   - Add tests for repeated `onEndReached` calls, the end of paging, and progress values ≤0 or ≥1.
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
   - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
   - Jest warns "a worker process has failed to exit gracefully" (a leaked timer somewhere); find it with `--detectOpenHandles`.
+  - Movies and Shows open with nothing focused; focus their first item (5.5c-1 left it out of scope).
+  - The 100 ms refocus delay on Home is tuned on this TV only; the refocus tag points at a recycled Carousel view, so a refetch that reorders a row may focus a different card.
   - Lock files: only regenerate `package-lock.json` when a rebase conflicts on it. Regenerating from an existing `node_modules` strips `resolved`/`integrity`.
   - KEY_HOME sent with `inputd-cli` from inside Caravela did nothing (Back worked). Check with the real remote.
   - The app-pill SVG → PNG generator isn't in the repo; re-export `caravela-pill.svg` to 512×512 by hand.
@@ -54,7 +55,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 - **App:** name **Caravela**, package `com.melojms.caravela`, icon concept B "Sail" (`assets/brand/caravela-icon.svg`). Licence GPL-2.0. Unofficial; works with Jellyfin.
 - **Scope:** movies and TV shows only. No Live TV or music. English only.
   - Deferred: UDP server discovery (the user types the server address) and websocket remote control.
-- **Jellyfin:** 12.0+ (the test server `https://jellyfin.example.lan` runs 12.2) with `@jellyfin/sdk` 1.0.0. Storage is Vega's async-storage. Tokens are unencrypted for now, which the user accepted.
+- **Jellyfin:** 12.0+ (the test server runs 12.2; its address is in `docs/LOCAL.md`, which is untracked) with `@jellyfin/sdk` 1.0.0. Storage is Vega's async-storage. Tokens are unencrypted for now, which the user accepted.
+- **Privacy (public repo, https://github.com/melojms/caravela):** never commit the server address (keep it in `docs/LOCAL.md`; briefs say "the server address in docs/LOCAL.md"), and never commit a screenshot that shows the server address or an unblurred avatar. Keep those in the scratchpad. Blurred avatars are OK. Before pushing, `git grep` for the hostname from `docs/LOCAL.md` must find nothing.
 - **Login:** test user `melojms`. **Never ask for or use the password**; use Quick Connect and the user approves it.
 - **Look and feel: match the official jellyfin-androidtv app.** When in doubt, check how it's done there. A shallow clone lives at `../caravela-wt/ref/jellyfin-androidtv` (Home: `app/src/main/java/org/jellyfin/androidtv/ui/home/`, cards: `ui/presentation/CardPresenter.kt`, `ui/composable/item/`, backdrop: `data/service/BackgroundService.kt`, `ui/background/AppBackground.kt`).
 - **UI:** the side menu changes section on press, not on focus. It will be replaced by a top toolbar in task 5.5.
@@ -66,7 +68,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - For bugs, write a reproducing test first.
   - Use `git switch -c`.
   - Commits have no Co-Authored-By or Claude-Session trailers.
-  - Don't push or open PRs unless asked.
+  - Don't push or open PRs unless asked. `origin` is the public GitHub repo; push `main` only.
   - Prefer herdr panes over hidden subagents.
 
 ## How we work

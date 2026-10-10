@@ -12,3 +12,6 @@ CMakeUserPresets.json
 npm-debug.log
 buildinfo.json
 generated
+
+# Private local notes (server address etc.)
+docs/LOCAL.md
