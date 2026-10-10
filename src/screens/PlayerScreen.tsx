@@ -179,7 +179,9 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       return;
     }
     switch (event.eventType) {
+      // The simulator's OK key (and a keyboard's Enter) arrives as `enter`.
       case 'select':
+      case 'enter':
       case 'playpause':
         controller.togglePause();
         break;
