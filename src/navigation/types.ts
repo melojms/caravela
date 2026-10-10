@@ -22,6 +22,8 @@ export type RootStackParamList = AuthStackParamList & {
   Shows: undefined;
   Details: {itemId: string; title: string};
   DetailsPlaceholder: {itemId: string; title: string};
+  /** `startMs` is the Resume position, or 0 to play from the start. */
+  Player: {itemId: string; title: string; startMs: number};
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =

@@ -1,0 +1,406 @@
+import type {Api} from '@jellyfin/sdk';
+import {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
+
+import {createPlaybackReporter, type PlaybackReporter} from './reporting';
+import type {PlaybackSession, PlaybackSnapshot} from './types';
+
+/** What the player is doing, as the screen shows it. */
+export type PlayerState = 'loading' | 'playing' | 'paused' | 'ended';
+
+export type PlayerListeners = {
+  onStateChange?(state: PlayerState): void;
+  /** Position and duration in ms, on every `timeupdate` and seek. */
+  onPositionChange?(positionMs: number, durationMs: number): void;
+  /** A fatal error: playback stopped and was reported as stopped. */
+  onError?(message: string): void;
+};
+
+/** W3C `MediaError` codes. */
+const MEDIA_ERR_ABORTED = 1;
+const MEDIA_ERR_NETWORK = 2;
+const MEDIA_ERR_DECODE = 3;
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+
+export const PLAYER_ERROR_MESSAGES: Record<number, string> = {
+  [MEDIA_ERR_ABORTED]: 'Playback was stopped before the video loaded.',
+  [MEDIA_ERR_NETWORK]:
+    'A network error stopped playback. Check the connection to the server.',
+  [MEDIA_ERR_DECODE]: "This video couldn't be decoded.",
+  [MEDIA_ERR_SRC_NOT_SUPPORTED]: "This video format isn't supported.",
+};
+/** androidtv's `video_error_unknown_error` fallback. */
+export const UNKNOWN_PLAYER_ERROR = 'Video playback error.';
+export const INIT_ERROR_MESSAGE = "The video player couldn't start.";
+
+/** A readable message for a `MediaError` (or nothing the player set). */
+export function mediaErrorMessage(error?: {code?: number} | null): string {
+  return (
+    (error?.code && PLAYER_ERROR_MESSAGES[error.code]) || UNKNOWN_PLAYER_ERROR
+  );
+}
+
+const warn = (what: string, reason: unknown) => {
+  if (__DEV__) {
+    console.warn(`Player ${what} failed`, reason);
+  }
+};
+
+/** Runs a player call that may throw or return a rejecting promise. */
+const attempt = (what: string, call: () => unknown) => {
+  try {
+    const result = call();
+    if (result instanceof Promise) {
+      result.catch((reason) => warn(what, reason));
+    }
+  } catch (reason) {
+    warn(what, reason);
+  }
+};
+
+const MEDIA_EVENTS = [
+  'loadedmetadata',
+  'durationchange',
+  'play',
+  'playing',
+  'pause',
+  'waiting',
+  'seeking',
+  'seeked',
+  'timeupdate',
+  'ended',
+  'error',
+] as const;
+type MediaEvent = (typeof MEDIA_EVENTS)[number];
+
+/**
+ * One play session on a Vega `VideoPlayer` in URL mode, after androidtv's
+ * `PlaybackController` (state, initial seek, report loop). No React here: the
+ * screen forwards the surface callbacks and remote keys.
+ *
+ * Lifecycle (react_native_for_vega_media_player_architecture.md and
+ * vega-video-sample): `new VideoPlayer()` → `await initialize()` → listeners →
+ * `setSurfaceHandle` (a surface that arrives first is cached) → `src`.
+ * `destroy()` pauses, clears the surface, `deinitialize()`s, then removes the
+ * listeners; a surface destroyed after that is ignored.
+ */
+export class PlayerController {
+  private readonly player = new VideoPlayer();
+  private readonly reporter: PlaybackReporter;
+  private readonly handlers: Record<MediaEvent, () => void>;
+
+  private initialized = false;
+  private destroyed = false;
+  private destroying?: Promise<void>;
+  private surface?: string;
+  private surfaceSet = false;
+  private loaded = false;
+  /** Resume: seek on `loadedmetadata`, play on the `seeked` that follows. */
+  private initialSeek: 'pending' | 'seeking' | 'done';
+  private started = false;
+  private state: PlayerState = 'loading';
+  private failed = false;
+
+  /** Resolves once `initialize()` settled (and listeners are on). For tests. */
+  readonly ready: Promise<void>;
+
+  constructor(
+    api: Api,
+    private readonly session: PlaybackSession,
+    private readonly listeners: PlayerListeners = {},
+  ) {
+    this.initialSeek = session.startMs > 0 ? 'pending' : 'done';
+    this.reporter = createPlaybackReporter(api, session, () => this.snapshot());
+    this.handlers = {
+      loadedmetadata: this.onLoadedMetadata,
+      durationchange: this.emitPosition,
+      play: this.onPlay,
+      playing: this.onPlaying,
+      pause: this.onPause,
+      waiting: this.onWaiting,
+      seeking: this.onWaiting,
+      seeked: this.onSeeked,
+      timeupdate: this.emitPosition,
+      ended: this.onEnded,
+      error: this.onError,
+    };
+    this.ready = this.initialize();
+  }
+
+  get positionMs(): number {
+    const seconds = this.read(() => this.player.currentTime);
+    return Number.isFinite(seconds) ? Math.max(0, seconds * 1000) : 0;
+  }
+
+  /** The player's duration, or the server's until the metadata loads. */
+  get durationMs(): number {
+    const seconds = this.read(() => this.player.duration);
+    return Number.isFinite(seconds) && seconds > 0
+      ? seconds * 1000
+      : this.session.durationMs ?? 0;
+  }
+
+  get paused(): boolean {
+    return this.read(() => this.player.paused) ?? true;
+  }
+
+  get playerState(): PlayerState {
+    return this.state;
+  }
+
+  /** From `KeplerVideoSurfaceView.onSurfaceViewCreated`. */
+  attachSurface(handle: string) {
+    if (this.destroyed) {
+      return;
+    }
+    this.surface = handle;
+    this.surfaceSet = false;
+    this.setSurface();
+  }
+
+  /** From `onSurfaceViewDestroyed`. Ignored after `destroy()`. */
+  detachSurface(handle: string) {
+    if (this.destroyed || this.surface !== handle) {
+      return;
+    }
+    if (this.surfaceSet) {
+      attempt('clearSurfaceHandle', () =>
+        this.player.clearSurfaceHandle(handle),
+      );
+    }
+    this.surface = undefined;
+    this.surfaceSet = false;
+  }
+
+  togglePause() {
+    if (this.paused) {
+      this.play();
+    } else {
+      this.pause();
+    }
+  }
+
+  play() {
+    if (this.canControl()) {
+      attempt('play', () => this.player.play());
+    }
+  }
+
+  pause() {
+    if (this.canControl()) {
+      attempt('pause', () => this.player.pause());
+    }
+  }
+
+  seekTo(ms: number) {
+    if (this.canControl()) {
+      attempt('seek', () => {
+        this.player.currentTime = Math.max(0, ms) / 1000;
+      });
+    }
+  }
+
+  /**
+   * Stops reporting and releases the player. Safe to call again; resolves
+   * once `deinitialize()` is done (or failed).
+   */
+  destroy(): Promise<void> {
+    if (this.destroying) {
+      return this.destroying;
+    }
+    this.destroyed = true;
+    // The reporter reads the position now, before the player goes away.
+    const stopped = this.reporter.stop();
+    this.destroying = (async () => {
+      if (this.initialized) {
+        await this.release();
+      } else {
+        // Still initializing: initialize() deinitializes once it resolves.
+        await this.ready;
+      }
+      await stopped;
+    })();
+    return this.destroying;
+  }
+
+  private async initialize() {
+    try {
+      await this.player.initialize();
+    } catch (reason) {
+      warn('initialize', reason);
+      if (!this.destroyed) {
+        this.fail(INIT_ERROR_MESSAGE);
+      }
+      return;
+    }
+    if (this.destroyed) {
+      // destroy() came while initializing.
+      try {
+        await this.player.deinitialize();
+      } catch (reason) {
+        warn('deinitialize', reason);
+      }
+      return;
+    }
+    this.initialized = true;
+    for (const type of MEDIA_EVENTS) {
+      this.player.addEventListener(type, this.handlers[type]);
+    }
+    this.setSurface();
+  }
+
+  private setSurface() {
+    if (!this.initialized || !this.surface || this.surfaceSet) {
+      return;
+    }
+    const handle = this.surface;
+    attempt('setSurfaceHandle', () => this.player.setSurfaceHandle(handle));
+    this.surfaceSet = true;
+    this.load();
+  }
+
+  private load() {
+    if (this.loaded) {
+      return;
+    }
+    this.loaded = true;
+    attempt('load', () => {
+      // A resume seeks first and plays on `seeked`, so nothing plays from 0.
+      this.player.autoplay = this.initialSeek === 'done';
+      this.player.src = this.session.url;
+    });
+  }
+
+  private async release() {
+    attempt('pause', () => this.player.pause());
+    if (this.surface && this.surfaceSet) {
+      const handle = this.surface;
+      attempt('clearSurfaceHandle', () =>
+        this.player.clearSurfaceHandle(handle),
+      );
+    }
+    this.surface = undefined;
+    this.surfaceSet = false;
+    try {
+      await this.player.deinitialize();
+    } catch (reason) {
+      warn('deinitialize', reason);
+    }
+    for (const type of MEDIA_EVENTS) {
+      attempt('removeEventListener', () =>
+        this.player.removeEventListener(type, this.handlers[type]),
+      );
+    }
+  }
+
+  private canControl() {
+    return this.initialized && this.loaded && !this.destroyed && !this.failed;
+  }
+
+  private read<T>(get: () => T): T {
+    try {
+      return get();
+    } catch {
+      return undefined as T;
+    }
+  }
+
+  private snapshot(): PlaybackSnapshot {
+    return {positionMs: this.positionMs, isPaused: this.paused};
+  }
+
+  private live() {
+    return !this.destroyed && !this.failed;
+  }
+
+  private setState(state: PlayerState) {
+    if (this.state !== state) {
+      this.state = state;
+      this.listeners.onStateChange?.(state);
+    }
+  }
+
+  private emitPosition = () => {
+    if (this.live()) {
+      this.listeners.onPositionChange?.(this.positionMs, this.durationMs);
+    }
+  };
+
+  private onLoadedMetadata = () => {
+    if (!this.live()) {
+      return;
+    }
+    this.emitPosition();
+    if (this.initialSeek === 'pending') {
+      this.initialSeek = 'seeking';
+      attempt('initial seek', () => {
+        this.player.currentTime = this.session.startMs / 1000;
+      });
+    }
+  };
+
+  private onPlay = () => {
+    if (this.live()) {
+      this.reporter.update();
+    }
+  };
+
+  private onPlaying = () => {
+    if (!this.live()) {
+      return;
+    }
+    this.setState('playing');
+    if (!this.started && this.initialSeek === 'done') {
+      this.started = true;
+      this.reporter.start();
+    }
+  };
+
+  private onPause = () => {
+    if (!this.live() || this.state === 'ended') {
+      return;
+    }
+    this.setState('paused');
+    this.reporter.update();
+  };
+
+  private onWaiting = () => {
+    if (this.live() && this.state !== 'ended') {
+      this.setState('loading');
+    }
+  };
+
+  private onSeeked = () => {
+    if (!this.live()) {
+      return;
+    }
+    this.emitPosition();
+    if (this.initialSeek === 'seeking') {
+      this.initialSeek = 'done';
+      attempt('play', () => this.player.play());
+      return;
+    }
+    this.setState(this.paused ? 'paused' : 'playing');
+    this.reporter.update();
+  };
+
+  private onEnded = () => {
+    if (!this.live()) {
+      return;
+    }
+    this.setState('ended');
+    this.reporter.stop();
+  };
+
+  private onError = () => {
+    if (!this.live()) {
+      return;
+    }
+    this.fail(mediaErrorMessage(this.read(() => this.player.error)));
+  };
+
+  private fail(message: string) {
+    this.failed = true;
+    this.reporter.stop();
+    this.listeners.onError?.(message);
+  }
+}
