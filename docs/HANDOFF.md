@@ -2,6 +2,12 @@
 
 Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after task 7).
 
+## Starting a fresh session
+1. Read the "Next" item under Status (task 8, movie playback) and the "Playback design" section in docs/PLAN.md.
+2. Describe the approach for task 8 and **wait for the user's approval** before writing code or briefs.
+3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
+4. Leftovers from the task 7 session: the worktrees `../caravela-wt/task-07a`, `task-07b` and `task-07c` (all merged) and their herdr panes may still exist. Remove them with `git worktree remove ../caravela-wt/task-07X` and `git branch -d task/07…` once you've checked nothing is left uncommitted. The Vega simulator may still be running (`vega virtual-device status`).
+
 ## Status
 - **Done and merged to `main`:**
   - Task 1: scaffold, Sail icon, manifest, GPL-2.0, README.
@@ -81,11 +87,18 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 
 ## How we work
 - **One task, one worktree:** `git worktree add -b task/NN-name ../caravela-wt/task-NN main`. Write the brief at `docs/tasks/NN-*.md` inside that worktree.
-- **Start the agent in a herdr pane:**
-  - `herdr pane split w3:p1 --direction right --cwd <worktree> --no-focus`
+- **Start the agent in a herdr pane** (check `HERDR_ENV=1`; your own pane is `$HERDR_PANE_ID`, e.g. `w4:p1`):
+  - `herdr pane split $HERDR_PANE_ID --direction right --cwd <worktree> --no-focus` (prints JSON with the new `pane_id`).
   - `herdr agent start <name> --kind claude --pane <id> -- "Read docs/tasks/NN-*.md and execute it end to end. The user already approved the approach for this task."`
-  - Wait with `herdr agent wait <pane> --until done --until idle` (run it in the background). Read results with `herdr pane read <pane> --source recent`.
+    - It often returns `timed out waiting for agent startup` even though the agent started fine. Check with `herdr pane read <id> --source recent` before retrying; don't start it twice.
+  - Wait with `herdr agent wait <pane> --until done --until idle --until blocked`, run in the background. **`--timeout` is in milliseconds**; leave it out to wait indefinitely.
+  - Follow-up instructions to a running or idle agent: `herdr agent prompt <pane> "…"` (queued if it's busy).
+  - Reading results: `herdr pane read` only returns the last screen. For the full final report, read the agent's transcript: the session id is in `herdr pane list` (`agent_session.value`), and the file is `~/.claude/projects/*task-NN*/<session id>.jsonl` (take the last assistant text blocks).
+  - Text on the agent's `❯` input line after it finishes is usually Claude Code's prompt suggestion, not something the user sent.
 - **Parallel work:** two independent tasks can run at once. Keep each brief's file scope separate.
+  - When two parallel tasks share data shapes, commit the shared types to `main` first (task 7 did this in `src/components/types.ts`), so each brief can build against them without the other's files.
+- **Device checks: use the Vega simulator** (the user's choice since task 7; details in Gotchas). The Fire TV notes below still apply if the user asks for the TV, or for things the simulator can't do (PLAN.md says captions don't render on the simulator, which matters for playback/subtitle tasks; ask the user before switching).
+- **Signing in during a check:** a fresh install wipes the session, so the agent must sign in with Quick Connect. Tell it in the brief to print the code on its own line as `QUICK CONNECT CODE: <code>`, keep polling, and fetch a new code if one expires. The orchestrating session relays the code to the user, who approves it in jellyfin-web. Never use the password.
 - **Shared Fire TV** (`192.168.50.124:5555`): every install, launch, input or screenshot runs inside `flock /tmp/caravela-device.lock -c '…'`.
   - When agents run in parallel, hold the lock for a whole flow (install → navigate → screenshot), not per step. Otherwise agents interleave on the TV.
   - **Typing:** focus the TextInput (the keyboard opens), wait about 3 s, then `inputd-cli send_text <text>`. Check with a screenshot: a stray key press can add a letter in front. Press Back to close the keyboard.
@@ -93,14 +106,14 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - Rebase onto `main` and resolve `package.json`, `manifest.toml` and `jest.config.json` by taking both sides.
   - If `package-lock.json` conflicts, regenerate it with a clean `rm -rf node_modules package-lock.json && npm install`; otherwise keep it and run `npm ci`.
   - Run `npm run lint` and `npm test`, then `npm run build:release`.
-  - Install and launch: `vega run-app build/armv7-release/caravela_armv7.vpkg com.melojms.caravela.main -d 192.168.50.124:5555`.
-  - `run-app` reinstalls the package, which **wipes the app's storage** (saved servers, users and tokens). To restart without losing them, e.g. to check auto-login: `vega device terminate-app -d 192.168.50.124:5555 -a com.melojms.caravela.main`, then `vega device launch-app` with the same options.
-  - Take a screenshot (below) and look at it.
+  - Install and launch on the simulator: `vega run-app build/x86_64-release/caravela_x86_64.vpkg com.melojms.caravela.main -d VirtualDevice` (on the TV: `build/armv7-release/caravela_armv7.vpkg … -d 192.168.50.124:5555`).
+  - `run-app` reinstalls the package, which **wipes the app's storage** (saved servers, users and tokens). To restart without losing them, e.g. to check auto-login: `vega device terminate-app -d <VirtualDevice or TV> -a com.melojms.caravela.main`, then `vega device launch-app` with the same options.
+  - Take a screenshot (simulator: Gotchas; TV: below) and look at it yourself, even when the agent already did.
   - Then `git merge --ff-only`.
-- **Screenshot:**
+- **Screenshot (Fire TV):**
   - `vega exec vda -s 192.168.50.124:5555 shell gwsi-tool-screenshooter /tmp/x.png`, then `vega exec vda -s … pull /tmp/x.png <scratchpad>/x.png`.
   - Downscale it with PIL before viewing (the TV captures at 4K).
-- **Remote input:** `vega exec vda -s … shell inputd-cli button_press KEY_UP` (also KEY_BACK, KEY_DOWN, …).
+- **Remote input (Fire TV; the simulator uses `-s emulator-5554`):** `vega exec vda -s … shell inputd-cli button_press KEY_UP` (also KEY_BACK, KEY_DOWN, …).
   - The TV screensaver swallows the first key presses. If a screenshot shows artwork, press Back and run `run-app` again.
 
 ## Gotchas
@@ -112,6 +125,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 - **Vega Virtual Device (simulator)** (the user's choice for checks since task 7): `vega virtual-device start`, then `vega run-app build/x86_64-release/caravela_x86_64.vpkg com.melojms.caravela.main -d VirtualDevice` (wipes storage). Shared: run each flow inside `flock /tmp/caravela-sim.lock -c '…'`.
   - **Input works** with vda serial `emulator-5554`: `vega exec vda -s emulator-5554 shell inputd-cli button_press KEY_DOWN` (and `send_text`). The old note that keys don't reach apps is wrong on SDK 0.24.
   - **Screenshots:** `gwsi-tool-screenshooter` is black here, and `grim` doesn't work on GNOME Wayland. Capture the simulator's XWayland window from the host with ImageMagick: `W=$(xwininfo -root -tree | grep '"vega-virtual-device" "vega-virtual-device"' | grep 'Vega Virtual Device' | awk '{print $1}'); import -window "$W" <scratchpad>/x.png`. Look `W` up each time; crop off the on-screen remote on the right.
-  - Quick Connect codes expire; the agent prints the code and the user approves it.
+  - Quick Connect codes expire; the agent prints the code and the user approves it (see "Signing in during a check").
+  - Screenshots can show the server address and an unblurred avatar: keep them in the scratchpad, never in the repo.
 - **Main checkout:** run `npm ci` before building there; its `node_modules` goes stale as worktrees add packages.
 - **Playback** (task 8+): the research notes are in docs/PLAN.md under "Playback design". Use Shaka 4.16.13-r1.2 for HLS. ASS and PGS subtitles must be burned in by the server.
