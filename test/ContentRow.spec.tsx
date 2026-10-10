@@ -40,6 +40,21 @@ describe('ContentRow', () => {
     expect(onItemPress).toHaveBeenCalledWith(items[1]);
   });
 
+  it('passes the focused item back', () => {
+    const onItemFocus = jest.fn();
+    const screen = render(
+      <ContentRow
+        testID="row"
+        title="Row"
+        items={items}
+        onItemFocus={onItemFocus}
+      />,
+    );
+
+    fireEvent(screen.getByTestId('row-item-2'), 'focus');
+    expect(onItemFocus).toHaveBeenCalledWith(items[2]);
+  });
+
   it('renders nothing for an empty row', () => {
     const screen = render(<ContentRow testID="row" title="Empty" items={[]} />);
     expect(screen.queryByText('Empty')).toBeNull();

@@ -19,6 +19,8 @@ export type ContentRowProps = {
   items: CardItem[];
   variant?: CardVariant;
   onItemPress?: (item: CardItem) => void;
+  /** Called when a card gets focus, e.g. to show its backdrop. */
+  onItemFocus?: (item: CardItem) => void;
   hasPreferredFocus?: boolean;
   testID?: string;
 };
@@ -33,6 +35,7 @@ export const ContentRow = memo(
     items,
     variant = 'poster',
     onItemPress,
+    onItemFocus,
     hasPreferredFocus = false,
     testID = 'content-row',
   }: ContentRowProps) => {
@@ -58,9 +61,10 @@ export const ContentRow = memo(
           item,
           variant,
           onPress: onItemPress,
+          onFocus: onItemFocus,
           testID: `${testID}-item-${index}`,
         }),
-      [variant, onItemPress, testID],
+      [variant, onItemPress, onItemFocus, testID],
     );
 
     // Leave room for the focus scale so the ring isn't clipped.

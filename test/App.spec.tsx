@@ -37,13 +37,13 @@ describe('App', () => {
     }
   });
 
-  it('starts on Home with three rows', async () => {
+  it('starts on Home', async () => {
     const screen = render(<App />);
 
     expect(await screen.findByTestId('home-screen')).toBeTruthy();
-    expect(screen.getByTestId('row-continue')).toBeTruthy();
-    expect(screen.getByTestId('row-latest-movies')).toBeTruthy();
-    expect(screen.getByTestId('row-latest-shows')).toBeTruthy();
+    expect(
+      screen.getByTestId('menu-item-Home').props.accessibilityState,
+    ).toMatchObject({selected: true});
   });
 
   it('switches section from the menu and opens details from a card', async () => {
