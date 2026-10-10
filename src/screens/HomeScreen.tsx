@@ -183,6 +183,9 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   if (!preferredRow.current) {
     preferredRow.current = firstRow;
   }
+  // Once a card has had focus, no row asks for it: a Carousel that still
+  // does takes focus again when Home comes back, over the restored card.
+  const [focusTaken, setFocusTaken] = useState(false);
 
   // A focused card scrolls the list only as far as the card needs, which can
   // hide the first row's title; Up then only scrolls the title back in. So a
@@ -228,6 +231,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
     if (!handler) {
       handler = (item: CardItem, tag?: number) => {
         lastFocusedRow.current = rowKey;
+        setFocusTaken(true);
         rowFocus.current.set(rowKey, {id: item.id, tag});
         if (rowKey === firstRowRef.current) {
           scrollRef.current?.scrollTo({y: 0});
@@ -373,7 +377,9 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
               items={rowCards[index]}
               onItemPress={row.key === 'myMedia' ? openLibrary : openDetails}
               onItemFocus={onItemFocusFor(row.key)}
-              hasPreferredFocus={row.key === preferredRow.current}
+              hasPreferredFocus={
+                !focusTaken && row.key === preferredRow.current
+              }
             />
           ),
         )}

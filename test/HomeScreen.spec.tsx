@@ -303,6 +303,18 @@ describe('HomeScreen', () => {
     expect(carouselFocus('row-nextUp')).toBe(true);
   });
 
+  it('stops asking for focus once a card has had it', () => {
+    // Otherwise the Carousel takes focus again when Home comes back, over
+    // the card the user left from.
+    queries.sections = loaded<HomeSection[]>(['resume', 'nextUp']);
+    renderHome();
+    expect(carouselFocus('row-resume')).toBe(true);
+
+    fireEvent(screen.getByTestId('row-resume-item-0'), 'focus');
+    expect(carouselFocus('row-resume')).toBe(false);
+    expect(carouselFocus('row-nextUp')).toBe(false);
+  });
+
   it('opens the details of a pressed card', () => {
     queries.sections = loaded<HomeSection[]>(['resume']);
     renderHome();
