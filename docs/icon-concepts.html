@@ -1,0 +1,129 @@
+<title>Caravela Icon Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: a short intro, then three concept cards (large icon, small-size check, launcher banner), then a usage note. */
+:root {
+  --bg: #eef3f8;
+  --surface: #ffffff;
+  --fg: #0f1c2e;
+  --muted: #55657a;
+  --line: #d3dde8;
+  --accent: #6a3fd8;
+  --tv: #0a1628;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1320; --surface: #121d2e; --fg: #e6edf6; --muted: #93a3b8;
+    --line: #22324a; --accent: #b79bff; --tv: #050b16; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1320; --surface: #121d2e; --fg: #e6edf6; --muted: #93a3b8;
+  --line: #22324a; --accent: #b79bff; --tv: #050b16; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 56px; display: grid; gap: 32px; }
+header { display: grid; gap: 8px; max-width: 65ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 5vw, 44px); line-height: 1.05; margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
+.card h2 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0; }
+.card .tag { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.card p { margin: 0; color: var(--muted); }
+.hero-icon { width: 100%; max-width: 240px; aspect-ratio: 1; justify-self: center; }
+.sizes { display: flex; align-items: end; gap: 14px; padding: 12px; border-radius: 10px; background: var(--tv); }
+.sizes svg { display: block; }
+.sizes span { font-family: var(--mono); font-size: 11px; color: #93a3b8; margin-left: auto; align-self: center; }
+.banner { background: var(--tv); border-radius: 10px; aspect-ratio: 16 / 9; max-width: 100%; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 16px; }
+.banner svg { width: 26%; height: auto; }
+.banner b { font-family: var(--display); font-weight: 700; color: #f1f5fb; font-size: clamp(20px, 3.2vw, 30px); letter-spacing: .01em; }
+.label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+footer { color: var(--muted); max-width: 65ch; font-size: 14px; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="a-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d2547"/><stop offset="1" stop-color="#071226"/></linearGradient>
+    <linearGradient id="a-crest" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e38bff"/><stop offset="1" stop-color="#7b3cf2"/></linearGradient>
+    <linearGradient id="a-float" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#53d3f5"/><stop offset="1" stop-color="#4b63f0"/></linearGradient>
+    <linearGradient id="b-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#103457"/><stop offset="1" stop-color="#0a1f38"/></linearGradient>
+    <linearGradient id="b-sail" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c58bff"/><stop offset=".55" stop-color="#7d5cf5"/><stop offset="1" stop-color="#3fc6ee"/></linearGradient>
+    <linearGradient id="c-arc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b77cff"/><stop offset="1" stop-color="#3cc2ec"/></linearGradient>
+
+    <symbol id="icon-a" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="112" fill="url(#a-bg)"/>
+      <g fill="none" stroke="#53d3f5" stroke-width="7" stroke-linecap="round" opacity=".55">
+        <path d="M190 330 C185 370 205 395 195 440"/>
+        <path d="M235 334 C240 375 222 405 238 455"/>
+        <path d="M280 334 C276 372 296 398 284 448"/>
+        <path d="M322 330 C330 365 312 392 326 430"/>
+      </g>
+      <path d="M150 262 C190 205 236 168 288 140 C318 124 342 128 348 146 C358 182 368 226 388 262 Z" fill="url(#a-crest)"/>
+      <path d="M118 292 C118 240 186 222 258 224 C334 226 398 244 398 292 C398 326 350 338 258 338 C166 338 118 326 118 292 Z" fill="url(#a-float)"/>
+      <path d="M238 254 L238 314 L290 284 Z" fill="#ffffff"/>
+    </symbol>
+
+    <symbol id="icon-b" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="112" fill="url(#b-bg)"/>
+      <path d="M178 132 C238 140 312 186 372 246 C384 258 384 268 372 276 L196 378 C186 384 178 378 178 366 Z" fill="url(#b-sail)"/>
+      <g fill="none" stroke="#3fc6ee" stroke-width="12" stroke-linecap="round" opacity=".8">
+        <path d="M124 418 q33 -20 66 0 t66 0 t66 0 t66 0"/>
+      </g>
+    </symbol>
+
+    <symbol id="icon-c" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="112" fill="#f4f1ff"/>
+      <path d="M340 168 A116 116 0 1 0 340 336" fill="none" stroke="url(#c-arc)" stroke-width="58" stroke-linecap="round"/>
+      <path d="M236 212 L236 296 L306 254 Z" fill="#5a2fd0"/>
+      <g fill="none" stroke="#3cc2ec" stroke-width="8" stroke-linecap="round">
+        <path d="M206 372 C200 398 218 414 208 446"/>
+        <path d="M244 380 C250 404 234 420 246 452"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Caravela · launcher icon</span>
+    <h1>Three directions for the Caravela icon</h1>
+    <p>Each one draws on the caravela-portuguesa: a translucent float, a violet crest shaped like a sail, and trailing tentacles. None uses Jellyfin's colours or logo shapes. The dark strip shows each icon at TV-launcher sizes to check it still reads from the sofa.</p>
+  </header>
+
+  <section class="grid">
+    <article class="card">
+      <div><h2>A · Float</h2><span class="tag">illustrative · closest to the animal</span></div>
+      <svg class="hero-icon" role="img" aria-label="Concept A"><use href="#icon-a"/></svg>
+      <div class="sizes"><svg width="96" height="96"><use href="#icon-a"/></svg><svg width="48" height="48"><use href="#icon-a"/></svg><svg width="24" height="24"><use href="#icon-a"/></svg><span>96 · 48 · 24</span></div>
+      <div class="label">Launcher banner</div>
+      <div class="banner"><svg viewBox="0 0 512 512"><use href="#icon-a"/></svg><b>Caravela</b></div>
+      <p>A blue float with the play button set into it, a violet crest on top and soft tentacles below. It has the most character, but the tentacles disappear at small sizes.</p>
+    </article>
+
+    <article class="card">
+      <div><h2>B · Sail</h2><span class="tag">geometric · double meaning</span></div>
+      <svg class="hero-icon" role="img" aria-label="Concept B"><use href="#icon-b"/></svg>
+      <div class="sizes"><svg width="96" height="96"><use href="#icon-b"/></svg><svg width="48" height="48"><use href="#icon-b"/></svg><svg width="24" height="24"><use href="#icon-b"/></svg><span>96 · 48 · 24</span></div>
+      <div class="label">Launcher banner</div>
+      <div class="banner"><svg viewBox="0 0 512 512"><use href="#icon-b"/></svg><b>Caravela</b></div>
+      <p>The crest is a play button, a jellyfish sail and a caravel sail all at once, floating on a single wave. It stays clear down to 24&nbsp;px. This is my recommendation.</p>
+    </article>
+
+    <article class="card">
+      <div><h2>C · Monogram</h2><span class="tag">letterform · light tile</span></div>
+      <svg class="hero-icon" role="img" aria-label="Concept C"><use href="#icon-c"/></svg>
+      <div class="sizes"><svg width="96" height="96"><use href="#icon-c"/></svg><svg width="48" height="48"><use href="#icon-c"/></svg><svg width="24" height="24"><use href="#icon-c"/></svg><span>96 · 48 · 24</span></div>
+      <div class="label">Launcher banner</div>
+      <div class="banner"><svg viewBox="0 0 512 512"><use href="#icon-c"/></svg><b>Caravela</b></div>
+      <p>A "C" shaped like the float, with a play button inside and two tentacles hanging below. The light tile stands out in a dark launcher row, but it reads more as a letter than as a creature.</p>
+    </article>
+  </section>
+
+  <footer>Pick one, or mix them (for example B's shape with A's colours). The chosen icon will be exported from SVG to the PNG sizes the Vega manifest asks for, plus a banner image.</footer>
+</div>
