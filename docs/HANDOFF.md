@@ -25,7 +25,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - App pill: the launcher shows only the middle 16:9 strip of `assets/image/app_icon.png`, so the icon is now Sail + "Caravela" on navy (`assets/brand/caravela-pill.svg`).
 - **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 319 passing, the Release build installs and runs on the Fire TV.
   - 5d: the card placeholder colour now sits inside the focus border, so unfocused cards have no frame.
-- **Then task 5.5: replace the side menu with an androidtv-style top toolbar** (user avatar left; Home and Search centre; Settings icon and clock right; Movies/Shows reached from My Media). Describe the approach and wait for approval.
+- **Next: task 5.5, top toolbar. APPROVED** (2026-10-10). Runs as 5.5a (Toolbar component) → 5.5b (drawer → stack, mount toolbar, delete side menu) → 5.5c (Home/Search integration, Up/Down focus, My media → library screens). Briefs `docs/tasks/055*.md`.
+  - Decisions: avatar press → picker (switch user); Settings stays a full screen; clock follows the device 12/24 h setting if Vega exposes it, else 24 h; Movies/Shows only reachable from My media; Back on Home exits the app with no confirmation; toolbar only on Home and Search; the Home backdrop fills the whole screen.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Home doesn't remember the last-focused card: it focuses the first card after you come back.
