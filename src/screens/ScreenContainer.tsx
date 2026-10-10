@@ -16,6 +16,13 @@ type ScreenContainerProps = {
   title?: string;
   /** Shows the top toolbar with this entry highlighted. */
   toolbar?: ScreenToolbar;
+  /**
+   * Gives the toolbar's active button focus on mount. Pass false when the
+   * content takes focus itself.
+   */
+  focusToolbar?: boolean;
+  /** Drawn behind the whole screen, toolbar included, e.g. Home's backdrop. */
+  background?: ReactNode;
   children: ReactNode;
   testID?: string;
 };
@@ -28,7 +35,13 @@ const AVATAR_IMAGE_HEIGHT = 100;
  * user picker, Home and Search go back to that screen if it's already on the
  * stack (so Back doesn't pass through a second copy), and Settings opens.
  */
-const MainToolbar = ({active}: {active: ScreenToolbar}) => {
+const MainToolbar = ({
+  active,
+  focusActive,
+}: {
+  active: ScreenToolbar;
+  focusActive: boolean;
+}) => {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const {session, switchUser} = useSession();
@@ -50,6 +63,7 @@ const MainToolbar = ({active}: {active: ScreenToolbar}) => {
   return (
     <Toolbar
       active={active}
+      focusActive={focusActive}
       user={user}
       onUserPress={switchUser}
       onHomePress={() => navigation.popTo('Home')}
@@ -67,16 +81,21 @@ const MainToolbar = ({active}: {active: ScreenToolbar}) => {
  * A full-screen page, with the toolbar on top when `toolbar` is set. The
  * content uses the toolbar's edge padding, so both line up. The focus guide
  * sends focus back to the last focused item in the content (or the first one
- * on the first visit).
+ * on the first visit), e.g. on Down from the toolbar.
  */
 export const ScreenContainer = ({
   title,
   toolbar,
+  focusToolbar = true,
+  background,
   children,
   testID,
 }: ScreenContainerProps) => (
   <View style={styles.screen}>
-    {toolbar ? <MainToolbar active={toolbar} /> : null}
+    {background}
+    {toolbar ? (
+      <MainToolbar active={toolbar} focusActive={focusToolbar} />
+    ) : null}
     <TVFocusGuideView
       autoFocus
       style={[styles.content, !toolbar && styles.contentTop]}

@@ -1,5 +1,6 @@
 import type {Api} from '@jellyfin/sdk';
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 import {useFocusEffect} from '@amazon-devices/react-navigation__native';
 import {useQueries, useQueryClient} from '@tanstack/react-query';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -211,6 +212,24 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
       }),
     [navigation],
   );
+  // My media cards open their library's screen, by the library's type.
+  const libraryTypes = useRef(new Map<string, BaseItemDto['CollectionType']>());
+  libraryTypes.current = new Map(
+    (myMedia.data ?? []).map((view) => [view.Id ?? '', view.CollectionType]),
+  );
+  const openLibrary = useCallback(
+    (item: CardItem) => {
+      const type = libraryTypes.current.get(item.id);
+      if (type === CollectionType.Movies) {
+        navigation.navigate('Movies');
+      } else if (type === CollectionType.Tvshows) {
+        navigation.navigate('Shows');
+      } else {
+        openDetails(item);
+      }
+    },
+    [navigation, openDetails],
+  );
 
   // Coming back to Home refetches what is older than the stale time. The
   // first focus is the mount, which fetches anyway.
@@ -289,7 +308,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
               title={row.title}
               variant={row.variant}
               items={rowCards[index]}
-              onItemPress={openDetails}
+              onItemPress={row.key === 'myMedia' ? openLibrary : openDetails}
               onItemFocus={onItemFocus}
               hasPreferredFocus={row.key === preferredRow.current}
             />
@@ -300,8 +319,11 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   }
 
   return (
-    <ScreenContainer toolbar="home" testID="home-screen">
-      <Backdrop uri={backdropUri} />
+    <ScreenContainer
+      toolbar="home"
+      focusToolbar={!anyShown}
+      background={<Backdrop uri={backdropUri} />}
+      testID="home-screen">
       {content}
     </ScreenContainer>
   );

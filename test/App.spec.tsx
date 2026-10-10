@@ -20,6 +20,32 @@ jest.mock('../src/auth/authService', () => {
   };
 });
 
+// Home's rows: My media holds a Movies and a TV library, Continue watching
+// one movie.
+jest.mock('../src/api/home', () => {
+  const loaded = (data: unknown) => ({
+    data,
+    isPending: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  });
+  const sections = loaded(['myMedia', 'resume']);
+  const myMedia = loaded([
+    {Id: 'lib-movies', Name: 'Movies', CollectionType: 'movies'},
+    {Id: 'lib-shows', Name: 'Shows', CollectionType: 'tvshows'},
+  ]);
+  const resume = loaded([{Id: 'r1', Name: 'Movie r1', Type: 'Movie'}]);
+  const none = loaded([]);
+  return {
+    ...jest.requireActual('../src/api/home'),
+    useHomeSections: () => sections,
+    useMyMedia: () => myMedia,
+    useResume: () => resume,
+    useNextUp: () => none,
+  };
+});
+
 const pressBack = async () => {
   const handlers = (BackHandler.addEventListener as jest.Mock).mock.calls.map(
     ([, handler]) => handler,
@@ -133,5 +159,39 @@ describe('App', () => {
     await press(screen, 'settings-sign-out');
     expect(await screen.findByTestId('user-picker')).toBeTruthy();
     expect(screen.queryByTestId('toolbar')).toBeNull();
+  });
+
+  it("goes Home from a deeper screen's toolbar to a single Home", async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    // Home → Search → Settings, then Back to Search and its toolbar's Home.
+    await press(screen, 'toolbar-search');
+    await press(screen, 'toolbar-settings');
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('search-screen')).toBeTruthy();
+    await press(screen, 'toolbar-home');
+
+    expect(screen.getAllByTestId('home-screen')).toHaveLength(1);
+    expect(screen.queryByTestId('search-screen')).toBeNull();
+    expect(await pressBack()).toBe(false);
+  });
+
+  it.each([
+    ['row-myMedia-item-0', 'movies-screen'],
+    ['row-myMedia-item-1', 'shows-screen'],
+    ['row-resume-item-0', 'details-screen'],
+  ])('opens %s and Back returns to Home', async (card, target) => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, card);
+    expect(screen.getByTestId(target)).toBeTruthy();
+    expect(screen.queryByTestId('toolbar')).toBeNull();
+
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(screen.queryByTestId(target)).toBeNull();
+    expect(await pressBack()).toBe(false);
   });
 });

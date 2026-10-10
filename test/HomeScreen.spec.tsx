@@ -1,8 +1,15 @@
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {act, fireEvent, render, screen} from '@testing-library/react-native';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react-native';
 import React from 'react';
+import type {ReactTestRendererJSON} from 'react-test-renderer';
 
 import {createJellyfin} from '../src/api/client';
 import {
@@ -109,6 +116,19 @@ const renderHome = () => {
     </QueryClientProvider>,
   );
 };
+
+const rerenderHome = () =>
+  screen.rerender(
+    <QueryClientProvider client={client}>
+      <HomeScreen
+        navigation={{navigate} as never}
+        route={{key: 'Home', name: 'Home'} as never}
+      />
+    </QueryClientProvider>,
+  );
+
+const carouselFocus = (row: string) =>
+  screen.UNSAFE_getByProps({uniqueId: row}).props.hasPreferredFocus;
 
 const rowTitles = () =>
   screen
@@ -258,20 +278,11 @@ describe('HomeScreen', () => {
     queries.resume = pending();
     renderHome();
 
-    const carouselFocus = (row: string) =>
-      screen.UNSAFE_getByProps({uniqueId: row}).props.hasPreferredFocus;
     expect(carouselFocus('row-nextUp')).toBe(true);
 
     // Continue Watching loads later, above Next Up: focus stays put.
     queries.resume = loaded([movie('r1')]);
-    screen.rerender(
-      <QueryClientProvider client={client}>
-        <HomeScreen
-          navigation={{navigate} as never}
-          route={{key: 'Home', name: 'Home'} as never}
-        />
-      </QueryClientProvider>,
-    );
+    rerenderHome();
     expect(carouselFocus('row-resume')).toBe(false);
     expect(carouselFocus('row-nextUp')).toBe(true);
   });
@@ -330,5 +341,66 @@ describe('HomeScreen', () => {
       {queryKey: homeKeys.all('srv1', 'u1'), type: 'active', stale: true},
       {cancelRefetch: false},
     );
+  });
+
+  it.each([
+    ['movies', 'lib-movies', 0, 'Movies'],
+    ['tvshows', 'lib-shows', 1, 'Shows'],
+  ] as const)(
+    'opens the %s library from My media',
+    (_type, _id, index, target) => {
+      queries.sections = loaded<HomeSection[]>(['myMedia']);
+      renderHome();
+
+      fireEvent.press(screen.getByTestId(`row-myMedia-item-${index}`));
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(target);
+    },
+  );
+
+  it('opens the details of a My media card of another type', () => {
+    queries.sections = loaded<HomeSection[]>(['myMedia']);
+    queries.myMedia = loaded([library('lib-mixed', 'Mixed', 'mixed')]);
+    renderHome();
+
+    fireEvent.press(screen.getByTestId('row-myMedia-item-0'));
+    expect(navigate).toHaveBeenCalledWith('DetailsPlaceholder', {
+      itemId: 'lib-mixed',
+      title: 'Mixed',
+    });
+  });
+
+  it('draws the backdrop behind the toolbar, across the whole screen', () => {
+    queries.sections = loaded<HomeSection[]>(['resume']);
+    renderHome();
+
+    // Not inside the content area below the toolbar.
+    expect(
+      within(screen.getByTestId('home-screen')).queryByTestId('backdrop', {
+        includeHiddenElements: true,
+      }),
+    ).toBeNull();
+    // The screen's first child, so the toolbar draws over it.
+    const tree = screen.toJSON() as ReactTestRendererJSON;
+    expect(
+      tree.children?.map(
+        (child) => (child as ReactTestRendererJSON).props.testID,
+      ),
+    ).toEqual(['backdrop', 'toolbar', 'home-screen']);
+  });
+
+  it('focuses the Home button until a row can take focus', () => {
+    queries.sections = pending();
+    renderHome();
+    expect(screen.getByTestId('toolbar-home').props.hasTVPreferredFocus).toBe(
+      true,
+    );
+
+    queries.sections = loaded<HomeSection[]>(['resume']);
+    rerenderHome();
+    expect(screen.getByTestId('toolbar-home').props.hasTVPreferredFocus).toBe(
+      false,
+    );
+    expect(carouselFocus('row-resume')).toBe(true);
   });
 });

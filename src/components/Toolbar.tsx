@@ -1,6 +1,8 @@
+import {TVFocusGuideView} from '@amazon-devices/react-native-kepler';
 import {Path, Svg} from '@amazon-devices/react-native-svg';
 import React, {
   ReactNode,
+  Ref,
   memo,
   useCallback,
   useEffect,
@@ -21,6 +23,11 @@ export type ToolbarProps = {
   onSettingsPress: () => void;
   /** True when focus enters the toolbar, false when it leaves. */
   onFocusChange?: (focused: boolean) => void;
+  /**
+   * Gives the active button focus when the toolbar mounts, for screens whose
+   * content doesn't take focus itself.
+   */
+  focusActive?: boolean;
   testID?: string;
 };
 
@@ -41,10 +48,12 @@ type ToolbarButtonProps = {
   onFocus: () => void;
   onBlur: () => void;
   active?: boolean;
+  hasTVPreferredFocus?: boolean;
   round?: boolean;
   /** Drops the round button's padding so an image fills it up to the ring. */
   bleed?: boolean;
   testID?: string;
+  ref?: Ref<View>;
   children: (highlighted: boolean) => ReactNode;
 };
 
@@ -61,9 +70,11 @@ const ToolbarButton = memo(
     onFocus,
     onBlur,
     active = false,
+    hasTVPreferredFocus,
     round = false,
     bleed = false,
     testID,
+    ref,
     children,
   }: ToolbarButtonProps) => {
     const [focused, setFocused] = useState(false);
@@ -79,7 +90,9 @@ const ToolbarButton = memo(
 
     return (
       <Pressable
+        ref={ref}
         testID={testID}
+        hasTVPreferredFocus={hasTVPreferredFocus}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{selected: active}}
@@ -153,6 +166,10 @@ const Avatar = ({
  * The top bar on Home and Search, after androidtv's MainToolbar: the user on
  * the left, Home and Search centred, Settings and the clock on the right.
  * Presentational: the caller decides what each button does.
+ *
+ * Focus entering the toolbar from outside lands on the active button, like
+ * androidtv's focus requester on the centre group: the toolbar is a focus
+ * guide with that button as its destination. Moves inside it stay Cartesian.
  */
 export const Toolbar = memo(
   ({
@@ -163,9 +180,15 @@ export const Toolbar = memo(
     onSearchPress,
     onSettingsPress,
     onFocusChange,
+    focusActive = false,
     testID = 'toolbar',
   }: ToolbarProps) => {
     const {showImage, onError} = useAvatarImage(user.imageUri);
+
+    // The guide reads its destinations' native handles while rendering, so it
+    // needs the mounted button: a callback ref into state renders it again.
+    const [activeButton, setActiveButton] = useState<View | null>(null);
+    const destinations = activeButton ? [activeButton] : undefined;
 
     // Moving between toolbar buttons blurs one before focusing the next.
     // Report "left" only if no button takes focus by the next tick.
@@ -202,7 +225,10 @@ export const Toolbar = memo(
     const focusProps = {onFocus: handleFocus, onBlur: handleBlur};
 
     return (
-      <View testID={testID} style={styles.toolbar}>
+      <TVFocusGuideView
+        testID={testID}
+        destinations={destinations}
+        style={styles.toolbar}>
         <View testID={`${testID}-start`} style={[styles.side, styles.start]}>
           <ToolbarButton
             testID={`${testID}-user`}
@@ -229,6 +255,8 @@ export const Toolbar = memo(
             label="Home"
             onPress={onHomePress}
             active={active === 'home'}
+            hasTVPreferredFocus={focusActive && active === 'home'}
+            ref={active === 'home' ? setActiveButton : undefined}
             {...focusProps}>
             {(highlighted) => (
               <Text
@@ -243,6 +271,8 @@ export const Toolbar = memo(
             label="Search"
             onPress={onSearchPress}
             active={active === 'search'}
+            hasTVPreferredFocus={focusActive && active === 'search'}
+            ref={active === 'search' ? setActiveButton : undefined}
             {...focusProps}>
             {(highlighted) => (
               <Text
@@ -276,7 +306,7 @@ export const Toolbar = memo(
           </ToolbarButton>
           <ToolbarClock testID={`${testID}-clock`} />
         </View>
-      </View>
+      </TVFocusGuideView>
     );
   },
 );
