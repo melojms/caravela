@@ -5,32 +5,32 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
 ## Status
 - **Done and merged to `main`:**
   - Task 1: scaffold, Sail icon, manifest, GPL-2.0, README.
-  - Task 2: `@jellyfin/sdk` 1.0.0 client, address discovery, saved servers/users/tokens, password and Quick Connect services. There is no UI for these yet.
+  - Task 2: `@jellyfin/sdk` 1.0.0 client, address discovery, saved servers/users/tokens, password and Quick Connect services.
+  - Task 3: sign-in, split into subtasks with briefs in `docs/tasks/03*.md`:
+    - 3a-1 `SessionContext` + launch screen + session gate. The auth stack shows until someone signs in. Offline or expired notices go to the picker; a failed load shows Retry on the launch screen.
+    - 3a-2 add-server screen, plus a `not-jellyfin` discovery error.
+    - 3a-3 user picker (saved and public users, avatars with `api_key` when a token is saved).
+    - 3b-1 Quick Connect (the default) and Password screens.
+    - 3b-2 Settings account section: switch user, sign out, auto-login off / last / specific user.
+    - 3c focus ring on user tiles, a `disabled` prop on FocusableButton, keyboard title.
   - Task 4: side menu (Home / Movies / Shows / Search / Settings), theme, FocusableCard / ContentRow / PosterGrid / FocusableButton, with mock data in `src/dev/mockItems.ts`.
-- **Checks on `main`:** lint shows 0 errors, Jest has 63 passing tests, and the Release build installs and runs on the Fire TV.
-- **Next: task 3, sign-in screens.** The user hasn't approved it yet: describe the approach and wait for approval.
-  - **3a:**
-    - The splash becomes a launch screen while saved logins load.
-    - If auto-login is on with a saved token: validate it (`getCurrentUser`) and go to Home. If the token is invalid, go to user selection with a message.
-    - Add-server screen using the TV keyboard, with task 2's discovery and clear errors for unreachable and too-old servers.
-    - User picker: saved users plus the server's public users, with avatars.
-  - **3b:**
-    - Password screen.
-    - Quick Connect screen: shows the code, polls, has a cancel button.
-    - Auto-login setting: off / last user / specific user.
-    - Sign out and switch user in Settings.
-    - The menu and Home appear only once someone is signed in.
-  - **Tests:**
-    - Component tests for each screen.
-    - The startup flow with the auth service mocked: auto-login, expired token, no servers yet.
-    - On the TV: add the server, pick `melojms`, log in with Quick Connect (the user approves it in the Jellyfin dashboard), then restart to check auto-login.
-  - **Edge cases:** server offline at startup, Quick Connect turned off on the server, a user with no password, Back on the first-run screen exits, long names.
+- **Checks on `main`:** lint shows 0 errors, Jest has 189 passing tests, and the Release build installs and runs on the Fire TV.
+  - The full sign-in flow was checked on the TV: add server, picker, Quick Connect, Home, Settings, auto-login after a restart, switch user, sign out.
+  - The TV is currently signed out.
+- **Next:**
+  - **3d, sign-in follow-ups.** The user approved doing these now; describe the approach and wait for approval before coding:
+    - Password checks whether Quick Connect is on (`/QuickConnect/Enabled`).
+    - The Quick Connect timeout comes from the service, not the screen.
+    - Password and Quick Connect use `FocusableButton disabled`.
+    - The selected auto-login option is clearer when it isn't focused.
+  - **Then task 5, Home rows.** Describe the approach and wait for approval.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
   - Home doesn't remember the last-focused card: it focuses the first card after you come back.
   - Add tests for repeated `onEndReached` calls, the end of paging, and progress values ≤0 or ≥1.
-  - Add a test for the race where Quick Connect is cancelled while the login request is in flight.
-  - Add a "not a Jellyfin server" error message.
+  - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
+  - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
+  - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
 
 ## Decisions and preferences
 - **App:** name **Caravela**, package `com.melojms.caravela`, icon concept B "Sail" (`assets/brand/caravela-icon.svg`). Licence GPL-2.0. Unofficial; works with Jellyfin.
@@ -57,6 +57,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
   - Wait with `herdr agent wait <pane> --until done --until idle` (run it in the background). Read results with `herdr pane read <pane> --source recent`.
 - **Parallel work:** two independent tasks can run at once. Keep each brief's file scope separate.
 - **Shared Fire TV** (`192.168.50.124:5555`): every install, launch, input or screenshot runs inside `flock /tmp/caravela-device.lock -c '…'`.
+  - When agents run in parallel, hold the lock for a whole flow (install → navigate → screenshot), not per step. Otherwise agents interleave on the TV.
+  - **Typing:** focus the TextInput (the keyboard opens), wait about 3 s, then `inputd-cli send_text <text>`. Check with a screenshot: a stray key press can add a letter in front. Press Back to close the keyboard.
 - **Before merging to `main`:**
   - Rebase onto `main` and resolve `package.json`, `manifest.toml` and `jest.config.json` by taking both sides.
   - Delete and regenerate `package-lock.json` with `npm install`.
