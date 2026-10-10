@@ -3,10 +3,12 @@ import React, {ReactNode} from 'react';
 
 import type {AuthService} from '../../src/auth/authService';
 import {SessionProvider, useSession} from '../../src/auth/SessionContext';
-import type {AuthState, AuthStore} from '../../src/auth/store';
+import {createAuthStore} from '../../src/auth/store';
+import type {AuthState, AuthStore, KeyValueStorage} from '../../src/auth/store';
 import {
   fakeService,
   fakeStore,
+  HOME,
   networkError,
   sessionFor,
   signedInState,
@@ -94,7 +96,11 @@ describe('SessionProvider startup', () => {
   it('shows an error when the saved logins fail to load, then retries', async () => {
     const store = fakeStore(signedInState());
     store.getState.mockRejectedValueOnce(new Error('disk I/O'));
-    const {result} = renderSession(signedInState(), fakeService(), store);
+    const {result} = renderSession(
+      signedInState(),
+      fakeService(),
+      store as jest.Mocked<AuthStore>,
+    );
     await settled(result);
 
     expect(result.current.status).toBe('error');
@@ -211,6 +217,82 @@ describe('SessionProvider actions', () => {
     expect(result.current.status).toBe('needsUser');
     expect(result.current.serverId).toBe('srv1');
     expect(service.logout).not.toHaveBeenCalled();
+    expect(store.clearToken).not.toHaveBeenCalled();
+  });
+
+  it('expireSession shows the picker with the expired notice', async () => {
+    const {result, service, store} = renderSession(signedInState());
+    await settled(result);
+
+    act(() => result.current.expireSession());
+
+    expect(result.current.status).toBe('needsUser');
+    expect(result.current.serverId).toBe('srv1');
+    expect(result.current.session).toBeUndefined();
+    expect(result.current.notice).toEqual({
+      kind: 'expired',
+      message: 'Your saved login for melojms has expired. Sign in again.',
+    });
+    expect(store.clearToken).toHaveBeenCalledWith('srv1', 'u1');
+    expect(service.logout).not.toHaveBeenCalled();
+  });
+
+  it('expireSession drops the token and keeps the user', async () => {
+    const data = new Map<string, string>();
+    const storage: KeyValueStorage = {
+      getItem: async (key) => data.get(key) ?? null,
+      setItem: async (key, value) => {
+        data.set(key, value);
+      },
+      removeItem: async (key) => {
+        data.delete(key);
+      },
+    };
+    const store = createAuthStore(storage);
+    await store.upsertServer(HOME);
+    await store.saveLogin('srv1', {id: 'u1', name: 'melojms'}, 'token-1');
+    const {result} = renderSession(
+      signedInState(),
+      fakeService(),
+      store as jest.Mocked<AuthStore>,
+    );
+    await settled(result);
+
+    act(() => result.current.expireSession());
+
+    const user = (await store.getState()).servers.srv1.users.u1;
+    expect(user).toEqual(expect.objectContaining({id: 'u1', name: 'melojms'}));
+    expect(user.accessToken).toBeUndefined();
+  });
+
+  it('expireSession only expires once', async () => {
+    const {result, store} = renderSession(signedInState());
+    await settled(result);
+    const {expireSession} = result.current;
+
+    act(() => {
+      expireSession();
+      expireSession();
+    });
+    act(() => result.current.expireSession());
+
+    expect(store.clearToken).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('needsUser');
+  });
+
+  it('expireSession does nothing when signed out', async () => {
+    const service = fakeService();
+    service.restoreSession.mockResolvedValue(undefined);
+    const {result, store} = renderSession(signedInState(), service);
+    await settled(result);
+    act(() => result.current.clearNotice());
+    const before = result.current;
+
+    act(() => result.current.expireSession());
+
+    expect(result.current.status).toBe('needsUser');
+    expect(result.current.notice).toBeUndefined();
+    expect(result.current).toBe(before);
     expect(store.clearToken).not.toHaveBeenCalled();
   });
 

@@ -45,6 +45,12 @@ export interface SessionContextValue extends SessionState {
   signOut(): Promise<void>;
   /** Shows the picker for the current server and keeps the saved token. */
   switchUser(): void;
+  /**
+   * Ends a session the server rejected (a 401): shows the picker for that
+   * server with the expired notice and drops the saved token, without logging
+   * out. Only the first call per session does anything.
+   */
+  expireSession(): void;
   /** Runs the startup flow again, e.g. after the server was offline. */
   retry(): void;
   selectServer(serverId: string): void;
@@ -55,6 +61,11 @@ export interface SessionContextValue extends SessionState {
 const SessionContext = createContext<SessionContextValue | undefined>(
   undefined,
 );
+
+const expiredNotice = (userName: string): SessionNotice => ({
+  kind: 'expired',
+  message: `Your saved login for ${userName} has expired. Sign in again.`,
+});
 
 const mostRecentServer = (state: AuthState): StoredServer | undefined =>
   Object.values(state.servers).sort((a, b) => b.lastUsed - a.lastUsed)[0];
@@ -96,13 +107,7 @@ export async function resolveStartup(
     if (session) {
       return {status: 'signedIn', session, serverId: server.id};
     }
-    return {
-      ...userPicker,
-      notice: {
-        kind: 'expired',
-        message: `Your saved login for ${user.name} has expired. Sign in again.`,
-      },
-    };
+    return {...userPicker, notice: expiredNotice(user.name)};
   } catch {
     return {
       ...userPicker,
@@ -184,6 +189,24 @@ export const SessionProvider = ({
     update({status: 'needsUser', serverId: session?.server.id});
   }, [update]);
 
+  const expireSession = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session) {
+      return;
+    }
+    // Cleared now, not on the next render, so queries failing together only
+    // expire the session once.
+    sessionRef.current = undefined;
+    update({
+      status: 'needsUser',
+      serverId: session.server.id,
+      notice: expiredNotice(session.user.Name),
+    });
+    // The store queues this write before any later read, so the next startup
+    // or picker sees the token gone. Nothing to show if it fails.
+    store.clearToken(session.server.id, session.user.Id).catch(() => undefined);
+  }, [store, update]);
+
   const selectServer = useCallback(
     (serverId: string) => update({status: 'needsUser', serverId}),
     [update],
@@ -204,11 +227,21 @@ export const SessionProvider = ({
       signIn,
       signOut,
       switchUser,
+      expireSession,
       retry: startup,
       selectServer,
       clearNotice,
     }),
-    [state, signIn, signOut, switchUser, startup, selectServer, clearNotice],
+    [
+      state,
+      signIn,
+      signOut,
+      switchUser,
+      expireSession,
+      startup,
+      selectServer,
+      clearNotice,
+    ],
   );
 
   return (

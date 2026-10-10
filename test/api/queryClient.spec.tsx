@@ -1,12 +1,11 @@
 import {getDisplayPreferenceApi} from '@jellyfin/sdk/lib/utils/api/display-preference-api';
 import {getLibraryApi} from '@jellyfin/sdk/lib/utils/api/library-api';
-import {useQueryClient} from '@tanstack/react-query';
+import {QueryClient, useQueryClient} from '@tanstack/react-query';
 import {act, renderHook, waitFor} from '@testing-library/react-native';
 import React, {ReactNode} from 'react';
 
 import {
   homeKeys,
-  isUnauthorized,
   useHomeSections,
   useLatest,
   useResume,
@@ -166,14 +165,19 @@ describe('Home hooks', () => {
     ]);
   });
 
-  it('useHomeSections reports a 401 as an error', async () => {
+  it('useHomeSections expires the session on a 401', async () => {
     displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
       httpError(401),
     );
-    const {result} = renderHook(useHomeSections, {wrapper});
+    const {result} = renderHook(
+      () => ({session: useSession(), sections: useHomeSections()}),
+      {wrapper},
+    );
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(isUnauthorized(result.current.error)).toBe(true);
+    await waitFor(() =>
+      expect(result.current.session.status).toBe('needsUser'),
+    );
+    expect(result.current.session.notice?.kind).toBe('expired');
     expect(displayPreferenceApi.getDisplayPreferences).toHaveBeenCalledTimes(1);
   });
 
@@ -186,9 +190,119 @@ describe('Home hooks', () => {
 
   it('does not retry a 401', async () => {
     libraryApi.getResumeItems.mockRejectedValue(httpError(401));
-    const {result} = renderHook(useResume, {wrapper});
+    const {result} = renderHook(
+      () => ({session: useSession(), resume: useResume()}),
+      {wrapper},
+    );
 
-    await waitFor(() => expect(result.current.isError).toBe(true));
+    await waitFor(() =>
+      expect(result.current.session.status).toBe('needsUser'),
+    );
     expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('expiring the session on a 401', () => {
+  const failing = (error: unknown) => () => Promise.reject(error);
+  let onUnauthorized: jest.Mock;
+  let client: QueryClient;
+
+  beforeEach(() => {
+    onUnauthorized = jest.fn();
+    client = createQueryClient(onUnauthorized);
+  });
+
+  // Stops the garbage-collection timers, so Jest can exit.
+  afterEach(() => client.clear());
+
+  it('calls onUnauthorized once when two queries 401 together', async () => {
+    await Promise.allSettled([
+      client.fetchQuery({queryKey: ['a'], queryFn: failing(httpError(401))}),
+      client.fetchQuery({queryKey: ['b'], queryFn: failing(httpError(401))}),
+    ]);
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onUnauthorized for a mutation 401', async () => {
+    await client
+      .getMutationCache()
+      .build(client, {mutationFn: failing(httpError(401)), gcTime: 0})
+      .execute(undefined)
+      .catch(() => undefined);
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a 500', async () => {
+    await client
+      .fetchQuery({queryKey: ['a'], queryFn: failing(httpError(500)), retry: 0})
+      .catch(() => undefined);
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('expires the session once when two rows 401 together', async () => {
+    libraryApi.getResumeItems.mockRejectedValue(httpError(401));
+    libraryApi.getLatestMedia.mockRejectedValue(httpError(401));
+    const {result} = renderHook(
+      () => ({
+        session: useSession(),
+        resume: useResume(),
+        latest: useLatest('lib1'),
+      }),
+      {wrapper},
+    );
+
+    await waitFor(() =>
+      expect(result.current.session.status).toBe('needsUser'),
+    );
+    expect(result.current.session.serverId).toBe('srv1');
+    expect(result.current.session.notice).toEqual({
+      kind: 'expired',
+      message: 'Your saved login for melojms has expired. Sign in again.',
+    });
+    expect(store.clearToken).toHaveBeenCalledTimes(1);
+    expect(store.clearToken).toHaveBeenCalledWith('srv1', 'u1');
+    expect(service.logout).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session on a 500', async () => {
+    libraryApi.getResumeItems.mockRejectedValue(httpError(500));
+    const {result} = renderHook(
+      () => ({session: useSession(), resume: useResume()}),
+      {wrapper},
+    );
+
+    // After the one retry, which waits 1 s.
+    await waitFor(() => expect(result.current.resume.isError).toBe(true), {
+      timeout: 3000,
+    });
+    expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(2);
+    expect(result.current.session.status).toBe('signedIn');
+    expect(store.clearToken).not.toHaveBeenCalled();
+  });
+
+  it("ignores a 401 from the previous user's client", async () => {
+    let reject: (error: unknown) => void = () => {};
+    libraryApi.getResumeItems.mockReturnValueOnce(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    libraryApi.getResumeItems.mockResolvedValue({data: {Items: []}});
+    const {result} = renderHook(
+      () => ({session: useSession(), resume: useResume()}),
+      {wrapper},
+    );
+    await waitFor(() => expect(libraryApi.getResumeItems).toHaveBeenCalled());
+
+    act(() => result.current.session.switchUser());
+    act(() => result.current.session.signIn(sessionFor(HOME, 'u2')));
+    await act(async () => reject(httpError(401)));
+
+    expect(result.current.session.status).toBe('signedIn');
+    expect(result.current.session.session?.user.Id).toBe('u2');
+    expect(store.clearToken).not.toHaveBeenCalled();
   });
 });
