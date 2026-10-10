@@ -10,9 +10,7 @@ const renderApp = (
   state: AuthState,
   service: ReturnType<typeof fakeService> = fakeService(),
 ) =>
-  render(
-    <RootNavigator authService={service} authStore={fakeStore(state)} />,
-  );
+  render(<RootNavigator authService={service} authStore={fakeStore(state)} />);
 
 describe('RootNavigator', () => {
   it('shows Launch, then Home once signed in', async () => {
@@ -55,6 +53,35 @@ describe('RootNavigator', () => {
 
     await act(async () => {
       fireEvent.press(screen.getByTestId('auth-placeholder-button'));
+    });
+    expect(await screen.findByTestId('home-screen')).toBeTruthy();
+  });
+
+  it('clears the notice once the user navigates', async () => {
+    const service = fakeService();
+    service.restoreSession.mockResolvedValue(undefined);
+    const screen = renderApp(signedInState(), service);
+    expect(await screen.findByTestId('auth-notice')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('auth-placeholder-button'));
+    });
+    expect(screen.getByTestId('auth-AddServer')).toBeTruthy();
+    expect(screen.queryByTestId('auth-notice')).toBeNull();
+  });
+
+  it('shows Retry on the launch screen when saved logins fail to load', async () => {
+    const store = fakeStore(signedInState());
+    store.getState.mockRejectedValueOnce(new Error('disk I/O'));
+    const screen = render(
+      <RootNavigator authService={fakeService()} authStore={store} />,
+    );
+
+    expect(await screen.findByText("Couldn't load saved logins.")).toBeTruthy();
+    expect(screen.getByTestId('launch-screen')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('launch-retry'));
     });
     expect(await screen.findByTestId('home-screen')).toBeTruthy();
   });

@@ -1,6 +1,7 @@
 import {
   DarkTheme,
   NavigationContainer,
+  NavigationState,
   Theme,
 } from '@amazon-devices/react-navigation__native';
 import {createNativeStackNavigator} from '@amazon-devices/react-navigation__native-stack';
@@ -71,6 +72,12 @@ const AuthPlaceholder = ({
   );
 };
 
+/** Launch screen; shows the load error and Retry when there is one. */
+const Launch = () => {
+  const {error, retry} = useSession();
+  return <LaunchScreen error={error} onRetry={retry} />;
+};
+
 const addServer = (
   <Stack.Screen key="AddServer" name="AddServer" component={AuthPlaceholder} />
 );
@@ -91,8 +98,8 @@ const RootStack = () => {
         headerShown: false,
         contentStyle: {backgroundColor: colors.background},
       }}>
-      {status === 'loading' ? (
-        <Stack.Screen name="Launch" component={LaunchScreen} />
+      {status === 'loading' || status === 'error' ? (
+        <Stack.Screen name="Launch" component={Launch} />
       ) : status === 'signedIn' ? (
         <>
           <Stack.Screen name="Main" component={MainMenu} />
@@ -126,11 +133,29 @@ type RootNavigatorProps = {
   authStore?: AuthStore;
 };
 
-export const RootNavigator = ({authService, authStore}: RootNavigatorProps) => (
-  <SessionProvider authService={authService} authStore={authStore}>
-    <NavigationContainer theme={theme}>
+/**
+ * Notices only show on the user picker, so leaving it hides the notice.
+ * Checking the focused route (rather than clearing on any state change)
+ * keeps the notice when the screen set swaps to the auth routes.
+ */
+const Navigation = () => {
+  const {notice, clearNotice} = useSession();
+  const onStateChange = (state?: NavigationState) => {
+    const focused = state?.routes[state.index]?.name;
+    if (notice && focused !== 'UserPicker') {
+      clearNotice();
+    }
+  };
+  return (
+    <NavigationContainer theme={theme} onStateChange={onStateChange}>
       <RootStack />
     </NavigationContainer>
+  );
+};
+
+export const RootNavigator = ({authService, authStore}: RootNavigatorProps) => (
+  <SessionProvider authService={authService} authStore={authStore}>
+    <Navigation />
   </SessionProvider>
 );
 

@@ -91,6 +91,23 @@ describe('SessionProvider startup', () => {
     expect(result.current.notice).toBeUndefined();
   });
 
+  it('shows an error when the saved logins fail to load, then retries', async () => {
+    const store = fakeStore(signedInState());
+    store.getState.mockRejectedValueOnce(new Error('disk I/O'));
+    const {result} = renderSession(signedInState(), fakeService(), store);
+    await settled(result);
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.notice).toBeUndefined();
+    expect(result.current.error).toBe("Couldn't load saved logins.");
+
+    act(() => result.current.retry());
+    await settled(result);
+
+    expect(result.current.status).toBe('signedIn');
+    expect(result.current.error).toBeUndefined();
+  });
+
   it('goes to the picker on the last server when auto-login is off', async () => {
     const {result, service} = renderSession({
       ...signedInState(),
@@ -156,6 +173,35 @@ describe('SessionProvider actions', () => {
     expect(result.current.session).toBeUndefined();
   });
 
+  it('signOut still shows the picker when logout fails', async () => {
+    const service = fakeService();
+    service.logout.mockRejectedValue(new Error('storage full'));
+    const {result} = renderSession(signedInState(), service);
+    await settled(result);
+
+    await act(async () => {
+      await expect(result.current.signOut()).rejects.toThrow('storage full');
+    });
+
+    expect(result.current.status).toBe('needsUser');
+    expect(result.current.serverId).toBe('srv1');
+    expect(result.current.session).toBeUndefined();
+  });
+
+  it('clearNotice removes the notice and keeps the status', async () => {
+    const service = fakeService();
+    service.restoreSession.mockResolvedValue(undefined);
+    const {result} = renderSession(signedInState(), service);
+    await settled(result);
+    expect(result.current.notice).toBeDefined();
+
+    act(() => result.current.clearNotice());
+
+    expect(result.current.notice).toBeUndefined();
+    expect(result.current.status).toBe('needsUser');
+    expect(result.current.serverId).toBe('srv1');
+  });
+
   it('switchUser keeps the token', async () => {
     const {result, service, store} = renderSession(signedInState());
     await settled(result);
@@ -169,7 +215,10 @@ describe('SessionProvider actions', () => {
   });
 
   it('signIn and selectServer update the state', async () => {
-    const {result} = renderSession({servers: {}, autoLogin: {mode: 'lastUser'}});
+    const {result} = renderSession({
+      servers: {},
+      autoLogin: {mode: 'lastUser'},
+    });
     await settled(result);
 
     act(() => result.current.selectServer('srv2'));

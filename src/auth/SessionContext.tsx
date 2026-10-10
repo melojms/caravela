@@ -14,7 +14,12 @@ import type {AuthService, Session} from './authService';
 import {getAuthStore} from './store';
 import type {AuthState, AuthStore, StoredServer} from './store';
 
-export type SessionStatus = 'loading' | 'signedIn' | 'needsServer' | 'needsUser';
+export type SessionStatus =
+  | 'loading'
+  | 'error'
+  | 'signedIn'
+  | 'needsServer'
+  | 'needsUser';
 
 export interface SessionNotice {
   kind: 'expired' | 'offline';
@@ -27,17 +32,24 @@ export interface SessionState {
   /** The server the user picker should show. */
   serverId?: string;
   notice?: SessionNotice;
+  /** Set with status `error`, when the saved logins couldn't be read. */
+  error?: string;
 }
 
 export interface SessionContextValue extends SessionState {
   signIn(session: Session): void;
-  /** Ends the session on the server, then shows the picker for that server. */
+  /**
+   * Ends the session on the server, then shows the picker for that server.
+   * The picker is shown even when logout fails; the error is rethrown.
+   */
   signOut(): Promise<void>;
   /** Shows the picker for the current server and keeps the saved token. */
   switchUser(): void;
   /** Runs the startup flow again, e.g. after the server was offline. */
   retry(): void;
   selectServer(serverId: string): void;
+  /** Hides the notice, e.g. once the user moves to another screen. */
+  clearNotice(): void;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(
@@ -110,10 +122,7 @@ export const SessionProvider = ({
   authService,
   authStore,
 }: SessionProviderProps) => {
-  const service = useMemo(
-    () => authService ?? getAuthService(),
-    [authService],
-  );
+  const service = useMemo(() => authService ?? getAuthService(), [authService]);
   const store = useMemo(() => authStore ?? getAuthStore(), [authStore]);
   const [state, setState] = useState<SessionState>({status: 'loading'});
   // Bumped by every state change so a stale startup can't overwrite it.
@@ -128,7 +137,12 @@ export const SessionProvider = ({
     update({status: 'loading'});
     const run = generation.current;
     resolveStartup(service, store)
-      .catch((): SessionState => ({status: 'needsServer'}))
+      .catch(
+        (): SessionState => ({
+          status: 'error',
+          error: "Couldn't load saved logins.",
+        }),
+      )
       .then((next) => {
         if (generation.current === run) {
           update(next);
@@ -158,8 +172,11 @@ export const SessionProvider = ({
     if (!session) {
       return;
     }
-    await service.logout(session);
-    update({status: 'needsUser', serverId: session.server.id});
+    try {
+      await service.logout(session);
+    } finally {
+      update({status: 'needsUser', serverId: session.server.id});
+    }
   }, [service, update]);
 
   const switchUser = useCallback(() => {
@@ -172,9 +189,26 @@ export const SessionProvider = ({
     [update],
   );
 
+  // Not via update(): hiding the notice must not drop a pending startup.
+  const clearNotice = useCallback(
+    () =>
+      setState((current) =>
+        current.notice ? {...current, notice: undefined} : current,
+      ),
+    [],
+  );
+
   const value = useMemo<SessionContextValue>(
-    () => ({...state, signIn, signOut, switchUser, retry: startup, selectServer}),
-    [state, signIn, signOut, switchUser, startup, selectServer],
+    () => ({
+      ...state,
+      signIn,
+      signOut,
+      switchUser,
+      retry: startup,
+      selectServer,
+      clearNotice,
+    }),
+    [state, signIn, signOut, switchUser, startup, selectServer, clearNotice],
   );
 
   return (
