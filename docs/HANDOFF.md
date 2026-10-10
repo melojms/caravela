@@ -17,8 +17,14 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
     - 3d-1 Quick Connect only shows on Password when the server has it on (`isQuickConnectEnabled`). The countdown reads `attempt.expiresAt` (the service owns the timeout). Sign in and Try again use `disabled` while busy.
     - 3d-2 `active` FocusableButton (not focused) gets a violet outline, including the side menu. Disabled+active keeps the outline, dimmed.
   - Task 4: side menu (Home / Movies / Shows / Search / Settings), theme, FocusableCard / ContentRow / PosterGrid / FocusableButton, with mock data in `src/dev/mockItems.ts`.
-- **Checks on `main`:** lint 0 errors, Jest 210 passing, the Release build installs and runs on the Fire TV. The TV is signed out (the last install wiped storage).
-- **Next: task 5, Home rows. APPROVED** (2026-10-10), running as 5a ‖ 5b, then 5c (briefs `docs/tasks/05*.md`).
+  - Task 5: Home rows (briefs `docs/tasks/05*.md`):
+    - 5a `src/api/items.ts` (items → cards, androidtv titles/subtitles: episode "Series S1 E2" + episode name, movie/series age rating; image fallbacks; local-time dates) and `src/components/Backdrop.tsx` (blurred, dimmed; blur confirmed on the TV).
+    - 5b TanStack Query v5 with a per-user cache (`src/api/queryClient.tsx`, provider in `RootNavigator`) and `src/api/home.ts` (section order from `usersettings`/`emby` prefs with androidtv defaults, falls back to defaults on failure except 401; My media, Continue watching, Next up, Recently added per library, 20 items).
+    - 5c-1 any 401 → `expireSession()`: picker with the expired notice, token dropped; late 401s from a previous user's client are ignored.
+    - 5c-2 Home wired to real data, androidtv row titles, error rows with Retry, spinner, "Nothing here yet", focused-card backdrop (300 ms debounce), refetch on return.
+  - App pill: the launcher shows only the middle 16:9 strip of `assets/image/app_icon.png`, so the icon is now Sail + "Caravela" on navy (`assets/brand/caravela-pill.svg`).
+- **Checks on `main`:** lint 0 errors (12 Vega SDL notices), Jest 316 passing, the Release build installs and runs on the Fire TV.
+- **In progress: 5d**, the coloured frame around unfocused cards (placeholder colour showing through the transparent focus border in `FocusableCard`). Worktree `../caravela-wt/task-05d`, brief `docs/tasks/05d-card-frame.md`.
 - **Then task 5.5: replace the side menu with an androidtv-style top toolbar** (user avatar left; Home and Search centre; Settings icon and clock right; Movies/Shows reached from My Media). Describe the approach and wait for approval.
 - **Follow-ups:**
   - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
@@ -27,6 +33,11 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
   - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
+  - Lock files: only regenerate `package-lock.json` when a rebase conflicts on it. Regenerating from an existing `node_modules` strips `resolved`/`integrity`.
+  - KEY_HOME sent with `inputd-cli` from inside Caravela did nothing (Back worked). Check with the real remote.
+  - The app-pill SVG → PNG generator isn't in the repo; re-export `caravela-pill.svg` to 512×512 by hand.
+  - Home: tests for a 401 on sections, Recently added erroring when My media isn't in the order, a row emptying while it holds preferred focus, and the backdrop timer on unmount.
+  - Continue watching uses wide cards for movies too (androidtv mixes poster and wide); our Carousel row has one card shape.
   - From 3d: tests for a countdown whose `expiresAt` is already past (show 0:00), repeated Try again failures, Sign in pressed while the Quick Connect check is pending, and a button that turns disabled while focused and active.
 
 ## Decisions and preferences
@@ -60,7 +71,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - **Typing:** focus the TextInput (the keyboard opens), wait about 3 s, then `inputd-cli send_text <text>`. Check with a screenshot: a stray key press can add a letter in front. Press Back to close the keyboard.
 - **Before merging to `main`:**
   - Rebase onto `main` and resolve `package.json`, `manifest.toml` and `jest.config.json` by taking both sides.
-  - Delete and regenerate `package-lock.json` with `npm install`.
+  - If `package-lock.json` conflicts, regenerate it with a clean `rm -rf node_modules package-lock.json && npm install`; otherwise keep it and run `npm ci`.
   - Run `npm run lint` and `npm test`, then `npm run build:release`.
   - Install and launch: `vega run-app build/armv7-release/caravela_armv7.vpkg com.melojms.caravela.main -d 192.168.50.124:5555`.
   - `run-app` reinstalls the package, which **wipes the app's storage** (saved servers, users and tokens). To restart without losing them, e.g. to check auto-login: `vega device terminate-app -d 192.168.50.124:5555 -a com.melojms.caravela.main`, then `vega device launch-app` with the same options.
