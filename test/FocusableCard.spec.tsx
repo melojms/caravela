@@ -33,6 +33,63 @@ describe('FocusableCard', () => {
     expect(frameStyle().transform).toBeUndefined();
   });
 
+  describe('frame colour', () => {
+    const PLACEHOLDER = '#123456';
+    // A colour on the element that carries the border shows through the
+    // transparent border as a frame.
+    const isVisible = (color: unknown) =>
+      color !== undefined && color !== colors.transparent;
+
+    it('draws no coloured frame around an unfocused card with an image', () => {
+      const screen = render(
+        <FocusableCard
+          testID="card"
+          title="Dune"
+          imageUri="https://example.com/dune.jpg"
+          placeholderColor={PLACEHOLDER}
+        />,
+      );
+      const frame = flatStyle(screen.getByTestId('card-frame').props.style);
+
+      expect(isVisible(frame.backgroundColor)).toBe(false);
+      expect(frame.borderColor).toBe(colors.transparent);
+    });
+
+    it('keeps the placeholder colour inside the border of a card without an image', () => {
+      const screen = render(
+        <FocusableCard
+          testID="card"
+          title="Dune"
+          placeholderColor={PLACEHOLDER}
+        />,
+      );
+      const frame = flatStyle(screen.getByTestId('card-frame').props.style);
+      const surface = flatStyle(screen.getByTestId('card-surface').props.style);
+
+      expect(isVisible(frame.backgroundColor)).toBe(false);
+      expect(surface.backgroundColor).toBe(PLACEHOLDER);
+      expect(surface.borderWidth).toBeUndefined();
+    });
+
+    it('gives only the focused card the focus colour', () => {
+      const screen = render(
+        <>
+          <FocusableCard testID="a" title="Dune" imageUri="https://x/a.jpg" />
+          <FocusableCard testID="b" title="Alien" imageUri="https://x/b.jpg" />
+        </>,
+      );
+      const frameStyle = (id: string) =>
+        flatStyle(screen.getByTestId(`${id}-frame`).props.style);
+
+      fireEvent(screen.getByTestId('b'), 'focus');
+
+      expect(frameStyle('b').borderColor).toBe(colors.focus);
+      expect(frameStyle('a').borderColor).toBe(colors.transparent);
+      expect(isVisible(frameStyle('a').backgroundColor)).toBe(false);
+      expect(isVisible(frameStyle('b').backgroundColor)).toBe(false);
+    });
+  });
+
   it('renders title, subtitle and the progress and badge slots', () => {
     const onPress = jest.fn();
     const screen = render(

@@ -64,27 +64,28 @@ export const FocusableCard = memo(
         style={{width: size.width}}>
         <View
           testID={testID ? `${testID}-frame` : undefined}
-          style={[
-            styles.frame,
-            size,
-            {backgroundColor: placeholderColor},
-            focused && styles.frameFocused,
-          ]}>
-          {imageUri ? (
-            <Image
-              source={{uri: imageUri}}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
-          ) : (
-            <Text style={styles.placeholderText} numberOfLines={3}>
-              {title}
-            </Text>
-          )}
-          {badge ? <View style={styles.badgeSlot}>{badge}</View> : null}
-          {progressBar ? (
-            <View style={styles.progressSlot}>{progressBar}</View>
-          ) : null}
+          style={[styles.frame, size, focused && styles.frameFocused]}>
+          {/* The placeholder colour sits inside the border, so it can't show
+              through the transparent border as a frame around unfocused cards. */}
+          <View
+            testID={testID ? `${testID}-surface` : undefined}
+            style={[styles.surface, {backgroundColor: placeholderColor}]}>
+            {imageUri ? (
+              <Image
+                source={{uri: imageUri}}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.placeholderText} numberOfLines={3}>
+                {title}
+              </Text>
+            )}
+            {badge ? <View style={styles.badgeSlot}>{badge}</View> : null}
+            {progressBar ? (
+              <View style={styles.progressSlot}>{progressBar}</View>
+            ) : null}
+          </View>
         </View>
         <Text
           style={[styles.title, focused && styles.titleFocused]}
@@ -122,12 +123,17 @@ const styles = StyleSheet.create({
     borderWidth: focus.borderWidth,
     borderColor: colors.transparent,
     overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   frameFocused: {
     borderColor: colors.focus,
     transform: [{scale: focus.scale}],
+  },
+  surface: {
+    flex: 1,
+    borderRadius: Math.max(radius.md - focus.borderWidth, 0),
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   placeholderText: {
     ...typography.heading,
