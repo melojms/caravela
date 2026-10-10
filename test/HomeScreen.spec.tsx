@@ -320,7 +320,7 @@ describe('HomeScreen', () => {
     renderHome();
 
     fireEvent.press(screen.getByTestId('row-resume-item-0'));
-    expect(navigate).toHaveBeenCalledWith('DetailsPlaceholder', {
+    expect(navigate).toHaveBeenCalledWith('Details', {
       itemId: 'r1',
       title: 'Movie r1',
     });
@@ -392,7 +392,7 @@ describe('HomeScreen', () => {
     renderHome();
 
     fireEvent.press(screen.getByTestId('row-myMedia-item-0'));
-    expect(navigate).toHaveBeenCalledWith('DetailsPlaceholder', {
+    expect(navigate).toHaveBeenCalledWith('Details', {
       itemId: 'lib-mixed',
       title: 'Mixed',
     });

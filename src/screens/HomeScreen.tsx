@@ -246,7 +246,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
 
   const openDetails = useCallback(
     (item: CardItem) =>
-      navigation.navigate('DetailsPlaceholder', {
+      navigation.navigate('Details', {
         itemId: item.id,
         title: item.title,
       }),

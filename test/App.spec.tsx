@@ -46,6 +46,11 @@ jest.mock('../src/api/home', () => {
   };
 });
 
+// Details stays loading: these tests only check where cards lead.
+jest.mock('../src/api/details', () => ({
+  useItemDetails: () => ({isPending: true, isError: false, error: null}),
+}));
+
 const pressBack = async () => {
   const handlers = (BackHandler.addEventListener as jest.Mock).mock.calls.map(
     ([, handler]) => handler,
@@ -180,7 +185,7 @@ describe('App', () => {
   it.each([
     ['row-myMedia-item-0', 'movies-screen'],
     ['row-myMedia-item-1', 'shows-screen'],
-    ['row-resume-item-0', 'details-screen'],
+    ['row-resume-item-0', 'details-loading'],
   ])('opens %s and Back returns to Home', async (card, target) => {
     const screen = render(<App />);
     await screen.findByTestId('home-screen');

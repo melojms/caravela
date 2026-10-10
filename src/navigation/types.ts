@@ -20,6 +20,7 @@ export type RootStackParamList = AuthStackParamList & {
   Settings: undefined;
   Movies: undefined;
   Shows: undefined;
+  Details: {itemId: string; title: string};
   DetailsPlaceholder: {itemId: string; title: string};
 };
 
