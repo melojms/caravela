@@ -49,7 +49,6 @@ export const focus = {
 
 /** Card and layout sizes in dp. */
 export const layout = {
-  menuWidth: px(320),
   screenPadding: px(64),
   posterCard: {width: px(208), height: px(312)},
   landscapeCard: {width: px(400), height: px(225)},

@@ -90,9 +90,7 @@ describe('Toolbar', () => {
 
   it('shows initials when there is no image', () => {
     const {screen} = setup();
-    expect(screen.getByTestId('toolbar-user-initials')).toHaveTextContent(
-      'JM',
-    );
+    expect(screen.getByTestId('toolbar-user-initials')).toHaveTextContent('JM');
     expect(screen.queryByTestId('toolbar-user-image')).toBeNull();
   });
 

@@ -24,9 +24,6 @@ id = "/com.amazon.kepler.safe_area_context_8@ISafeAreaContext_0"
 id = "/com.amazon.kepler.screens_3@IScreens_0"
 
 [[needs.module]]
-id = "/com.amazon.kepler.navigation__bottom_tabs_8@INavigation__BottomTabs_0"
-
-[[needs.module]]
 id = "/com.amazon.kepler.navigation__core_8@INavigation__Core_0"
 
 [[needs.module]]
