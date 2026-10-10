@@ -62,6 +62,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10.
   - Delete and regenerate `package-lock.json` with `npm install`.
   - Run `npm run lint` and `npm test`, then `npm run build:release`.
   - Install and launch: `vega run-app build/armv7-release/caravela_armv7.vpkg com.melojms.caravela.main -d 192.168.50.124:5555`.
+  - `run-app` reinstalls the package, which **wipes the app's storage** (saved servers, users and tokens). To restart without losing them, e.g. to check auto-login: `vega device terminate-app -d 192.168.50.124:5555 -a com.melojms.caravela.main`, then `vega device launch-app` with the same options.
   - Take a screenshot (below) and look at it.
   - Then `git merge --ff-only`.
 - **Screenshot:**
