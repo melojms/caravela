@@ -12,7 +12,8 @@
   "moduleNameMapper": {
     "^react-native$": "@amazon-devices/react-native-kepler",
     "^react-native/(.*)$": "@amazon-devices/react-native-kepler/$1",
-    "^~/(.*)$": "<rootDir>/src/$1"
+    "^~/(.*)$": "<rootDir>/src/$1",
+    "^@amazon-devices/react-native-w3cmedia$": "<rootDir>/test/__mocks__/react-native-w3cmedia.ts"
   },
   "setupFiles": ["<rootDir>/test/setup.tsx", "<rootDir>/test/jestSetup.js"],
   "modulePaths": ["<rootDir>/src"],
