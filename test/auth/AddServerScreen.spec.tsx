@@ -132,6 +132,9 @@ describe('AddServerScreen', () => {
     await typeAndConnect(screen, 'jellyfin.example.com');
 
     expect(screen.getByText('Connecting…')).toBeTruthy();
+    expect(
+      screen.getByTestId('add-server-connect').props.accessibilityState,
+    ).toMatchObject({disabled: true});
     await act(async () => {
       fireEvent.press(screen.getByTestId('add-server-connect'));
       fireEvent(screen.getByTestId('add-server-input'), 'submitEditing', {
@@ -143,6 +146,32 @@ describe('AddServerScreen', () => {
     await act(async () => pending.resolve(found));
     expect(screen.queryByText('Connecting…')).toBeNull();
     expect(selectServer).toHaveBeenCalledWith('srv9');
+  });
+
+  it('enables Connect again after a failed attempt', async () => {
+    discover.mockRejectedValueOnce(new Error('boom'));
+    const screen = renderScreen();
+    const connectButton = () => screen.getByTestId('add-server-connect');
+    expect(connectButton().props.accessibilityState).toMatchObject({
+      disabled: false,
+    });
+
+    await typeAndConnect(screen, 'jellyfin.example.com');
+    expect(connectButton().props.accessibilityState).toMatchObject({
+      disabled: false,
+    });
+
+    await act(async () => {
+      fireEvent.press(connectButton());
+    });
+    expect(discover).toHaveBeenCalledTimes(2);
+  });
+
+  it('titles the TV keyboard "Server address"', () => {
+    const screen = renderScreen();
+    expect(screen.getByTestId('add-server-input').props.auxOptions).toBe(
+      'title:Server address',
+    );
   });
 
   it('connects from the keyboard Go key', async () => {

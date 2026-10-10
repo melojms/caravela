@@ -80,6 +80,8 @@ export const initials = (name: string) =>
 
 const AVATAR_SIZE = px(180);
 const TILE_WIDTH = px(220);
+/** Space between the focus ring and the avatar, so a cyan avatar keeps its edge. */
+const AVATAR_GAP = spacing.xxs;
 
 const avatarColors = [
   {background: colors.violet, text: colors.text},
@@ -124,39 +126,44 @@ const UserTile = memo(
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         style={styles.tile}>
+        {/* The ring is a separate, unfilled view: a filled one shows its
+            colour through the transparent border as a ring on every tile. */}
         <View
-          style={[
-            styles.avatar,
-            {backgroundColor: color.background},
-            focused && styles.avatarFocused,
-          ]}>
-          {showImage ? (
-            <Image
-              testID={`${testID}-image`}
-              source={{
-                uri: getUserImageUrl(server, user.id, {
-                  tag: user.imageTag,
-                  accessToken: user.accessToken,
-                  // The design size in physical pixels at 1080p.
-                  maxHeight: AVATAR_SIZE * 2,
-                }),
-              }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              onError={() => setImageFailed(true)}
-            />
-          ) : (
-            <Text
-              testID={`${testID}-initials`}
-              style={[styles.initials, {color: color.text}]}>
-              {initials(user.name)}
-            </Text>
-          )}
-          {busy ? (
-            <View style={styles.busy} testID={`${testID}-busy`}>
-              <ActivityIndicator size="large" color={colors.text} />
-            </View>
-          ) : null}
+          testID={`${testID}-ring`}
+          style={[styles.ring, focused && styles.ringFocused]}>
+          <View
+            style={[
+              styles.avatar,
+              !showImage && {backgroundColor: color.background},
+            ]}>
+            {showImage ? (
+              <Image
+                testID={`${testID}-image`}
+                source={{
+                  uri: getUserImageUrl(server, user.id, {
+                    tag: user.imageTag,
+                    accessToken: user.accessToken,
+                    // The design size in physical pixels at 1080p.
+                    maxHeight: AVATAR_SIZE * 2,
+                  }),
+                }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+                onError={() => setImageFailed(true)}
+              />
+            ) : (
+              <Text
+                testID={`${testID}-initials`}
+                style={[styles.initials, {color: color.text}]}>
+                {initials(user.name)}
+              </Text>
+            )}
+            {busy ? (
+              <View style={styles.busy} testID={`${testID}-busy`}>
+                <ActivityIndicator size="large" color={colors.text} />
+              </View>
+            ) : null}
+          </View>
         </View>
         <Text
           testID={`${testID}-name`}
@@ -410,19 +417,24 @@ const styles = StyleSheet.create({
     marginRight: layout.cardGap,
     alignItems: 'center',
   },
-  avatar: {
+  ring: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
+    padding: AVATAR_GAP,
     borderRadius: radius.pill,
     borderWidth: focus.borderWidth,
     borderColor: colors.transparent,
+  },
+  ringFocused: {
+    borderColor: colors.focus,
+    transform: [{scale: focus.scale}],
+  },
+  avatar: {
+    flex: 1,
+    borderRadius: radius.pill,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarFocused: {
-    borderColor: colors.focus,
-    transform: [{scale: focus.scale}],
   },
   initials: {
     ...typography.title,

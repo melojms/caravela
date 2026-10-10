@@ -8,6 +8,7 @@ import type {
 } from '../../src/auth/SessionContext';
 import {useSession} from '../../src/auth/SessionContext';
 import {UserPickerScreen} from '../../src/screens/auth/UserPickerScreen';
+import {colors, focus} from '../../src/theme';
 import {
   HOME,
   fakeService,
@@ -59,6 +60,38 @@ const tileIds = () =>
   screen
     .getAllByTestId(/^user-tile-\w+$/)
     .map((tile) => tile.props.testID.replace('user-tile-', ''));
+
+type Node = ReturnType<typeof screen.getByTestId>;
+
+/** Host views inside a node, depth first. */
+const hostViews = (node: Node): Node[] =>
+  node.children.flatMap((child) =>
+    typeof child === 'string'
+      ? []
+      : [
+          ...(String(child.type) === 'View' ? [child] : []),
+          ...hostViews(child),
+        ],
+  );
+
+// The Vega Jest preset's StyleSheet.flatten mock returns arrays untouched,
+// so flatten by hand.
+const flatStyle = (style: unknown): Record<string, unknown> =>
+  Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+
+const tileViewStyles = (id: string) =>
+  hostViews(screen.getByTestId(`user-tile-${id}`)).map((view) =>
+    flatStyle(view.props.style),
+  );
+
+const isVisible = (color: unknown) =>
+  color !== undefined && color !== colors.transparent;
+
+/** Views of a tile that draw a coloured border. */
+const rings = (id: string) =>
+  tileViewStyles(id).filter(
+    (style) => Number(style.borderWidth) > 0 && isVisible(style.borderColor),
+  );
 
 beforeEach(() => {
   session = {signIn: jest.fn(), retry: jest.fn(), notice: undefined};
@@ -291,6 +324,48 @@ describe('UserPickerScreen', () => {
 
     expect(screen.queryByTestId('user-tile-u3-image')).toBeNull();
     expect(screen.getByTestId('user-tile-u3-initials')).toHaveTextContent('A');
+  });
+
+  it('draws no ring or background around unfocused avatars', async () => {
+    await renderPicker();
+
+    // u1, u2 and u3 show an image; none of their views may paint a colour
+    // around it, or it shows through the transparent focus border as a ring.
+    for (const id of ['u1', 'u2', 'u3']) {
+      for (const style of tileViewStyles(id)) {
+        expect(isVisible(style.backgroundColor)).toBe(false);
+        expect(isVisible(style.borderColor)).toBe(false);
+      }
+    }
+    // u4 shows initials: the coloured circle sits inside the ring's box,
+    // not under the ring's border.
+    const bordered = tileViewStyles('u4').filter(
+      (style) => Number(style.borderWidth) > 0,
+    );
+    expect(bordered.length).toBeGreaterThan(0);
+    for (const style of bordered) {
+      expect(isVisible(style.backgroundColor)).toBe(false);
+      expect(isVisible(style.borderColor)).toBe(false);
+    }
+  });
+
+  it('rings and scales only the focused tile', async () => {
+    await renderPicker();
+
+    fireEvent(screen.getByTestId('user-tile-u2'), 'focus');
+
+    const focused = rings('u2');
+    expect(focused).toHaveLength(1);
+    expect(focused[0]).toMatchObject({
+      borderColor: colors.focus,
+      transform: [{scale: focus.scale}],
+    });
+    for (const id of ['u1', 'u3', 'u4']) {
+      expect(rings(id)).toHaveLength(0);
+    }
+
+    fireEvent(screen.getByTestId('user-tile-u2'), 'blur');
+    expect(rings('u2')).toHaveLength(0);
   });
 
   it('truncates long names to one line', async () => {

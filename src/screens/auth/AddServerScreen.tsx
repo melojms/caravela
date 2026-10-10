@@ -1,10 +1,10 @@
+import {TextInput} from '@amazon-devices/react-native-kepler';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   NativeSyntheticEvent,
   StyleSheet,
   Text,
-  TextInput,
   TextInputSubmitEditingEventData,
   View,
 } from 'react-native';
@@ -134,6 +134,8 @@ export const AddServerScreen = ({
         placeholder="Server address"
         placeholderTextColor={colors.textMuted}
         accessibilityLabel="Server address"
+        // Titles the Vega TV keyboard, which otherwise reads "Enter".
+        auxOptions="title:Server address"
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
@@ -160,7 +162,8 @@ export const AddServerScreen = ({
         <FocusableButton
           testID="add-server-connect"
           label="Connect"
-          onPress={connecting ? undefined : connect}
+          disabled={connecting}
+          onPress={connect}
         />
       </View>
     </View>
