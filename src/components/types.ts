@@ -8,4 +8,6 @@ export type CardItem = {
   /** Watch progress, 0..1. Renders a progress bar when > 0. */
   progress?: number;
   played?: boolean;
+  /** Backdrops for the background behind Home: the item's, then its parent's. */
+  backdropUris?: string[];
 };
