@@ -6,23 +6,19 @@ import {
 } from '@amazon-devices/react-navigation__native';
 import {createNativeStackNavigator} from '@amazon-devices/react-navigation__native-stack';
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
 
 import type {AuthService} from '../auth/authService';
 import {SessionProvider, useSession} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
-import {FocusableButton} from '../components/FocusableButton';
 import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
 import {AddServerScreen} from '../screens/auth/AddServerScreen';
 import {LaunchScreen} from '../screens/auth/LaunchScreen';
+import {PasswordScreen} from '../screens/auth/PasswordScreen';
+import {QuickConnectScreen} from '../screens/auth/QuickConnectScreen';
 import {UserPickerScreen} from '../screens/auth/UserPickerScreen';
-import {colors, layout, spacing, typography} from '../theme';
+import {colors} from '../theme';
 import {MainMenu} from './MainMenu';
-import {
-  AuthStackParamList,
-  RootStackParamList,
-  RootStackScreenProps,
-} from './types';
+import {RootStackParamList} from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -35,43 +31,6 @@ const theme: Theme = {
     primary: colors.violet,
     text: colors.text,
   },
-};
-
-/** Stand-in for the auth screens, which later subtasks replace. */
-const AuthPlaceholder = ({
-  route,
-  navigation,
-}: RootStackScreenProps<keyof AuthStackParamList>) => {
-  const {notice, retry} = useSession();
-  const offline = notice?.kind === 'offline';
-  const addServer = route.name === 'UserPicker' && !offline;
-  return (
-    <View style={styles.container} testID={`auth-${route.name}`}>
-      <Text style={styles.title}>{route.name}</Text>
-      {route.params ? (
-        <Text style={styles.meta}>{JSON.stringify(route.params)}</Text>
-      ) : null}
-      {notice ? (
-        <Text style={styles.meta} testID="auth-notice">
-          {notice.message}
-        </Text>
-      ) : null}
-      <View style={styles.actions}>
-        <FocusableButton
-          testID="auth-placeholder-button"
-          label={offline ? 'Retry' : addServer ? 'Add server' : 'Coming soon'}
-          hasTVPreferredFocus
-          onPress={
-            offline
-              ? retry
-              : addServer
-              ? () => navigation.navigate('AddServer')
-              : undefined
-          }
-        />
-      </View>
-    </View>
-  );
 };
 
 /** Launch screen; shows the load error and Retry when there is one. */
@@ -121,8 +80,8 @@ const RootStack = () => {
             initialParams={serverId ? {serverId} : undefined}
           />
           {status === 'needsServer' ? null : addServer}
-          <Stack.Screen name="Password" component={AuthPlaceholder} />
-          <Stack.Screen name="QuickConnect" component={AuthPlaceholder} />
+          <Stack.Screen name="Password" component={PasswordScreen} />
+          <Stack.Screen name="QuickConnect" component={QuickConnectScreen} />
         </Stack.Group>
       )}
     </Stack.Navigator>
@@ -160,26 +119,3 @@ export const RootNavigator = ({authService, authStore}: RootNavigatorProps) => (
     <Navigation />
   </SessionProvider>
 );
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: layout.screenPadding,
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-  },
-  title: {
-    ...typography.display,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  meta: {
-    ...typography.body,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-  },
-  actions: {
-    marginTop: spacing.lg,
-    alignItems: 'flex-start',
-  },
-});

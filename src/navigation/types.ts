@@ -16,7 +16,13 @@ export type MenuParamList = {
 export type AuthStackParamList = {
   AddServer: undefined;
   UserPicker: {serverId: string};
-  Password: {serverId: string; username?: string; userId?: string};
+  Password: {
+    serverId: string;
+    username?: string;
+    userId?: string;
+    /** Shown as a banner, e.g. when Quick Connect is turned off. */
+    notice?: string;
+  };
   QuickConnect: {serverId: string; userId?: string};
 };
 

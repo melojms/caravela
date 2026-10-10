@@ -2,11 +2,18 @@ import {act, fireEvent, render} from '@testing-library/react-native';
 import React from 'react';
 import {BackHandler} from 'react-native';
 
-import {getAuthService} from '../../src/auth/authService';
+import {AuthError, getAuthService} from '../../src/auth/authService';
+import type {QuickConnectAttempt, Session} from '../../src/auth/authService';
 import type {AuthState} from '../../src/auth/store';
 import {getAuthStore} from '../../src/auth/store';
 import {RootNavigator} from '../../src/navigation/RootNavigator';
-import {fakeService, fakeStore, networkError, signedInState} from './fakes';
+import {
+  fakeService,
+  fakeStore,
+  networkError,
+  sessionFor,
+  signedInState,
+} from './fakes';
 
 // The screens use the default service and store; point them at the fakes.
 jest.mock('../../src/auth/authService', () => ({
@@ -130,5 +137,84 @@ describe('RootNavigator', () => {
 
     // On the first auth screen nothing handles Back, so Vega exits the app.
     expect(handlers.some((handler) => handler())).toBe(false);
+  });
+
+  const pickerWithoutAutoLogin = () => ({
+    ...signedInState(),
+    autoLogin: {mode: 'disabled'} as const,
+  });
+
+  const quickConnectAttempt = () => {
+    let approve!: (session: Session) => void;
+    const attempt: QuickConnectAttempt & {cancel: jest.Mock} = {
+      code: '482913',
+      session: new Promise<Session>((done) => {
+        approve = done;
+      }),
+      cancel: jest.fn(),
+    };
+    return {attempt, approve};
+  };
+
+  const backHandlers = () =>
+    (BackHandler.addEventListener as jest.Mock).mock.calls.map(
+      ([, handler]) => handler,
+    );
+
+  it('signs in with Quick Connect from the picker', async () => {
+    const service = fakeService();
+    const {attempt, approve} = quickConnectAttempt();
+    service.startQuickConnect.mockResolvedValue(attempt);
+    const screen = renderApp(pickerWithoutAutoLogin(), service);
+    expect(await screen.findByTestId('user-tile-u2')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('user-tile-u2'));
+    });
+    expect(await screen.findByTestId('quick-connect-code')).toHaveTextContent(
+      '482913',
+    );
+
+    await act(async () => approve(sessionFor()));
+    expect(await screen.findByTestId('home-screen')).toBeTruthy();
+  });
+
+  it('cancels Quick Connect when Back pops it', async () => {
+    const service = fakeService();
+    const {attempt} = quickConnectAttempt();
+    service.startQuickConnect.mockResolvedValue(attempt);
+    const screen = renderApp(pickerWithoutAutoLogin(), service);
+    expect(await screen.findByTestId('user-tile-u2')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('user-tile-u2'));
+    });
+    expect(await screen.findByTestId('quick-connect-code')).toBeTruthy();
+
+    await act(async () => {
+      backHandlers().some((handler) => handler());
+    });
+
+    expect(screen.getByTestId('user-picker')).toBeTruthy();
+    expect(screen.queryByTestId('quick-connect-screen')).toBeNull();
+    expect(attempt.cancel).toHaveBeenCalled();
+  });
+
+  it('falls back to Password with a notice when Quick Connect is off', async () => {
+    const service = fakeService();
+    service.startQuickConnect.mockRejectedValue(
+      new AuthError('quick-connect-disabled', 'Off.'),
+    );
+    const screen = renderApp(pickerWithoutAutoLogin(), service);
+    expect(await screen.findByTestId('user-tile-u2')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('user-tile-u2'));
+    });
+
+    expect(await screen.findByTestId('password-notice')).toHaveTextContent(
+      'Quick Connect is turned off on this server.',
+    );
+    expect(screen.getByTestId('password-username')).toHaveTextContent('guest');
+    expect(screen.queryByTestId('quick-connect-screen')).toBeNull();
   });
 });
