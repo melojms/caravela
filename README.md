@@ -26,6 +26,8 @@ vega device install-app --dir . -b Debug
 vega device launch-app --dir .
 ```
 
+Debug builds load JavaScript from the Metro dev server, so run `npm start` and forward its port to the device first (see the Vega Fast Refresh docs); without it the app starts blank. Release builds bundle the JavaScript and run on their own.
+
 Use `npm run build:release` and `-b Release` for a release build. With more than one device connected, pass `--device <serial>` to the `vega device` commands.
 
 ## Jellyfin API and saved logins

@@ -11,7 +11,7 @@
   - `jellyfin-vega/` contains only `.eslintrc`, `.prettierrc` and `.gitignore`, and is not a git repo yet.
   - Vega SDK 0.24 and CLI 1.4.4 are installed, which means **RN 0.83 / React 19**.
   - Node is v24 (≥ 22.14 is required).
-- **Target server:** Jellyfin **10.11+**, the same minimum as the Android TV app (it uses SDK 1.8.12).
+- **Target server:** Jellyfin **12.0+** (decided in task 2; the test server runs 12.2).
 
 ## Architecture
 - **Stack:**
@@ -19,7 +19,7 @@
   - `@amazon-devices/react-navigation` (stack + drawer).
   - `@amazon-devices/kepler-ui-components` Carousel for rows.
   - TVFocusGuideView / FocusManager for D-pad focus.
-- **API:** `@jellyfin/sdk` (the official TypeScript SDK; version to match the 10.11 OpenAPI). It gives typed `getItemsApi`, `getMediaInfoApi` and the other endpoints, mirroring the Kotlin calls the Android app uses.
+- **API:** `@jellyfin/sdk` (the official TypeScript SDK; 1.0.0, generated from the 12.0 OpenAPI). It gives typed `getItemsApi`, `getMediaInfoApi` and the other endpoints, mirroring the Kotlin calls the Android app uses.
 - **State and data:** TanStack Query for server data, a small Zustand store for session and settings, and persistent storage for servers, users and tokens. Which storage package Vega supports still needs verifying.
 - **Playback:** `@amazon-devices/react-native-w3cmedia` ~4.0 (VideoPlayer + KeplerVideoSurfaceView + KeplerCaptionsView).
   - **Direct play** (mp4/mkv/webm static stream): URL mode.
@@ -107,7 +107,7 @@
   - Ticks/ms conversion.
   - Reporting cadence.
   - Next-up and segment-skip logic.
-- **Test server:** a local Jellyfin 10.11 in Docker with a test library: h264/aac mp4, hevc 10-bit mkv, an AV1 file, ac3/eac3/dts audio, SRT / ASS / PGS subtitles, files with intro segments and trickplay, and a multi-season series.
+- **Test server:** the user's server https://jellyfin.example.lan (12.2) with a test library: h264/aac mp4, hevc 10-bit mkv, an AV1 file, ac3/eac3/dts audio, SRT / ASS / PGS subtitles, files with intro segments and trickplay, and a multi-season series.
 - **On-device:**
   - Build and install with the Vega CLI, after reading the CLI reference and confirming the commands.
   - Test on a **physical Fire TV**, because captions don't render on the simulator.
