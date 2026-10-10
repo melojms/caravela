@@ -1,5 +1,6 @@
 import type {Api} from '@jellyfin/sdk';
-import {getQuickConnectApi} from '@jellyfin/sdk/lib/utils/api/quick-connect-api';
+import {getAuthenticationApi} from '@jellyfin/sdk/lib/utils/api/authentication-api';
+import {getSessionApi} from '@jellyfin/sdk/lib/utils/api/session-api';
 import {getUserApi} from '@jellyfin/sdk/lib/utils/api/user-api';
 
 import {AuthError, createAuthService} from '../../src/auth/authService';
@@ -10,18 +11,24 @@ import type {AuthStore, KeyValueStorage} from '../../src/auth/store';
 jest.mock('@jellyfin/sdk/lib/utils/api/user-api', () => ({
   getUserApi: jest.fn(),
 }));
-jest.mock('@jellyfin/sdk/lib/utils/api/quick-connect-api', () => ({
-  getQuickConnectApi: jest.fn(),
+jest.mock('@jellyfin/sdk/lib/utils/api/authentication-api', () => ({
+  getAuthenticationApi: jest.fn(),
+}));
+jest.mock('@jellyfin/sdk/lib/utils/api/session-api', () => ({
+  getSessionApi: jest.fn(),
 }));
 
-const userApi = {
+const authApi = {
   authenticateUserByName: jest.fn(),
   authenticateWithQuickConnect: jest.fn(),
-  getCurrentUser: jest.fn(),
-};
-const quickConnectApi = {
   initiateQuickConnect: jest.fn(),
   getQuickConnectState: jest.fn(),
+};
+const userApi = {
+  getCurrentUser: jest.fn(),
+};
+const sessionApi = {
+  reportSessionEnded: jest.fn(),
 };
 
 const httpError = (status: number) =>
@@ -65,7 +72,7 @@ const setup = async () => {
   await store.upsertServer(SERVER);
   createApi = jest.fn(
     async (basePath: string, accessToken?: string) =>
-      ({basePath, accessToken, logout: jest.fn()} as unknown as Api),
+      ({basePath, accessToken} as unknown as Api),
   );
   return createAuthService({store, createApi});
 };
@@ -74,17 +81,18 @@ beforeEach(() => {
   jest.useRealTimers();
   jest.clearAllMocks();
   (getUserApi as jest.Mock).mockReturnValue(userApi);
-  (getQuickConnectApi as jest.Mock).mockReturnValue(quickConnectApi);
+  (getAuthenticationApi as jest.Mock).mockReturnValue(authApi);
+  (getSessionApi as jest.Mock).mockReturnValue(sessionApi);
 });
 
 describe('loginWithPassword', () => {
   it('authenticates by name and saves the token', async () => {
     const auth = await setup();
-    userApi.authenticateUserByName.mockResolvedValue({data: AUTH_RESULT});
+    authApi.authenticateUserByName.mockResolvedValue({data: AUTH_RESULT});
 
     const session = await auth.loginWithPassword('srv1', 'melojms', 'pw');
 
-    expect(userApi.authenticateUserByName).toHaveBeenCalledWith({
+    expect(authApi.authenticateUserByName).toHaveBeenCalledWith({
       authenticateUserByName: {Username: 'melojms', Pw: 'pw'},
     });
     expect(session.accessToken).toBe('token-1');
@@ -99,7 +107,7 @@ describe('loginWithPassword', () => {
 
   it('maps 401 to invalid-credentials', async () => {
     const auth = await setup();
-    userApi.authenticateUserByName.mockRejectedValue(httpError(401));
+    authApi.authenticateUserByName.mockRejectedValue(httpError(401));
 
     await expect(
       auth.loginWithPassword('srv1', 'x', 'y'),
@@ -120,7 +128,7 @@ describe('Quick Connect', () => {
 
   const start = async () => {
     const auth = await setup();
-    quickConnectApi.initiateQuickConnect.mockResolvedValue({
+    authApi.initiateQuickConnect.mockResolvedValue({
       data: {Code: '123456', Secret: 'secret'},
     });
     jest.useFakeTimers();
@@ -134,20 +142,20 @@ describe('Quick Connect', () => {
     const attempt = await start();
     expect(attempt.code).toBe('123456');
 
-    quickConnectApi.getQuickConnectState
+    authApi.getQuickConnectState
       .mockResolvedValueOnce({data: {Authenticated: false}})
       .mockRejectedValueOnce(networkError())
       .mockResolvedValueOnce({data: {Authenticated: true}});
-    userApi.authenticateWithQuickConnect.mockResolvedValue({data: AUTH_RESULT});
+    authApi.authenticateWithQuickConnect.mockResolvedValue({data: AUTH_RESULT});
 
     await jest.advanceTimersByTimeAsync(POLL * 3);
     const session = await attempt.session;
 
-    expect(quickConnectApi.getQuickConnectState).toHaveBeenCalledTimes(3);
-    expect(quickConnectApi.getQuickConnectState).toHaveBeenCalledWith({
+    expect(authApi.getQuickConnectState).toHaveBeenCalledTimes(3);
+    expect(authApi.getQuickConnectState).toHaveBeenCalledWith({
       secret: 'secret',
     });
-    expect(userApi.authenticateWithQuickConnect).toHaveBeenCalledWith({
+    expect(authApi.authenticateWithQuickConnect).toHaveBeenCalledWith({
       quickConnectDto: {Secret: 'secret'},
     });
     expect(session.user.Name).toBe('melojms');
@@ -157,7 +165,7 @@ describe('Quick Connect', () => {
 
   it('times out when the code is never approved', async () => {
     const attempt = await start();
-    quickConnectApi.getQuickConnectState.mockResolvedValue({
+    authApi.getQuickConnectState.mockResolvedValue({
       data: {Authenticated: false},
     });
     const result = attempt.session.catch((e) => e);
@@ -167,15 +175,15 @@ describe('Quick Connect', () => {
     const error = await result;
     expect(error).toBeInstanceOf(AuthError);
     expect(error.code).toBe('quick-connect-timeout');
-    const polls = quickConnectApi.getQuickConnectState.mock.calls.length;
+    const polls = authApi.getQuickConnectState.mock.calls.length;
     await jest.advanceTimersByTimeAsync(POLL * 5);
-    expect(quickConnectApi.getQuickConnectState).toHaveBeenCalledTimes(polls);
+    expect(authApi.getQuickConnectState).toHaveBeenCalledTimes(polls);
     expect(jest.getTimerCount()).toBe(0);
   });
 
   it('stops polling when cancelled', async () => {
     const attempt = await start();
-    quickConnectApi.getQuickConnectState.mockResolvedValue({
+    authApi.getQuickConnectState.mockResolvedValue({
       data: {Authenticated: false},
     });
     const result = attempt.session.catch((e) => e);
@@ -185,14 +193,14 @@ describe('Quick Connect', () => {
 
     expect((await result).code).toBe('quick-connect-cancelled');
     await jest.advanceTimersByTimeAsync(TIMEOUT);
-    expect(quickConnectApi.getQuickConnectState).toHaveBeenCalledTimes(2);
-    expect(userApi.authenticateWithQuickConnect).not.toHaveBeenCalled();
+    expect(authApi.getQuickConnectState).toHaveBeenCalledTimes(2);
+    expect(authApi.authenticateWithQuickConnect).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
   });
 
   it('fails when the server forgets the code', async () => {
     const attempt = await start();
-    quickConnectApi.getQuickConnectState.mockRejectedValue(httpError(404));
+    authApi.getQuickConnectState.mockRejectedValue(httpError(404));
     const result = attempt.session.catch((e) => e);
 
     await jest.advanceTimersByTimeAsync(POLL);
@@ -203,7 +211,7 @@ describe('Quick Connect', () => {
 
   it('reports Quick Connect disabled on the server', async () => {
     const auth = await setup();
-    quickConnectApi.initiateQuickConnect.mockRejectedValue(httpError(401));
+    authApi.initiateQuickConnect.mockRejectedValue(httpError(401));
 
     await expect(auth.startQuickConnect('srv1')).rejects.toMatchObject({
       code: 'quick-connect-disabled',
@@ -259,17 +267,19 @@ describe('logout', () => {
   it('ends the server session and clears the token, even if the server call fails', async () => {
     const auth = await setup();
     await store.saveLogin('srv1', {id: 'u1', name: 'melojms'}, 'token-1');
-    const logout = jest.fn().mockRejectedValue(networkError());
+    sessionApi.reportSessionEnded.mockRejectedValue(networkError());
+    const api = {} as Api;
     const session = {
       server: (await store.getServer('srv1'))!,
       user: {Id: 'u1', Name: 'melojms'},
       accessToken: 'token-1',
-      api: {logout} as unknown as Api,
+      api,
     } as Session;
 
     await auth.logout(session);
 
-    expect(logout).toHaveBeenCalled();
+    expect(getSessionApi).toHaveBeenCalledWith(api);
+    expect(sessionApi.reportSessionEnded).toHaveBeenCalled();
     expect(await store.getToken('srv1', 'u1')).toBeUndefined();
   });
 });

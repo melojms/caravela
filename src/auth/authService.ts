@@ -1,5 +1,6 @@
 import type {Api} from '@jellyfin/sdk';
-import {getQuickConnectApi} from '@jellyfin/sdk/lib/utils/api/quick-connect-api';
+import {getAuthenticationApi} from '@jellyfin/sdk/lib/utils/api/authentication-api';
+import {getSessionApi} from '@jellyfin/sdk/lib/utils/api/session-api';
 import {getUserApi} from '@jellyfin/sdk/lib/utils/api/user-api';
 import type {AuthenticationResult} from '@jellyfin/sdk/lib/generated-client/models/authentication-result';
 import type {UserDto} from '@jellyfin/sdk/lib/generated-client/models/user-dto';
@@ -119,7 +120,7 @@ export function createAuthService({
       const server = await requireServer(serverId);
       const api = await createApi(server.address);
       try {
-        const {data} = await getUserApi(api).authenticateUserByName({
+        const {data} = await getAuthenticationApi(api).authenticateUserByName({
           authenticateUserByName: {Username: username, Pw: password},
         });
         return await completeLogin(server, data);
@@ -141,11 +142,11 @@ export function createAuthService({
       } = options;
       const server = await requireServer(serverId);
       const api = await createApi(server.address);
-      const quickConnect = getQuickConnectApi(api);
+      const authentication = getAuthenticationApi(api);
 
       let initiated;
       try {
-        ({data: initiated} = await quickConnect.initiateQuickConnect());
+        ({data: initiated} = await authentication.initiateQuickConnect());
       } catch (error) {
         if (httpStatus(error) === 401) {
           throw new AuthError(
@@ -190,7 +191,9 @@ export function createAuthService({
           try {
             let authenticated = false;
             try {
-              const {data} = await quickConnect.getQuickConnectState({secret});
+              const {data} = await authentication.getQuickConnectState({
+                secret,
+              });
               authenticated = data.Authenticated === true;
             } catch (error) {
               // Retry network blips; an HTTP error means the code is gone.
@@ -205,11 +208,10 @@ export function createAuthService({
               pollTimer = setTimeout(poll, pollIntervalMs);
               return;
             }
-            const {data: result} = await getUserApi(
-              api,
-            ).authenticateWithQuickConnect({
-              quickConnectDto: {Secret: secret},
-            });
+            const {data: result} =
+              await authentication.authenticateWithQuickConnect({
+                quickConnectDto: {Secret: secret},
+              });
             if (settled) {
               return;
             }
@@ -249,7 +251,7 @@ export function createAuthService({
 
     async logout(session) {
       try {
-        await session.api.logout();
+        await getSessionApi(session.api).reportSessionEnded();
       } catch {
         // The token is dropped locally either way.
       }

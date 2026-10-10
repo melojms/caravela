@@ -30,7 +30,7 @@ Use `npm run build:release` and `-b Release` for a release build. With more than
 
 ## Jellyfin API and saved logins
 
-- **SDK:** `@jellyfin/sdk` 0.13.0, the release generated from the Jellyfin 10.11 OpenAPI spec. Caravela rejects servers older than 10.11.0, the same minimum as jellyfin-androidtv. The SDK and its axios dependency bundle and run under Vega Metro/Hermes (axios uses its `react-native` build).
+- **SDK:** `@jellyfin/sdk` 1.0.0, generated from the Jellyfin 12.0 OpenAPI spec. Caravela supports **Jellyfin 12.0 and newer** and rejects older servers when you add them. The SDK and its axios dependency bundle and run under Vega Metro/Hermes (axios uses its `react-native` build).
 - **URL polyfill:** Vega's built-in `URL` has no `search` setter, but the SDK's generated client sets `url.search` on every request. `src/api/urlPolyfill.js` replaces the global `URL` and `URLSearchParams` with core-js's versions, and `index.js` imports it first. `react-native-url-polyfill` doesn't work on Vega because it reads `NativeModules.BlobModule` on load, which crashes the bridgeless RN 0.83 runtime.
 - **Storage:** servers, users, tokens and the auto-login setting are saved as one JSON entry in AsyncStorage, using Vega's port `@amazon-devices/react-native-async-storage__async-storage` ~2.1. Vega has no secure key/value store for apps, so **access tokens are stored unencrypted** in the app's sandboxed SQLite database. The store sits behind the `AuthStore` interface, so it can move to secure storage if Vega adds one.
 

@@ -76,14 +76,14 @@ describe('getAddressCandidates', () => {
 
 describe('isVersionSupported', () => {
   it.each([
-    ['10.11.0', true],
-    ['10.11.5', true],
-    ['10.12.0', true],
-    ['11.0.0', true],
-    ['10.11.0-rc1', true],
-    ['10.10.7', false],
-    ['10.9.11', false],
-    ['9.99.99', false],
+    ['12.0.0', true],
+    ['12.2.0', true],
+    ['12.2', true],
+    ['13.0.0', true],
+    ['12.0.0-rc1', true],
+    ['11.9.9', false],
+    ['10.11.5', false],
+    ['not-a-version', false],
   ])('%s → %s', (version, expected) => {
     expect(isVersionSupported(version)).toBe(expected);
   });
@@ -101,32 +101,34 @@ describe('discoverServer', () => {
       if (address.startsWith('https://')) {
         throw new Error('ECONNREFUSED');
       }
-      return info('10.11.2');
+      return info('12.2.0');
     });
 
     const server = await discoverServer('192.168.1.10', probe);
 
     expect(probe).toHaveBeenCalledTimes(4);
     expect(server.address).toBe('http://192.168.1.10:8096');
-    expect(server.systemInfo.Version).toBe('10.11.2');
+    expect(server.systemInfo.Version).toBe('12.2.0');
   });
 
   it('prefers https when both answer', async () => {
     const server = await discoverServer('example.com', async () =>
-      info('10.11.0'),
+      info('12.0.0'),
     );
     expect(server.address).toBe('https://example.com');
   });
 
-  it('rejects servers older than 10.11.0 with a clear error', async () => {
+  it('rejects servers older than 12.0 with a clear error', async () => {
     const error = await discoverServer('example.com', async () =>
-      info('10.10.7'),
+      info('10.11.5'),
     ).catch((e) => e);
 
     expect(error).toBeInstanceOf(ServerDiscoveryError);
     expect(error.code).toBe('unsupported-version');
-    expect(error.version).toBe('10.10.7');
-    expect(error.message).toMatch(/10\.10\.7.*10\.11\.0/);
+    expect(error.version).toBe('10.11.5');
+    expect(error.message).toBe(
+      'This server runs Jellyfin 10.11.5. Caravela needs 12.0 or newer.',
+    );
   });
 
   it('ignores responses that are not from Jellyfin', async () => {

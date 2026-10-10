@@ -26,7 +26,7 @@
     "@amazon-devices/react-navigation__native": "~8.0.0",
     "@amazon-devices/react-navigation__native-stack": "~8.0.0",
     "@amazon-devices/vega-carousel": "~1.0.0",
-    "@jellyfin/sdk": "0.13.0",
+    "@jellyfin/sdk": "1.0.0",
     "@react-native-async-storage/async-storage": "npm:@amazon-devices/react-native-async-storage__async-storage@~2.1.0",
     "axios": "^1.20.0",
     "core-js-pure": "3.50.0",

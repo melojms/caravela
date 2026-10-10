@@ -1,10 +1,14 @@
 import type {PublicSystemInfo} from '@jellyfin/sdk/lib/generated-client/models/public-system-info';
 import {getSystemApi} from '@jellyfin/sdk/lib/utils/api/system-api';
+import {
+  compareVersions,
+  getDisplayVersion,
+} from '@jellyfin/sdk/lib/utils/versioning';
 
 import {createApi} from './client';
 
-/** Same minimum as jellyfin-androidtv. */
-export const MIN_SERVER_VERSION = '10.11.0';
+/** Matches the 12.x API that @jellyfin/sdk 1.0 is generated from. */
+export const MIN_SERVER_VERSION = '12.0.0';
 
 const HTTP_PORT = 8096;
 const HTTPS_PORT = 8920;
@@ -79,25 +83,19 @@ export function getAddressCandidates(input: string): string[] {
   return candidates;
 }
 
-/** Compares dotted numeric versions; suffixes such as "-rc1" are ignored. */
+/**
+ * Pre-release suffixes such as "-rc1" are ignored; versions that still
+ * aren't numeric count as unsupported.
+ */
 export function isVersionSupported(
   version: string,
   minimum: string = MIN_SERVER_VERSION,
 ): boolean {
-  const parse = (v: string) =>
-    v
-      .split('.')
-      .slice(0, 3)
-      .map((part) => parseInt(part, 10) || 0);
-  const a = parse(version);
-  const b = parse(minimum);
-  for (let i = 0; i < 3; i++) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0);
-    if (diff !== 0) {
-      return diff > 0;
-    }
+  try {
+    return compareVersions(version.split('-')[0], minimum) >= 0;
+  } catch {
+    return false;
   }
-  return true;
 }
 
 export const probePublicSystemInfo: Probe = async (address) => {
@@ -142,7 +140,9 @@ export async function discoverServer(
   if (unsupportedVersion) {
     throw new ServerDiscoveryError(
       'unsupported-version',
-      `This server runs Jellyfin ${unsupportedVersion}. Caravela needs ${MIN_SERVER_VERSION} or newer.`,
+      `This server runs Jellyfin ${
+        getDisplayVersion(unsupportedVersion) ?? unsupportedVersion
+      }. Caravela needs ${getDisplayVersion(MIN_SERVER_VERSION)} or newer.`,
       unsupportedVersion,
     );
   }
