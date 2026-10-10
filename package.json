@@ -26,9 +26,16 @@
     "@amazon-devices/react-navigation__native": "~8.0.0",
     "@amazon-devices/react-navigation__native-stack": "~8.0.0",
     "@amazon-devices/vega-carousel": "~1.0.0",
+    "@jellyfin/sdk": "0.13.0",
+    "@react-native-async-storage/async-storage": "npm:@amazon-devices/react-native-async-storage__async-storage@~2.1.0",
+    "axios": "^1.20.0",
+    "core-js-pure": "3.50.0",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "recyclerlistview": "4.2.1"
+  },
+  "overrides": {
+    "@react-native-async-storage/async-storage": "npm:@amazon-devices/react-native-async-storage__async-storage@~2.1.0"
   },
   "engines": {
     "node": ">=20"

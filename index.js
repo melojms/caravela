@@ -1,3 +1,5 @@
+// Must load before @jellyfin/sdk: Vega's URL has no `search` setter.
+import './src/api/urlPolyfill';
 import { AppRegistry, LogBox } from 'react-native';
 import { App } from './src/App';
 import { name as appName } from './app.json';

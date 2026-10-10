@@ -14,16 +14,15 @@
     "^react-native/(.*)$": "@amazon-devices/react-native-kepler/$1",
     "^~/(.*)$": "<rootDir>/src/$1"
   },
-  "modulePaths": [
-    "<rootDir>/src"
-  ],
+  "setupFiles": ["<rootDir>/test/setup.tsx", "<rootDir>/test/jestSetup.js"],
+  "modulePaths": ["<rootDir>/src"],
   "roots": [
     "<rootDir>/src/",
     "<rootDir>/test/",
     "<rootDir>/node_modules/"
   ],
   "transformIgnorePatterns": [
-    "node_modules/(?!(react-native|@react-native|@amazon-devices/react-native-kepler|@amazon-devices)/)"
+    "node_modules/(?!(react-native|@react-native|@amazon-devices/react-native-kepler|@amazon-devices|@jellyfin/sdk|axios)/)"
   ],
   "collectCoverage": false,
   "collectCoverageFrom": [
@@ -32,8 +31,5 @@
     "!**/types.ts",
     "!src/**/*.d.ts"
   ],
-  "coverageDirectory": ".tmp/coverage",
-  "setupFiles": [
-    "<rootDir>/test/setup.tsx"
-  ]
+  "coverageDirectory": ".tmp/coverage"
 }

@@ -41,14 +41,8 @@ id = "/com.amazon.kepler.navigation__native_stack_8@INavigation__NativeStack_0"
 [[needs.module]]
 id = "/com.amazon.kepler.navigation__routers_8@INavigation__Routers_0"
 
-
-
-
-
-
-
-
-
+[[needs.module]]
+id = "/com.amazon.kepler.async_storage__async_storage_2@IAsyncStorage__AsyncStorage_1"
 
 [components]
 [[components.interactive]]
