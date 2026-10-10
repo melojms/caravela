@@ -34,6 +34,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
   - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
+  - Jest warns "a worker process has failed to exit gracefully" (a leaked timer somewhere); find it with `--detectOpenHandles`.
   - Lock files: only regenerate `package-lock.json` when a rebase conflicts on it. Regenerating from an existing `node_modules` strips `resolved`/`integrity`.
   - KEY_HOME sent with `inputd-cli` from inside Caravela did nothing (Back worked). Check with the real remote.
   - The app-pill SVG → PNG generator isn't in the repo; re-export `caravela-pill.svg` to 512×512 by hand.
@@ -90,4 +91,6 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 - **Manifest:** the build adds `[[needs.module]]` entries for each native package it uses. Keep them when merging.
 - **Untracked files:** the Amazon Builder Tools create an untracked `CLAUDE.md` and `.claude/skills/` in the repo. Leave them uncommitted.
 - **Vega CLI:** read `vega_cli_commands_reference.md` (Amazon Devices MCP) before using new Vega CLI commands.
+- **Vega Virtual Device (simulator):** `vega virtual-device start` works, and `run-app … -d VirtualDevice` installs the x86_64 build (vda serial `emulator-5554`). But agents can't check their work there: `gwsi-tool-screenshooter`, QEMU `screendump` and the emulator console screenshot all give black images, and keys sent with `inputd-cli` don't reach apps. Appium with the Vega driver is the only documented route (Node ≤22, flaky screenshots per the forum). Use the Fire TV; if it's busy, finish code/tests/builds and batch the TV checks.
+- **Main checkout:** run `npm ci` before building there; its `node_modules` goes stale as worktrees add packages.
 - **Playback** (task 8+): the research notes are in docs/PLAN.md under "Playback design". Use Shaka 4.16.13-r1.2 for HLS. ASS and PGS subtitles must be burned in by the server.
