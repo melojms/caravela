@@ -1,3 +1,4 @@
+import {isAxiosError} from 'axios';
 import type {PublicSystemInfo} from '@jellyfin/sdk/lib/generated-client/models/public-system-info';
 import {getSystemApi} from '@jellyfin/sdk/lib/utils/api/system-api';
 import {
@@ -17,7 +18,8 @@ const PROBE_TIMEOUT_MS = 5000;
 export type ServerDiscoveryErrorCode =
   | 'invalid-address'
   | 'unreachable'
-  | 'unsupported-version';
+  | 'unsupported-version'
+  | 'not-jellyfin';
 
 export class ServerDiscoveryError extends Error {
   constructor(
@@ -109,6 +111,10 @@ export const probePublicSystemInfo: Probe = async (address) => {
 /**
  * Probes every candidate for a typed address in parallel and returns the most
  * preferred one that answers as a supported Jellyfin server.
+ *
+ * Errors, by priority: `unsupported-version` when a Jellyfin server answered
+ * but is too old, `not-jellyfin` when something answered over HTTP but not as
+ * Jellyfin, and `unreachable` when every candidate failed at the network level.
  */
 export async function discoverServer(
   input: string,
@@ -118,13 +124,18 @@ export async function discoverServer(
   const results = await Promise.allSettled(candidates.map((c) => probe(c)));
 
   let unsupportedVersion: string | undefined;
+  // Set when something answered over HTTP, but not as Jellyfin.
+  let answered = false;
   for (let i = 0; i < candidates.length; i++) {
     const result = results[i];
     if (result.status !== 'fulfilled') {
+      answered ||= isAxiosError(result.reason) && !!result.reason.response;
       continue;
     }
     const info = result.value;
-    if (!info?.Id || !info.Version) {
+    // A non-JSON body comes back as a string.
+    if (typeof info !== 'object' || !info?.Id || !info.Version) {
+      answered = true;
       continue;
     }
     if (!isVersionSupported(info.Version)) {
@@ -144,6 +155,12 @@ export async function discoverServer(
         getDisplayVersion(unsupportedVersion) ?? unsupportedVersion
       }. Caravela needs ${getDisplayVersion(MIN_SERVER_VERSION)} or newer.`,
       unsupportedVersion,
+    );
+  }
+  if (answered) {
+    throw new ServerDiscoveryError(
+      'not-jellyfin',
+      `"${input}" doesn't look like a Jellyfin server.`,
     );
   }
   throw new ServerDiscoveryError(

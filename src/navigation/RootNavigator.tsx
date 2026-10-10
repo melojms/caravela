@@ -13,6 +13,7 @@ import {SessionProvider, useSession} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
 import {FocusableButton} from '../components/FocusableButton';
 import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
+import {AddServerScreen} from '../screens/auth/AddServerScreen';
 import {LaunchScreen} from '../screens/auth/LaunchScreen';
 import {colors, layout, spacing, typography} from '../theme';
 import {MainMenu} from './MainMenu';
@@ -79,7 +80,7 @@ const Launch = () => {
 };
 
 const addServer = (
-  <Stack.Screen key="AddServer" name="AddServer" component={AuthPlaceholder} />
+  <Stack.Screen key="AddServer" name="AddServer" component={AddServerScreen} />
 );
 
 /**

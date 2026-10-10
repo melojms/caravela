@@ -74,6 +74,10 @@ id = "com.amazon.audio.stream"
 [[wants.service]]
 id = "com.amazon.audio.control"
 
+# On-screen keyboard for TextInput
+[[wants.service]]
+id = "com.amazon.inputmethod.service"
+
 # Captions and subtitles
 [[wants.privilege]]
 id = "com.amazon.devconf.privilege.accessibility"

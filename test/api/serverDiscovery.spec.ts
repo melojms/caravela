@@ -1,3 +1,4 @@
+import {AxiosError, AxiosResponse} from 'axios';
 import type {PublicSystemInfo} from '@jellyfin/sdk/lib/generated-client/models/public-system-info';
 
 import {
@@ -131,11 +132,65 @@ describe('discoverServer', () => {
     );
   });
 
-  it('ignores responses that are not from Jellyfin', async () => {
+  const httpError = (status: number) =>
+    new AxiosError(
+      `Request failed with status code ${status}`,
+      'ERR_BAD_RESPONSE',
+      undefined,
+      undefined,
+      {status} as AxiosResponse,
+    );
+
+  it('reports not-jellyfin when a 2xx response has no Id/Version', async () => {
     const error = await discoverServer('example.com', async () => ({})).catch(
       (e) => e,
     );
-    expect(error.code).toBe('unreachable');
+    expect(error).toBeInstanceOf(ServerDiscoveryError);
+    expect(error.code).toBe('not-jellyfin');
+    expect(error.message).toBe(
+      '"example.com" doesn\'t look like a Jellyfin server.',
+    );
+  });
+
+  it('reports not-jellyfin when the response is not JSON', async () => {
+    const error = await discoverServer(
+      'example.com',
+      async () => '<html></html>' as unknown as PublicSystemInfo,
+    ).catch((e) => e);
+    expect(error.code).toBe('not-jellyfin');
+  });
+
+  it('reports not-jellyfin when a candidate answers with an HTTP error', async () => {
+    const error = await discoverServer('example.com', async (address) => {
+      if (address === 'https://example.com') {
+        throw httpError(404);
+      }
+      throw new Error('ECONNREFUSED');
+    }).catch((e) => e);
+    expect(error.code).toBe('not-jellyfin');
+  });
+
+  it('prefers unsupported-version over not-jellyfin', async () => {
+    const error = await discoverServer('example.com', async (address) => {
+      if (address === 'https://example.com') {
+        throw httpError(502);
+      }
+      if (address === 'http://example.com') {
+        return {};
+      }
+      return info('10.11.5');
+    }).catch((e) => e);
+    expect(error.code).toBe('unsupported-version');
+  });
+
+  it('still returns a Jellyfin server when other candidates are not Jellyfin', async () => {
+    const server = await discoverServer('example.com', async (address) => {
+      if (address === 'https://example.com') {
+        throw httpError(404);
+      }
+      return info('12.2.0');
+    });
+    expect(server.address).toBe('https://example.com:8920');
   });
 
   it('reports unreachable when nothing answers', async () => {
@@ -143,6 +198,16 @@ describe('discoverServer', () => {
       throw new Error('timeout');
     }).catch((e) => e);
     expect(error).toBeInstanceOf(ServerDiscoveryError);
+    expect(error.code).toBe('unreachable');
+    expect(error.message).toBe(
+      'Couldn\'t reach a Jellyfin server at "example.com".',
+    );
+  });
+
+  it('reports unreachable for Axios errors without a response', async () => {
+    const error = await discoverServer('example.com', async () => {
+      throw new AxiosError('timeout of 5000ms exceeded', 'ECONNABORTED');
+    }).catch((e) => e);
     expect(error.code).toBe('unreachable');
   });
 });

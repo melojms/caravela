@@ -26,7 +26,7 @@ describe('RootNavigator', () => {
   it('starts at AddServer when no server is saved', async () => {
     const screen = renderApp({servers: {}, autoLogin: {mode: 'lastUser'}});
 
-    expect(await screen.findByTestId('auth-AddServer')).toBeTruthy();
+    expect(await screen.findByTestId('add-server-screen')).toBeTruthy();
   });
 
   it('starts at UserPicker with the expired notice', async () => {
@@ -66,7 +66,7 @@ describe('RootNavigator', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('auth-placeholder-button'));
     });
-    expect(screen.getByTestId('auth-AddServer')).toBeTruthy();
+    expect(screen.getByTestId('add-server-screen')).toBeTruthy();
     expect(screen.queryByTestId('auth-notice')).toBeNull();
   });
 
@@ -96,7 +96,7 @@ describe('RootNavigator', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('auth-placeholder-button'));
     });
-    expect(screen.getByTestId('auth-AddServer')).toBeTruthy();
+    expect(screen.getByTestId('add-server-screen')).toBeTruthy();
 
     // React Navigation registers the Back handler; it pops when it can.
     const addListener = BackHandler.addEventListener as jest.Mock;
