@@ -68,11 +68,14 @@ export const SettingsScreen = ({authStore}: SettingsScreenProps) => {
           (autoLogin.serverId !== currentServerId ||
             autoLogin.userId !== currentUserId)
         ) {
-          const name =
-            state.servers[autoLogin.serverId]?.users[autoLogin.userId]?.name;
+          const server = state.servers[autoLogin.serverId];
+          const name = server?.users[autoLogin.userId]?.name;
+          // Names the server too, as the same name can exist on two servers.
+          const where =
+            server && server.id !== currentServerId ? ` on ${server.name}` : '';
           setOtherUser({
             key: autoLoginKey(autoLogin),
-            label: name ? `Only ${name}` : 'Only another user',
+            label: name ? `Only ${name}${where}` : 'Only another user',
             value: autoLogin,
           });
         }

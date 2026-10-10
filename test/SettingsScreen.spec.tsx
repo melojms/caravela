@@ -207,6 +207,23 @@ describe('SettingsScreen', () => {
     expect(activeOptions()).toEqual(['settings-auto-login-specificUser-other']);
   });
 
+  it('names the server when the other user is on another server', async () => {
+    const state = stateWith({
+      mode: 'specificUser',
+      serverId: 'srv2',
+      userId: 'u7',
+    });
+    state.servers.srv2.users.u7 = {id: 'u7', name: 'melojms', lastUsed: 1};
+    await renderSettings(state);
+
+    expect(
+      screen.getByTestId('settings-auto-login-specificUser-other'),
+    ).toHaveTextContent('Only melojms on Cabin');
+    expect(
+      screen.getByTestId('settings-auto-login-specificUser'),
+    ).toHaveTextContent('Only melojms');
+  });
+
   it('falls back to a generic label when the other user is unknown', async () => {
     await renderSettings(
       stateWith({mode: 'specificUser', serverId: 'gone', userId: 'u9'}),
