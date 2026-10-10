@@ -206,29 +206,29 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const dayOfYear = (date: Date) =>
   Math.floor(
-    (Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) -
-      Date.UTC(date.getUTCFullYear(), 0, 1)) /
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+      Date.UTC(date.getFullYear(), 0, 1)) /
       86400000,
   ) + 1;
 
 /** en-US short date and time, e.g. `3/14/25, 9:05 PM`. */
 const shortDateTime = (date: Date) => {
-  const hours = date.getUTCHours();
-  const minutes = `${date.getUTCMinutes()}`.padStart(2, '0');
-  const year = `${date.getUTCFullYear() % 100}`.padStart(2, '0');
+  const hours = date.getHours();
+  const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  const year = `${date.getFullYear() % 100}`.padStart(2, '0');
   return (
-    `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${year}, ` +
+    `${date.getMonth() + 1}/${date.getDate()}/${year}, ` +
     `${hours % 12 || 12}:${minutes} ${hours < 12 ? 'AM' : 'PM'}`
   );
 };
 
 /**
  * androidtv's `TimeUtils.getFriendlyDate`: Today, Tomorrow, a weekday within
- * the next week, otherwise a short date and time. Jellyfin dates are UTC and
- * are read as such.
+ * the next week, otherwise a short date and time, all in the device's local
+ * time. Like androidtv, Tomorrow and the weekday never cross a new year.
  */
 export function friendlyDate(date: Date, now: Date = new Date()): string {
-  if (date.getUTCFullYear() === now.getUTCFullYear()) {
+  if (date.getFullYear() === now.getFullYear()) {
     const day = dayOfYear(date);
     const today = dayOfYear(now);
     if (day === today) {
@@ -238,7 +238,7 @@ export function friendlyDate(date: Date, now: Date = new Date()): string {
       return 'Tomorrow';
     }
     if (day > today && day < today + 7) {
-      return WEEKDAYS[date.getUTCDay()];
+      return WEEKDAYS[date.getDay()];
     }
   }
   return shortDateTime(date);

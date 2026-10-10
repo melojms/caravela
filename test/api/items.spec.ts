@@ -160,7 +160,15 @@ describe('toCardItem titles and subtitles', () => {
   });
 
   describe('virtual (upcoming) episodes', () => {
-    const now = new Date('2026-10-10T15:00:00Z');
+    // Dates are built in local time, so the expectations hold in any timezone.
+    const local = (
+      month: number,
+      day: number,
+      hour = 0,
+      minute = 0,
+      year = 2026,
+    ) => new Date(year, month - 1, day, hour, minute).toISOString();
+    const now = new Date(2026, 9, 10, 15); // Saturday 10 October 2026, 15:00
     const upcoming = (PremiereDate: string, extra: Partial<BaseItemDto> = {}) =>
       cardText(
         episode({LocationType: LocationType.Virtual, PremiereDate, ...extra}),
@@ -168,19 +176,45 @@ describe('toCardItem titles and subtitles', () => {
       ).subtitle;
 
     it('adds Today, Tomorrow or a weekday within the week', () => {
-      expect(upcoming('2026-10-10T00:00:00Z')).toBe('Pilot (Today)');
-      expect(upcoming('2026-10-11T00:00:00Z')).toBe('Pilot (Tomorrow)');
-      expect(upcoming('2026-10-14T00:00:00Z')).toBe('Pilot (Wed)');
+      expect(upcoming(local(10, 10))).toBe('Pilot (Today)');
+      expect(upcoming(local(10, 10, 23, 59))).toBe('Pilot (Today)');
+      expect(upcoming(local(10, 11))).toBe('Pilot (Tomorrow)');
+      expect(upcoming(local(10, 14))).toBe('Pilot (Wed)');
+      expect(upcoming(local(10, 16))).toBe('Pilot (Fri)');
     });
 
     it('adds a short date and time otherwise', () => {
-      expect(upcoming('2026-10-20T21:05:00Z')).toBe(
-        'Pilot (10/20/26, 9:05 PM)',
+      expect(upcoming(local(10, 17, 21, 5))).toBe('Pilot (10/17/26, 9:05 PM)');
+      expect(upcoming(local(10, 1))).toBe('Pilot (10/1/26, 12:00 AM)');
+      expect(upcoming(local(1, 2, 12, 30, 2027))).toBe(
+        'Pilot (1/2/27, 12:30 PM)',
       );
-      expect(upcoming('2026-10-01T00:00:00Z')).toBe(
-        'Pilot (10/1/26, 12:00 AM)',
+    });
+
+    it("keeps androidtv's quirk: Tomorrow doesn't cross a new year", () => {
+      const newYearsEve = new Date(2026, 11, 31, 12);
+      expect(
+        cardText(
+          episode({
+            LocationType: LocationType.Virtual,
+            PremiereDate: local(1, 1, 0, 0, 2027),
+          }),
+          newYearsEve,
+        ).subtitle,
+      ).toBe('Pilot (1/1/27, 12:00 AM)');
+    });
+
+    it('shows a UTC premiere date in local time', () => {
+      const premiere = '2026-10-20T00:00:00Z';
+      const date = new Date(premiere);
+      const hour = date.getHours() % 12 || 12;
+      const minutes = `${date.getMinutes()}`.padStart(2, '0');
+      const period = date.getHours() < 12 ? 'AM' : 'PM';
+      expect(upcoming(premiere)).toBe(
+        `Pilot (${
+          date.getMonth() + 1
+        }/${date.getDate()}/26, ${hour}:${minutes} ${period})`,
       );
-      expect(upcoming('2027-01-02T12:30:00Z')).toBe('Pilot (1/2/27, 12:30 PM)');
     });
 
     it('shows only the name without a date, or when not virtual', () => {
@@ -190,7 +224,7 @@ describe('toCardItem titles and subtitles', () => {
         cardText(
           episode({
             LocationType: LocationType.FileSystem,
-            PremiereDate: '2026-10-10T00:00:00Z',
+            PremiereDate: local(10, 10),
           }),
           now,
         ).subtitle,
