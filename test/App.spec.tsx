@@ -14,7 +14,10 @@ jest.mock('../src/auth/store', () => {
 jest.mock('../src/auth/authService', () => {
   const {fakeService} = require('./auth/fakes');
   const service = fakeService();
-  return {getAuthService: () => service};
+  return {
+    ...jest.requireActual('../src/auth/authService'),
+    getAuthService: () => service,
+  };
 });
 
 describe('App', () => {
@@ -57,5 +60,23 @@ describe('App', () => {
     });
     expect(screen.getByTestId('details-screen')).toBeTruthy();
     expect(screen.getAllByText('Movie 1').length).toBeGreaterThan(0);
+  });
+
+  it('opens Settings and signs out to the user picker', async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('menu-item-Settings'));
+    });
+    expect(screen.getByTestId('settings-user-name')).toHaveTextContent(
+      'melojms',
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('settings-sign-out'));
+    });
+    expect(await screen.findByTestId('user-picker')).toBeTruthy();
+    expect(screen.queryByTestId('side-menu')).toBeNull();
   });
 });
