@@ -6,7 +6,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-10 (after 
 1. Read the "Next" item under Status (task 8, movie playback) and the "Playback design" section in docs/PLAN.md.
 2. Describe the approach for task 8 and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
-4. Leftovers from the task 7 session: the worktrees `../caravela-wt/task-07a`, `task-07b` and `task-07c` (all merged) and their herdr panes may still exist. Remove them with `git worktree remove ../caravela-wt/task-07X` and `git branch -d task/07…` once you've checked nothing is left uncommitted. The Vega simulator may still be running (`vega virtual-device status`).
+4. The Vega simulator is stopped; start it with `vega virtual-device start` when a check needs it.
 
 ## Status
 - **Done and merged to `main`:**
