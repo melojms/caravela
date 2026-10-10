@@ -33,6 +33,16 @@ describe('FocusableCard', () => {
     expect(frameStyle().transform).toBeUndefined();
   });
 
+  it("passes the focused view's native tag to onFocus", () => {
+    const onFocus = jest.fn();
+    const screen = render(
+      <FocusableCard testID="card" title="Dune" onFocus={onFocus} />,
+    );
+
+    fireEvent(screen.getByTestId('card'), 'focus', {nativeEvent: {target: 42}});
+    expect(onFocus).toHaveBeenCalledWith(42);
+  });
+
   describe('frame colour', () => {
     const PLACEHOLDER = '#123456';
     // A colour on the element that carries the border shows through the

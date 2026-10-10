@@ -12,7 +12,8 @@ type RenderCardOptions = {
   item: CardItem;
   variant: CardVariant;
   onPress?: (item: CardItem) => void;
-  onFocus?: (item: CardItem) => void;
+  /** Also gets the card's native tag (see FocusableCard). */
+  onFocus?: (item: CardItem, tag?: number) => void;
   hasTVPreferredFocus?: boolean;
   testID?: string;
 };
@@ -39,6 +40,6 @@ export const renderCard = ({
     }
     badge={item.played ? <PlayedBadge /> : undefined}
     onPress={onPress ? () => onPress(item) : undefined}
-    onFocus={onFocus ? () => onFocus(item) : undefined}
+    onFocus={onFocus ? (tag) => onFocus(item, tag) : undefined}
   />
 );

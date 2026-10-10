@@ -1,5 +1,13 @@
 import React, {memo, ReactNode, useCallback, useState} from 'react';
-import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
+import {
+  Image,
+  NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  TargetedEvent,
+  Text,
+  View,
+} from 'react-native';
 
 import {colors, focus, layout, radius, spacing, typography} from '../theme';
 
@@ -17,7 +25,8 @@ export type FocusableCardProps = {
   /** Slot rendered in the top-right corner of the image, e.g. <PlayedBadge />. */
   badge?: ReactNode;
   onPress?: () => void;
-  onFocus?: () => void;
+  /** Gets the card's native tag, e.g. to focus it again with FocusManager. */
+  onFocus?: (tag?: number) => void;
   hasTVPreferredFocus?: boolean;
   testID?: string;
 };
@@ -46,10 +55,13 @@ export const FocusableCard = memo(
     const [focused, setFocused] = useState(false);
     const size = cardSize(variant);
 
-    const handleFocus = useCallback(() => {
-      setFocused(true);
-      onFocus?.();
-    }, [onFocus]);
+    const handleFocus = useCallback(
+      (event?: NativeSyntheticEvent<TargetedEvent>) => {
+        setFocused(true);
+        onFocus?.(event?.nativeEvent?.target);
+      },
+      [onFocus],
+    );
     const handleBlur = useCallback(() => setFocused(false), []);
 
     return (

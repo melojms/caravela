@@ -22,7 +22,11 @@ import {
   useResume,
 } from '../src/api/home';
 import {useSession} from '../src/auth/SessionContext';
-import {BACKDROP_DELAY_MS, HomeScreen} from '../src/screens/HomeScreen';
+import {
+  BACKDROP_DELAY_MS,
+  HomeScreen,
+  RESTORE_FOCUS_DELAY_MS,
+} from '../src/screens/HomeScreen';
 import {sessionFor} from './auth/fakes';
 
 jest.mock('../src/auth/SessionContext', () => ({
@@ -46,6 +50,17 @@ jest.mock('@amazon-devices/react-navigation__native', () => ({
   // For the toolbar, which navigates on its own.
   useNavigation: () => ({popTo: jest.fn(), navigate: jest.fn()}),
 }));
+
+// FocusManager is a native TurboModule, and the package's getter for it
+// throws under Jest. Swap in a recorder; everything else stays real.
+const mockFocusManager = {focus: jest.fn()};
+jest.mock('@amazon-devices/react-native-kepler', () => {
+  const actual = jest.requireActual('@amazon-devices/react-native-kepler');
+  return new Proxy(actual, {
+    get: (target, key) =>
+      key === 'FocusManager' ? mockFocusManager : target[key],
+  });
+});
 
 const SERVER = 'https://jf.example.com';
 const api = createJellyfin('device-1').createApi(SERVER, 'token-1');
@@ -402,5 +417,80 @@ describe('HomeScreen', () => {
       false,
     );
     expect(carouselFocus('row-resume')).toBe(true);
+  });
+
+  describe('coming back to Home', () => {
+    const focusCard = (testID: string, tag: number) =>
+      fireEvent(screen.getByTestId(testID), 'focus', {
+        nativeEvent: {target: tag},
+      });
+    // The navigator runs the focus effect on mount and on every return.
+    const returnToHome = () => {
+      act(() => mockFocusEffect?.());
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.spyOn(client, 'refetchQueries').mockResolvedValue(undefined);
+      queries.sections = loaded<HomeSection[]>(['myMedia', 'resume', 'nextUp']);
+      queries.resume = loaded([movie('r1'), movie('r2')]);
+    });
+
+    it('focuses the last focused card again', () => {
+      renderHome();
+      act(() => mockFocusEffect?.());
+      focusCard('row-myMedia-item-0', 101);
+      focusCard('row-resume-item-1', 202);
+
+      returnToHome();
+      expect(mockFocusManager.focus).toHaveBeenCalledTimes(1);
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(202);
+    });
+
+    it('waits for Vega to settle focus first', () => {
+      renderHome();
+      act(() => mockFocusEffect?.());
+      focusCard('row-resume-item-0', 202);
+
+      act(() => mockFocusEffect?.());
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS - 1));
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(202);
+    });
+
+    it("falls back to the first row's card when that card is gone", () => {
+      renderHome();
+      act(() => mockFocusEffect?.());
+      focusCard('row-myMedia-item-0', 101);
+      focusCard('row-resume-item-1', 202);
+      // Watched to the end elsewhere: r2 left Continue watching.
+      queries.resume = loaded([movie('r1')]);
+      rerenderHome();
+
+      returnToHome();
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(101);
+    });
+
+    it('does nothing on the first visit or before any card had focus', () => {
+      renderHome();
+      act(() => mockFocusEffect?.());
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+      returnToHome();
+
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
+    });
+
+    it('tells apart the same item in two rows', () => {
+      queries.nextUp = loaded([movie('r1')]);
+      renderHome();
+      act(() => mockFocusEffect?.());
+      focusCard('row-resume-item-0', 202);
+      focusCard('row-nextUp-item-0', 303);
+
+      returnToHome();
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(303);
+    });
   });
 });

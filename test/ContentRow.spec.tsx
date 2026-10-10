@@ -51,8 +51,11 @@ describe('ContentRow', () => {
       />,
     );
 
-    fireEvent(screen.getByTestId('row-item-2'), 'focus');
-    expect(onItemFocus).toHaveBeenCalledWith(items[2]);
+    // With the card's native tag, which Home uses to focus it again.
+    fireEvent(screen.getByTestId('row-item-2'), 'focus', {
+      nativeEvent: {target: 7},
+    });
+    expect(onItemFocus).toHaveBeenCalledWith(items[2], 7);
   });
 
   it('renders nothing for an empty row', () => {

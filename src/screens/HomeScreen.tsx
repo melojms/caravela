@@ -1,6 +1,7 @@
 import type {Api} from '@jellyfin/sdk';
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collection-type';
+import {FocusManager} from '@amazon-devices/react-native-kepler';
 import {useFocusEffect} from '@amazon-devices/react-navigation__native';
 import {useQueries, useQueryClient} from '@tanstack/react-query';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -35,6 +36,12 @@ import {ScreenContainer} from './ScreenContainer';
 
 /** How long focus must rest on a card before its backdrop loads, in ms. */
 export const BACKDROP_DELAY_MS = 300;
+
+/**
+ * How long after Home regains focus it focuses the last card again, in ms.
+ * Vega first gives focus back to what was focused when Home was left.
+ */
+export const RESTORE_FOCUS_DELAY_MS = 100;
 
 /** The parts of a row's query Home reads. */
 type RowQuery = {
@@ -171,10 +178,21 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
 
   // The first row with cards takes focus once. A row above it that loads
   // later doesn't take focus away.
+  const firstRow = rows.find((_, index) => rowCards[index].length)?.key;
   const preferredRow = useRef<string | undefined>(undefined);
   if (!preferredRow.current) {
-    preferredRow.current = rows.find((_, index) => rowCards[index].length)?.key;
+    preferredRow.current = firstRow;
   }
+
+  // The last focused row, and each row's last focused card with its native
+  // tag, so coming back to Home can focus that card again.
+  const lastFocusedRow = useRef<string | undefined>(undefined);
+  const rowFocus = useRef(new Map<string, {id: string; tag?: number}>());
+  // Each row's card-focus handler, kept stable so the Carousels don't
+  // re-render.
+  const focusHandlers = useRef(
+    new Map<string, (item: CardItem, tag?: number) => void>(),
+  );
 
   const [backdropUri, setBackdropUri] = useState<string>();
   const backdropTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -198,10 +216,18 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
     [cancelBackdrop],
   );
   useEffect(() => cancelBackdrop, [cancelBackdrop]);
-  const onItemFocus = useCallback(
-    (item: CardItem) => showBackdrop(item.backdropUris?.[0]),
-    [showBackdrop],
-  );
+  const onItemFocusFor = (rowKey: string) => {
+    let handler = focusHandlers.current.get(rowKey);
+    if (!handler) {
+      handler = (item: CardItem, tag?: number) => {
+        lastFocusedRow.current = rowKey;
+        rowFocus.current.set(rowKey, {id: item.id, tag});
+        showBackdrop(item.backdropUris?.[0]);
+      };
+      focusHandlers.current.set(rowKey, handler);
+    }
+    return handler;
+  };
   const clearBackdrop = useCallback(() => showBackdrop(), [showBackdrop]);
 
   const openDetails = useCallback(
@@ -231,8 +257,29 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
     [navigation, openDetails],
   );
 
-  // Coming back to Home refetches what is older than the stale time. The
-  // first focus is the mount, which fetches anyway.
+  // Coming back to Home focuses the last focused card again. Vega doesn't
+  // restore focus after a pop: it focuses what was focused when Home was left
+  // (e.g. the toolbar's Search). So Home focuses the card's native view
+  // itself, once that has happened. If the card is gone after a refetch, the
+  // first row's last focused card (Home's first focus lands there).
+  const restoreFocus = useRef<() => void>(undefined);
+  restoreFocus.current = () => {
+    const tagIn = (rowKey?: string) => {
+      const focused = rowKey ? rowFocus.current.get(rowKey) : undefined;
+      const index = rows.findIndex((row) => row.key === rowKey);
+      return index >= 0 &&
+        rowCards[index].some((card) => card.id === focused?.id)
+        ? focused?.tag
+        : undefined;
+    };
+    const tag = tagIn(lastFocusedRow.current) ?? tagIn(firstRow);
+    if (tag !== undefined) {
+      FocusManager.focus(tag);
+    }
+  };
+
+  // Coming back to Home also refetches what is older than the stale time.
+  // The first focus is the mount, which fetches anyway.
   const queryClient = useQueryClient();
   const focusedBefore = useRef(false);
   useFocusEffect(
@@ -241,6 +288,10 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
         focusedBefore.current = true;
         return;
       }
+      const restoreTimer = setTimeout(
+        () => restoreFocus.current?.(),
+        RESTORE_FOCUS_DELAY_MS,
+      );
       queryClient
         .refetchQueries(
           {
@@ -251,6 +302,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
           {cancelRefetch: false},
         )
         .catch(() => undefined);
+      return () => clearTimeout(restoreTimer);
     }, [queryClient, serverId, userId]),
   );
 
@@ -309,7 +361,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
               variant={row.variant}
               items={rowCards[index]}
               onItemPress={row.key === 'myMedia' ? openLibrary : openDetails}
-              onItemFocus={onItemFocus}
+              onItemFocus={onItemFocusFor(row.key)}
               hasPreferredFocus={row.key === preferredRow.current}
             />
           ),
