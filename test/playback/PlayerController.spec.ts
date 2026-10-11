@@ -243,6 +243,46 @@ describe('reporting', () => {
     expect(getSnapshot()).toEqual({positionMs: 61500, isPaused: true});
   });
 
+  it("sends the session's audio and subtitle indexes in the snapshot", async () => {
+    await setup({audioStreamIndex: 1, subtitleStreamIndex: 3});
+    expect(getSnapshot()).toMatchObject({
+      audioStreamIndex: 1,
+      subtitleStreamIndex: 3,
+    });
+  });
+
+  it('reports a client-side subtitle switch right away', async () => {
+    const {controller, player} = await setup({
+      audioStreamIndex: 1,
+      subtitleStreamIndex: 3,
+    });
+    startPlaying(player);
+    reporter.update.mockClear();
+
+    controller.setSubtitleStreamIndex(4);
+    expect(getSnapshot()).toMatchObject({
+      audioStreamIndex: 1,
+      subtitleStreamIndex: 4,
+    });
+    expect(reporter.update).toHaveBeenCalledTimes(1);
+
+    controller.setSubtitleStreamIndex(-1);
+    expect(getSnapshot().subtitleStreamIndex).toBe(-1);
+    expect(reporter.update).toHaveBeenCalledTimes(2);
+    // The same index again changes nothing.
+    controller.setSubtitleStreamIndex(-1);
+    expect(reporter.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("doesn't report a subtitle switch after destroy", async () => {
+    const {controller, player} = await setup({subtitleStreamIndex: 3});
+    startPlaying(player);
+    await controller.destroy();
+    reporter.update.mockClear();
+    controller.setSubtitleStreamIndex(4);
+    expect(reporter.update).not.toHaveBeenCalled();
+  });
+
   it('stops on ended', async () => {
     const {player} = await setup();
     startPlaying(player);

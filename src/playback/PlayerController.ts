@@ -117,6 +117,8 @@ export class PlayerController {
   private started = false;
   private state: PlayerState = 'loading';
   private failed = false;
+  /** The subtitle showing now (-1 = off); the screen draws external ones. */
+  private subtitleIndex?: number;
 
   /** Resolves once `initialize()` settled (and listeners are on). For tests. */
   readonly ready: Promise<void>;
@@ -128,6 +130,7 @@ export class PlayerController {
   ) {
     this.initialSeek =
       session.mode === 'url' && session.startMs > 0 ? 'pending' : 'done';
+    this.subtitleIndex = session.subtitleStreamIndex;
     this.reporter = createPlaybackReporter(api, session, () => this.snapshot());
     this.handlers = {
       loadedmetadata: this.onLoadedMetadata,
@@ -215,6 +218,20 @@ export class PlayerController {
       attempt('seek', () => {
         this.player.currentTime = Math.max(0, ms) / 1000;
       });
+    }
+  }
+
+  /**
+   * A client-side subtitle switch (an external track, or -1 for off): the
+   * reports send it from now on, starting with one right away, like a pause.
+   */
+  setSubtitleStreamIndex(index: number) {
+    if (this.subtitleIndex === index) {
+      return;
+    }
+    this.subtitleIndex = index;
+    if (this.live()) {
+      this.reporter.update();
     }
   }
 
@@ -376,7 +393,12 @@ export class PlayerController {
   }
 
   private snapshot(): PlaybackSnapshot {
-    return {positionMs: this.positionMs, isPaused: this.paused};
+    return {
+      positionMs: this.positionMs,
+      isPaused: this.paused,
+      audioStreamIndex: this.session.audioStreamIndex,
+      subtitleStreamIndex: this.subtitleIndex,
+    };
   }
 
   private live() {
