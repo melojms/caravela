@@ -361,6 +361,18 @@ function codecProfiles(caps: DeviceCapabilities): CodecProfile[] {
       condition(LessThanEqual, ProfileConditionValue.AudioChannels, 8),
     ],
   });
+  // 7.1 AAC: the Fire TV's AAC parser rejects it ("Not a known sample
+  // rate"), and the start hangs with no error event. `isTypeSupported`
+  // ignores channel counts, so this can't be probed. The server copies AAC
+  // only up to 5.1 and caps an AAC transcode at 6 channels (the lower of
+  // this and the limit above).
+  profiles.push({
+    Type: CodecType.VideoAudio,
+    Codec: 'aac',
+    Conditions: [
+      condition(LessThanEqual, ProfileConditionValue.AudioChannels, 6),
+    ],
+  });
 
   return profiles;
 }

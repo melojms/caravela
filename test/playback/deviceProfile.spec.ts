@@ -227,19 +227,40 @@ describe('buildDeviceProfile', () => {
     });
   });
 
-  it('caps audio channels at 8', () => {
-    expect(
-      profileFor().CodecProfiles?.find((p) => p.Type === 'VideoAudio'),
-    ).toEqual({
-      Type: 'VideoAudio',
-      Conditions: [
-        {
-          Condition: 'LessThanEqual',
-          Property: 'AudioChannels',
-          Value: '8',
-          IsRequired: false,
-        },
-      ],
+  describe('audio channels', () => {
+    const audioProfiles = (profile: DeviceProfile) =>
+      (profile.CodecProfiles ?? []).filter((p) => p.Type === 'VideoAudio');
+    const atMost = (Value: string) => [
+      {
+        Condition: 'LessThanEqual',
+        Property: 'AudioChannels',
+        Value,
+        IsRequired: false,
+      },
+    ];
+
+    it('caps every codec at 8 and AAC at 6 (the TV fails on 7.1 AAC)', () => {
+      expect(audioProfiles(profileFor('aac', 'eac3', 'ac3'))).toEqual([
+        {Type: 'VideoAudio', Conditions: atMost('8')},
+        {Type: 'VideoAudio', Codec: 'aac', Conditions: atMost('6')},
+      ]);
+    });
+
+    it('limits only AAC: no other codec has its own channel profile', () => {
+      const profile = buildDeviceProfile({isTypeSupported: () => true});
+      const codecs = audioProfiles(profile).map((p) => p.Codec);
+      expect(codecs).toEqual([undefined, 'aac']);
+    });
+
+    it('caps AAC even when the probes found no AAC decoder', () => {
+      expect(audioProfiles(profileFor())).toHaveLength(2);
+    });
+
+    it("leaves the transcoding profiles' channels to the codec profiles", () => {
+      const profile = buildDeviceProfile({isTypeSupported: () => true});
+      for (const p of profile.TranscodingProfiles ?? []) {
+        expect(p.MaxAudioChannels).toBeUndefined();
+      }
     });
   });
 
