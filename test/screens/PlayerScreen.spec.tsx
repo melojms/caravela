@@ -118,6 +118,12 @@ const pressKey = (eventType: string, eventKeyAction = 0) => {
   act(() => handler({eventType, eventKeyAction}));
 };
 
+/** OK as the remote sends it: the press, then the release. */
+const pressOk = (eventType: 'select' | 'enter') => {
+  pressKey(eventType, 0);
+  pressKey(eventType, 1);
+};
+
 const unauthorized = () =>
   new AxiosError('401', '401', undefined, undefined, {
     status: 401,
@@ -234,7 +240,7 @@ describe('PlayerScreen', () => {
     fire(player, 'loadedmetadata', 'playing');
     player.setPosition(754);
 
-    pressKey('select');
+    pressOk('select');
     expect(player.pause).toHaveBeenCalledTimes(1);
     player.paused = true;
     fire(player, 'pause');
@@ -246,13 +252,44 @@ describe('PlayerScreen', () => {
     );
 
     // On the overlay, OK presses the focused button instead.
-    pressKey('select');
+    pressOk('select');
     expect(player.play).not.toHaveBeenCalled();
     fireEvent.press(screen.getByTestId('player-play'));
     expect(player.play).toHaveBeenCalledTimes(1);
     player.paused = false;
     fire(player, 'playing');
     expect(screen.queryByTestId('player-overlay')).toBeNull();
+  });
+
+  it("pauses on OK's release, so the release can't press the overlay's Play", async () => {
+    const {player} = await renderPlaying();
+    player.paused = false;
+    fire(player, 'playing');
+
+    // The release of the OK that opened the player does nothing.
+    pressKey('select', 1);
+    expect(player.pause).not.toHaveBeenCalled();
+
+    // A long press repeats the press; it pauses once, on the release.
+    pressKey('select', 0);
+    pressKey('select', 0);
+    expect(player.pause).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('player-overlay')).toBeNull();
+    pressKey('select', 1);
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    player.paused = true;
+    fire(player, 'pause');
+    expect(screen.getByTestId('player-overlay')).toBeTruthy();
+
+    // OK on the overlay presses Play; its release (overlay gone) doesn't pause.
+    pressKey('select', 0);
+    fireEvent.press(screen.getByTestId('player-play'));
+    player.paused = false;
+    fire(player, 'playing');
+    expect(screen.queryByTestId('player-overlay')).toBeNull();
+    pressKey('select', 1);
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    expect(player.play).toHaveBeenCalledTimes(1);
   });
 
   it('handles the play/pause key and ignores key releases', async () => {
@@ -271,13 +308,13 @@ describe('PlayerScreen', () => {
     player.paused = false;
     fire(player, 'playing');
 
-    pressKey('enter');
+    pressOk('enter');
     expect(player.pause).toHaveBeenCalledTimes(1);
     player.paused = true;
     fire(player, 'pause');
     expect(screen.getByTestId('player-overlay')).toBeTruthy();
 
-    pressKey('enter');
+    pressOk('enter');
     expect(player.play).not.toHaveBeenCalled();
   });
 
@@ -488,8 +525,8 @@ describe('PlayerScreen tracks', () => {
 
     it('lets the play key resume from the overlay, but not Select', async () => {
       const {player} = await renderPaused();
-      pressKey('select');
-      pressKey('enter');
+      pressOk('select');
+      pressOk('enter');
       expect(player.play).not.toHaveBeenCalled();
       pressKey('play');
       expect(player.play).toHaveBeenCalledTimes(1);
@@ -512,7 +549,7 @@ describe('PlayerScreen tracks', () => {
       ).toBeTruthy();
 
       // Neither OK nor the play key reaches the player under the picker.
-      pressKey('select');
+      pressOk('select');
       pressKey('play');
       expect(player.play).not.toHaveBeenCalled();
 

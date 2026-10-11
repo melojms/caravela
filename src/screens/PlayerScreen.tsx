@@ -274,20 +274,33 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     }
   }, [showOverlay]);
 
+  /** OK went down with no overlay, so its release toggles pause. */
+  const okDownRef = useRef(false);
+
   // useTVEventHandler re-subscribes when its callback changes; keep it stable.
   const onKey = useCallback((event: HWEvent) => {
     const controller = controllerRef.current;
-    if (!controller || event.eventKeyAction !== KEY_DOWN) {
+    if (!controller) {
       return;
     }
-    switch (event.eventType) {
-      // The simulator's OK key (and a keyboard's Enter) arrives as `enter`.
-      case 'select':
-      case 'enter':
+    // The simulator's OK key (and a keyboard's Enter) arrives as `enter`.
+    if (event.eventType === 'select' || event.eventType === 'enter') {
+      // Pause on the release: pausing on the press shows the overlay, and
+      // the release would then press its focused Play button and resume.
+      if (event.eventKeyAction === KEY_DOWN) {
+        okDownRef.current = !overlayRef.current;
+      } else if (okDownRef.current) {
+        okDownRef.current = false;
         if (!overlayRef.current) {
           controller.togglePause();
         }
-        break;
+      }
+      return;
+    }
+    if (event.eventKeyAction !== KEY_DOWN) {
+      return;
+    }
+    switch (event.eventType) {
       // The Fire TV remote's play/pause key arrives as `play`.
       case 'playpause':
       case 'play':
