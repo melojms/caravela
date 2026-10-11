@@ -53,7 +53,7 @@
    - Build it at runtime from **W3C Media Capabilities / `MediaSource.isTypeSupported`**, which replaces MediaCodec probing. Probe h264/hevc/vp9/av1, HDR10/HLG, and aac/ac3/eac3/opus/flac.
    - Transcoding profile: HLS, fMP4, h264/hevc + aac/ac3.
    - **Subtitles:**
-     - VTT/SRT/TTML: External (rendered natively through `addTextTrack`).
+     - VTT/SRT/TTML: External. The app fetches them as WebVTT and draws them itself (task 10; `KeplerCaptionsView` only renders with the TV-wide captions setting on).
      - ASS/SSA/PGS/DVD: **Encode** (burned in by the server), because Vega has no libass/PGS renderer.
 2. **Resolve** (`resolver.ts`): `getPostedPlaybackInfo` (profile, maxStreamingBitrate, chosen audio/subtitle index, start ticks), then pick direct play URL, direct-stream HLS or transcode HLS. Keep `PlaySessionId`.
 3. **Player controller** (`PlayerController.ts`):
@@ -62,7 +62,7 @@
 4. **Track switching:**
    - Subtitles: change the external track client-side when possible.
    - Audio changes, and switching to a burned-in subtitle, re-request PlaybackInfo with the new indexes and reload at the current position. The Android app does the same when transcoding.
-   - When not direct playing, call `stopEncodingProcess(deviceId, playSessionId)` before re-requesting (Android's `changeVideoStream`).
+   - Before re-requesting, end the old session with `reportPlaybackStopped` (SDK 1.0.0 and the 12.2 server have no `stopEncodingProcess`), and send `mediaSourceId` or the server ignores the requested indexes.
    - PlaybackInfo request (mirrors Android `PlaybackManager`): mediaSourceId, startTimeTicks, deviceProfile, enableDirectPlay/Stream, audio/subtitleStreamIndex, allowVideo/AudioStreamCopy=true, alwaysBurnInSubtitleWhenTranscoding.
    - Stream URL: direct play uses `/Videos/{id}/stream?static=true&mediaSourceId&tag`; direct stream and transcode use the server's `transcodingUrl`.
    - Transcoding profiles: offer both HLS TS and fMP4, same as Android. Which one Shaka handles better is decided on the device (`hls.sequenceMode` for TS if it stalls).

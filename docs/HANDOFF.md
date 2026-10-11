@@ -1,10 +1,10 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 9).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 10).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status (task 10, subtitles and audio tracks) and the "Playback design" section in docs/PLAN.md.
-2. Describe the approach for task 10 and **wait for the user's approval** before writing code or briefs.
+1. Read the "Next" item under Status (the task 10 follow-ups, then task 11, the player overlay) and the "Playback design" section in docs/PLAN.md.
+2. Describe the approach and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
 4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
 
@@ -53,8 +53,22 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
     - 9a `resolver.ts`: direct play → DirectStream (`SupportsDirectStream` + HLS `TranscodingUrl`) → Transcode, like androidtv's `JellyfinMediaStreamResolver`; `mode: 'hls'` sessions use `basePath + TranscodingUrl` (the server already adds `ApiKey`; `api_key` only as a fallback). mkv is out of direct play. `maxStreamingBitrate` (default 100 Mbit/s) goes to the profile, PlaybackInfo and the session (Shaka's ABR cap); the setting UI is task 14.
     - 9b `src/playback/shaka.ts`: our own adapter (only imports the vendored files; Amazon's wrapper was read for the Vega steps, not copied). `PlayerController` HLS mode: initialize → listeners → `autoplay = false` → Shaka load at the start position → surface; play once both are done; Shaka unload/destroy before `deinitialize()`. Jest maps `src/vendor/shaka/` to mocks, so tests run on a clean checkout (`tsc` needs the vendor files).
     - 9c (Fire TV): Shaka's build must load **after** Amazon's polyfills (it reads `navigator.userAgent` on load; a throw while a module loads aborts the app). **Sequence mode is on**: Jellyfin's TS segments restart their timestamps near 0 after a resume, and Shaka never started without it.
-- **Checks on `main`:** lint 0 errors (28 warnings, all Vega system-library notices), Jest 677 passing, `npm run build:release` OK. Task 9 on the **Fire TV**: mkv (shown as "Remuxing" on the dashboard, reported as Transcode) and a forced transcode (cap 2 Mbit/s) play over 2 min; resume starts the server at the resume segment; pause/Back/resume points work; a 404 playlist shows the error with Retry; mp4 direct play unchanged. The transcode disappears from Dashboard → Active devices after Back, so `reportPlaybackStopped` is enough without `stopEncodingProcess`.
-- **Next: subtitles and audio tracks (task 10).** Start with the approach and wait for approval. See docs/PLAN.md "Playback design" steps 1 and 4 (external VTT/SRT via `addTextTrack`, burn-in for ASS/PGS, audio switch = new PlaybackInfo + reload at the position). Captions only render on the TV.
+  - Task 10: subtitles and audio tracks (briefs `docs/tasks/10*.md`).
+    - **Subtitles are drawn by the app**, not `KeplerCaptionsView` (it only renders with the TV-wide captions setting on, can't be styled, and not on the simulator). Text subtitles (SRT, VTT, TTML, embedded subrip, sidecars) are `external` tracks fetched as WebVTT from `/Videos/{id}/{msid}/Subtitles/{index}/0/Stream.vtt` (the server converts); ASS/SSA/PGS/DVD are `burn-in` (server `Encode`). `EnableSubtitlesInManifest` is false.
+    - 10-0 `types.ts`: `MediaTrack`, `SubtitleTrack`, session `audioTracks`/`subtitleTracks`, snapshot indexes.
+    - 10a `resolver.ts` builds the tracks (labels `DisplayTitle` → `Title` → language → `Track N`); `reporting.ts` sends the snapshot's indexes. `PlaybackStopInfo` has no index fields.
+    - 10b `src/playback/subtitles.ts` (`parseVtt`, `activeCues`, `useSubtitleCues` with an 8-file cache) and `src/components/SubtitleView.tsx` (androidtv defaults; outline = black `textShadow`).
+    - 10c `src/components/TrackPicker.tsx` (bottom-right panel, focus trapped, Back closes via its own `BackHandler` listener; `offLabel="None"`).
+    - 10d `PlayerScreen.tsx` + `src/screens/PlayerSubtitles.tsx` (a position feed, so only subtitles re-render while playing) + `PlayerController.setSubtitleStreamIndex`. Paused overlay: Play / Subtitles / Audio (Audio only with >1 track). External ↔ external / None is client-side; audio and burn-in in/out destroy the controller, wait for stopped, then re-resolve at the paused position.
+    - 10e (Fire TV) fixes: OK pauses on its **release** (the press showed the overlay and the release pressed Play); a switch sends **`mediaSourceId`**, or the server ignores the requested indexes and uses the user's remembered tracks.
+- **Checks on `main`:** lint 0 errors (32 warnings, Vega system-library notices plus an old `no-shadow` in a test), Jest 783 passing, `npm run build:release` OK. Task 10 on the **Fire TV** (as `demo`): external SRT in direct play (The AI Doc) and remux (Ad Astra, Ice Road, Unbreakable), embedded subrip (Paterson), ASS burn-in (Ice Road) and PGS burn-in (Unbreakable) all work; no subtitle offset after an HLS resume; SRT → SRT → None updates `/Sessions` without a new session; burn-in off returns to remux and the transcode ends; audio switch (Ad Astra E-AC-3 ↔ AAC) reloads at the position and keeps the subtitle.
+- **Next: task 10 follow-ups (10f), then task 11.** Start with the approach and wait for approval:
+  - The Age of Adaline doesn't play: the profile allows 8-channel AAC, the server copies the 7.1 AAC track, and the Fire TV's parser fails. The screen stays black with no spinner or error. Fix in `deviceProfile.ts` (e.g. cap AAC at 6 channels) and make the player show an error instead of a black screen.
+  - A session that never started leaves its transcode running: `reporting.ts` only sends stopped after start.
+  - The subtitle line sits on top of the paused overlay's progress bar and buttons; move it up or hide it while paused.
+  - The text-shadow outline is a faint glow on bright scenes; consider a stronger shadow or several stacked ones.
+  - Embedded subtitles take ~30 s to extract the first time (server side); consider a "Loading subtitles" hint.
+  - While a reloaded session loads (after a switch) the overlay is hidden, so Back leaves the player.
   - Playback already sends `EnableSubtitlesInManifest: true` for HLS and `ignoreTextStreamFailures` in Shaka; the player has no `KeplerCaptionsView` yet.
   - `PlaybackSnapshot` has no audio/subtitle indexes; the reporter's indexes are fixed per session (see follow-ups).
   - PLAN step 4 says to call `stopEncodingProcess` before re-requesting PlaybackInfo on an audio/burn-in switch. SDK 1.0.0 and the 12.2 server don't have it; task 9 showed `reportPlaybackStopped` ends the transcode, so plan the switch around that (stop the old session, then resolve a new one at the position).
@@ -72,7 +86,6 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - Playing from 0 and leaving before 5% clears an existing resume point (server behaviour).
   - Playback: on the simulator, playback stalls 3–6 s in (audio clock stops, no event); fine on the TV. Use the TV for playback checks.
   - Playback: the simulator crashes (Vega screens library) going from Quick Connect to Home; relaunching works. Not on the TV.
-  - Playback: audio/subtitle indexes are fixed per reporter; client-side track switches (task 10) need them in `PlaybackSnapshot`.
   - Playback: requests have no timeout, so a hung progress report holds back stopped.
   - Playback: no handling when the app goes to the background (the Vega troubleshooting doc says to release the player).
   - Playback: Media Controls will need `com.amazon.media.playersession.service` in the manifest.
