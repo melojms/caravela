@@ -1,5 +1,7 @@
 import type {NativeStackScreenProps} from '@amazon-devices/react-navigation__native-stack';
 
+import type {LibraryKind} from '../api/libraryTypes';
+
 export type AuthStackParamList = {
   AddServer: undefined;
   UserPicker: {serverId: string};
@@ -20,6 +22,13 @@ export type RootStackParamList = AuthStackParamList & {
   Settings: undefined;
   Movies: undefined;
   Shows: undefined;
+  /** A movies or TV shows library's grid. */
+  Library: {
+    libraryId: string;
+    title: string;
+    collectionType: LibraryKind;
+    displayPreferencesId: string;
+  };
   Details: {itemId: string; title: string};
   DetailsPlaceholder: {itemId: string; title: string};
   /** `startMs` is the Resume position, or 0 to play from the start. */

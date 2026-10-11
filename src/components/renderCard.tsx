@@ -36,7 +36,9 @@ export const renderCard = ({
     variant={variant}
     hasTVPreferredFocus={hasTVPreferredFocus}
     progressBar={
-      item.progress ? <CardProgressBar value={item.progress} /> : undefined
+      item.progress && item.progress > 0 ? (
+        <CardProgressBar value={item.progress} />
+      ) : undefined
     }
     badge={item.played ? <PlayedBadge /> : undefined}
     onPress={onPress ? () => onPress(item) : undefined}

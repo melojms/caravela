@@ -200,10 +200,7 @@ describe('PosterGrid', () => {
       expect(renderWithProgress(0).queryByTestId('card-progress')).toBeNull();
     });
 
-    // renderCard only hides the bar for falsy progress, so a negative value
-    // draws an empty track. The fix belongs in renderCard.tsx (out of scope
-    // for task 6b); flip this to `it` once it's fixed there.
-    it.failing('shows no bar below 0', () => {
+    it('shows no bar below 0', () => {
       expect(
         renderWithProgress(-0.2).queryByTestId('card-progress'),
       ).toBeNull();
