@@ -60,6 +60,9 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - PLAN step 4 says to call `stopEncodingProcess` before re-requesting PlaybackInfo on an audio/burn-in switch. SDK 1.0.0 and the 12.2 server don't have it; task 9 showed `reportPlaybackStopped` ends the transcode, so plan the switch around that (stop the old session, then resolve a new one at the position).
 - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
+  - Servers: there's no way to remove a saved server or user (the TV now also has Jellyfin's demo server and its `demo` user, added for the README screenshots).
+  - Servers: "Change server" always opens Add server, even with several saved; getting back to a saved server means typing its address again.
+  - Password screen: Down from the field lands on "Use Quick Connect" rather than "Sign in".
   - Jest: `UserPickerScreen › shows the server name and address` fails now and then on slow (cold-cache) runs.
   - Playback: Vega logs `missing wants declaration for service 'com.amazon.audio.system'` on every play; consider adding it to the manifest.
   - Playback: an HLS session can't recover if the surface is destroyed and re-created mid-play (`startHls` runs once).
