@@ -90,7 +90,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - From 3d: tests for a countdown whose `expiresAt` is already past (show 0:00), repeated Try again failures, Sign in pressed while the Quick Connect check is pending, and a button that turns disabled while focused and active.
 
 ## Decisions and preferences
-- **App:** name **Caravela**, package `com.melojms.caravela`, icon concept B "Sail" (`assets/brand/caravela-icon.svg`). Licence GPL-2.0. Unofficial; works with Jellyfin.
+- **App:** name **Caravela**, package `com.melojms.caravela`, icon concept B "Sail" (`assets/brand/caravela-icon.svg`). Licence GPL-2.0-or-later (changed in task 9 so the Apache-2.0 Shaka build can ship). Unofficial; works with Jellyfin.
 - **Scope:** movies and TV shows only. No Live TV or music. English only.
   - Deferred: UDP server discovery (the user types the server address) and websocket remote control.
 - **Jellyfin:** 12.0+ (the test server runs 12.2; its address is in `docs/LOCAL.md`, which is untracked) with `@jellyfin/sdk` 1.0.0. Storage is Vega's async-storage. Tokens are unencrypted for now, which the user accepted.

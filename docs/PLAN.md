@@ -6,7 +6,7 @@
 - **Name: Caravela** (after the caravela-portuguesa). The package ID is still to be decided. The icon is chosen from the concepts at https://claude.ai/artifact/WS7qYYNcWbYr5NRuUoXGaA. "Works with Jellyfin" wording in the description is fine; the logo and wordmark are not.
 - **License:** the reference app is GPL-2.0.
   - We rewrite it in TypeScript rather than copying code, but the logic (device profile, playback flow) is closely derived from it.
-  - **Decided: GPL-2.0.** Publishing on the Appstore later requires a public source repo.
+  - **Decided: GPL-2.0-or-later** (was GPL-2.0-only until task 9; "or later" lets the app ship Apache-2.0 code such as Shaka Player). Publishing on the Appstore later requires a public source repo.
 - **Environment:**
   - `jellyfin-vega/` contains only `.eslintrc`, `.prettierrc` and `.gitignore`, and is not a git repo yet.
   - Vega SDK 0.24 and CLI 1.4.4 are installed, which means **RN 0.83 / React 19**.

@@ -38,4 +38,4 @@ Use `npm run build:release` and `-b Release` for a release build. With more than
 
 ## License
 
-GPL-2.0. See [LICENSE](LICENSE).
+GPL-2.0-or-later: you can redistribute and modify Caravela under the terms of the GNU General Public License, version 2 or (at your option) any later version. See [LICENSE](LICENSE).
