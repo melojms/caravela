@@ -1,10 +1,10 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 8).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 9).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status (task 9, Shaka HLS) and the "Playback design" section in docs/PLAN.md.
-2. Describe the approach for task 9 and **wait for the user's approval** before writing code or briefs.
+1. Read the "Next" item under Status (task 10, subtitles and audio tracks) and the "Playback design" section in docs/PLAN.md.
+2. Describe the approach for task 10 and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
 4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
 
@@ -47,19 +47,25 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
     - 8c-1 `src/playback/PlayerController.ts` (Vega init/teardown order; resume seeks on `loadedmetadata`, plays on `seeked`) and `src/screens/PlayerScreen.tsx` (spinner, errors with Retry/Back, Select/play key toggles pause, paused overlay with times; on exit it invalidates details + Home).
     - 8c-2 wiring; key names: Select = `select` (TV) / `enter` (simulator), the remote's play/pause = `play`, fast-forward = `skip_forward`.
   - Pre-roll is 0 (androidtv's default); the setting comes with task 14.
-- **Checks on `main`:** lint 0 errors (26 warnings, all Vega system-library notices), Jest 623 passing, `npm run build:release` OK. Task 8 was checked on the **Fire TV**: plays past 6 min with no stall, Select and play/pause work, Resume on mov lands on the position, "Resume from" moves after Back, no screensaver after 6.5 min, AC-3/E-AC-3 and Dolby Vision probe as supported.
-- **Next: Shaka HLS (task 9).** Start with the approach and wait for approval. See docs/PLAN.md "Playback design" steps 2–4 and the Vega Shaka doc (https://developer.amazon.com/docs/vega/latest/media-player-shaka-player.html).
-  - **Decided:** drop mkv from direct play, so the server remuxes it to HLS. On the Fire TV, URL mode can't seek in mkv (`Seek failed. Internal error 0`, code 50004), so Resume on an mkv starts from 0 until then.
-  - Check that a transcode ends when stopped is reported (Dashboard → Active devices), since there's no `stopEncodingProcess`.
-  - **What task 9 builds on:**
-    - `deviceProfile.ts` already sends HLS transcoding profiles (TS and fMP4, hevc when probed, then h264), so the server already returns a `TranscodingUrl`.
-    - `resolver.ts` turns anything that isn't direct play into `needs-transcode` and drops the URL. Task 9 returns `TranscodingUrl` (prefixed with `api.basePath`) with `PlayMethod` DirectStream/Transcode. That may mean extending `PlaybackSession` in `types.ts`; commit it to `main` first if subtasks run in parallel.
-    - `PlayerController.ts` is URL mode only. Shaka mode needs `player.load()` before the surface, and Shaka unloaded before `deinitialize()` (PLAN step 3).
-    - The 12.2 OpenAPI spec lists no HLS paths, so use the server's `TranscodingUrl` as is.
-  - **Shaka build:** the Vega doc says to generate Shaka's `dist` from Amazon's Vega release **outside the app root**, never from the upstream npm package. Its `npm install` builds Shaka with Java/Python. In task 8 the permission check blocked an agent from running `npm install` on downloaded code, so plan for the user to approve or run that step.
-  - **TV probe results (task 8):** h264, hevc, vp9 and av1 (incl. 10-bit), Dolby Vision, aac/mp3/opus/flac/dts/truehd/ac3/eac3. The simulator lacks Dolby Vision, ac3 and eac3.
+  - Task 9: Shaka HLS for direct stream and transcode (briefs `docs/tasks/09*.md`).
+    - Licence is now **GPL-2.0-or-later** with a linking exception for Amazon's Vega media libraries and Shaka port (`LICENSE-EXCEPTION.md`).
+    - 9-S: Amazon's Vega Shaka package has **proprietary** polyfills and wrapper ("AMAZON PROPRIETARY/CONFIDENTIAL"), so nothing from it is committed. `scripts/setup-shaka.sh <shaka-rel>` copies the compiled Shaka build and the polyfills into the gitignored `src/vendor/shaka/`; README "Shaka Player (not included)" explains it to other users. Amazon's `setup.sh` stops at the UI's CSS step (Google Fonts answers 405); the script then compiles the library without the UI. The local build lives in `../caravela-wt/shaka-build/shaka-rel` (already built).
+    - 9a `resolver.ts`: direct play → DirectStream (`SupportsDirectStream` + HLS `TranscodingUrl`) → Transcode, like androidtv's `JellyfinMediaStreamResolver`; `mode: 'hls'` sessions use `basePath + TranscodingUrl` (the server already adds `ApiKey`; `api_key` only as a fallback). mkv is out of direct play. `maxStreamingBitrate` (default 100 Mbit/s) goes to the profile, PlaybackInfo and the session (Shaka's ABR cap); the setting UI is task 14.
+    - 9b `src/playback/shaka.ts`: our own adapter (only imports the vendored files; Amazon's wrapper was read for the Vega steps, not copied). `PlayerController` HLS mode: initialize → listeners → `autoplay = false` → Shaka load at the start position → surface; play once both are done; Shaka unload/destroy before `deinitialize()`. Jest maps `src/vendor/shaka/` to mocks, so tests run on a clean checkout (`tsc` needs the vendor files).
+    - 9c (Fire TV): Shaka's build must load **after** Amazon's polyfills (it reads `navigator.userAgent` on load; a throw while a module loads aborts the app). **Sequence mode is on**: Jellyfin's TS segments restart their timestamps near 0 after a resume, and Shaka never started without it.
+- **Checks on `main`:** lint 0 errors (28 warnings, all Vega system-library notices), Jest 677 passing, `npm run build:release` OK. Task 9 on the **Fire TV**: mkv (shown as "Remuxing" on the dashboard, reported as Transcode) and a forced transcode (cap 2 Mbit/s) play over 2 min; resume starts the server at the resume segment; pause/Back/resume points work; a 404 playlist shows the error with Retry; mp4 direct play unchanged. The transcode disappears from Dashboard → Active devices after Back, so `reportPlaybackStopped` is enough without `stopEncodingProcess`.
+- **Next: subtitles and audio tracks (task 10).** Start with the approach and wait for approval. See docs/PLAN.md "Playback design" steps 1 and 4 (external VTT/SRT via `addTextTrack`, burn-in for ASS/PGS, audio switch = new PlaybackInfo + reload at the position). Captions only render on the TV.
+  - Playback already sends `EnableSubtitlesInManifest: true` for HLS and `ignoreTextStreamFailures` in Shaka; the player has no `KeplerCaptionsView` yet.
+  - `PlaybackSnapshot` has no audio/subtitle indexes; the reporter's indexes are fixed per session (see follow-ups).
   - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
+  - Jest: `UserPickerScreen › shows the server name and address` fails now and then on slow (cold-cache) runs.
+  - Playback: Vega logs `missing wants declaration for service 'com.amazon.audio.system'` on every play; consider adding it to the manifest.
+  - Playback: an HLS session can't recover if the surface is destroyed and re-created mid-play (`startHls` runs once).
+  - Playback: `buildDeviceProfile` rebuilds the profile on every play now that a bitrate is always passed (probes stay cached).
+  - Playback: remote/`.strm` sources aren't filtered out like androidtv does; tests for a `LiveStreamId` in `TranscodingUrl` and an absolute `TranscodingUrl`.
+  - Playback tests: HLS seek once playing, `ended` in HLS mode, a mid-play segment 404, Retry creating a fresh Shaka session, fMP4 with sequence mode.
+  - Playing from 0 and leaving before 5% clears an existing resume point (server behaviour).
   - Playback: on the simulator, playback stalls 3–6 s in (audio clock stops, no event); fine on the TV. Use the TV for playback checks.
   - Playback: the simulator crashes (Vega screens library) going from Quick Connect to Home; relaunching works. Not on the TV.
   - Playback: audio/subtitle indexes are fixed per reporter; client-side track switches (task 10) need them in `PlaybackSnapshot`.
@@ -152,5 +158,6 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - **Screenshots:** `gwsi-tool-screenshooter` is black here, and `grim` doesn't work on GNOME Wayland. Capture the simulator's XWayland window from the host with ImageMagick: `W=$(xwininfo -root -tree | grep '"vega-virtual-device" "vega-virtual-device"' | grep 'Vega Virtual Device' | awk '{print $1}'); import -window "$W" <scratchpad>/x.png`. Look `W` up each time; crop off the on-screen remote on the right.
   - Quick Connect codes expire; the agent prints the code and the user approves it (see "Signing in during a check").
   - Screenshots can show the server address and an unblurred avatar: keep them in the scratchpad, never in the repo.
+- **Shaka in a new worktree:** `src/vendor/` is gitignored, so run `scripts/setup-shaka.sh /home/melojms/projects/melojms-git/caravela-wt/shaka-build/shaka-rel` after `npm ci`, or the build and `tsc` fail.
 - **Main checkout:** run `npm ci` before building there; its `node_modules` goes stale as worktrees add packages.
-- **Playback** (task 8+): the research notes are in docs/PLAN.md under "Playback design". Use Shaka 4.16.13-r1.2 for HLS. ASS and PGS subtitles must be burned in by the server.
+- **Playback** (task 8+): the research notes are in docs/PLAN.md under "Playback design". Shaka 4.16.13-r1.2 plays HLS (task 9; see "Shaka in a new worktree"). ASS and PGS subtitles must be burned in by the server.

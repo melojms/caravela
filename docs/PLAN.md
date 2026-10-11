@@ -23,7 +23,7 @@
 - **State and data:** TanStack Query for server data, a small Zustand store for session and settings, and persistent storage for servers, users and tokens. Which storage package Vega supports still needs verifying.
 - **Playback:** `@amazon-devices/react-native-w3cmedia` ~2.3.4-rn-83, the RN 0.83 build (VideoPlayer + KeplerVideoSurfaceView + KeplerCaptionsView).
   - **Direct play** (mp4/mkv/webm static stream): URL mode.
-  - **Transcode / direct stream** (`master.m3u8`, fMP4 segments): **Shaka Player 4.16.13-r1.2** (Vega port) in MSE mode.
+  - **Transcode / direct stream** (`master.m3u8`; the server picks TS segments): **Shaka Player 4.16.13-r1.2** (Vega port) in MSE mode, with HLS sequence mode on. Built locally, not committed (README "Shaka Player (not included)").
 - **Folder layout:** `src/api` (sdk client, queries), `src/auth`, `src/navigation`, `src/screens/*`, `src/components` (Card, Row, Grid, FocusableButton), `src/playback` (profile, resolver, controller, reporting, segments, trickplay), `src/settings`, `src/theme`.
 
 ### Feature mapping (Android app → Vega)
