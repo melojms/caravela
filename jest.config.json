@@ -13,7 +13,9 @@
     "^react-native$": "@amazon-devices/react-native-kepler",
     "^react-native/(.*)$": "@amazon-devices/react-native-kepler/$1",
     "^~/(.*)$": "<rootDir>/src/$1",
-    "^@amazon-devices/react-native-w3cmedia$": "<rootDir>/test/__mocks__/react-native-w3cmedia.ts"
+    "^@amazon-devices/react-native-w3cmedia$": "<rootDir>/test/__mocks__/react-native-w3cmedia.ts",
+    "/vendor/shaka/dist/shaka-player\\.compiled(\\.debug)?$": "<rootDir>/test/__mocks__/shaka.ts",
+    "/vendor/shaka/polyfills/[^/]+$": "<rootDir>/test/__mocks__/shakaPolyfill.ts"
   },
   "setupFiles": ["<rootDir>/test/setup.tsx", "<rootDir>/test/jestSetup.js"],
   "modulePaths": ["<rootDir>/src"],

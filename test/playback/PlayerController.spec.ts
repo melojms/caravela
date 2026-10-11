@@ -11,6 +11,7 @@ import {
 import {createPlaybackReporter} from '../../src/playback/reporting';
 import type {PlaybackSession, PlaybackSnapshot} from '../../src/playback/types';
 import type {VideoPlayer as FakeVideoPlayer} from '../__mocks__/react-native-w3cmedia';
+import shaka, {type FakeShakaPlayer} from '../__mocks__/shaka';
 
 jest.mock('../../src/playback/reporting', () => ({
   createPlaybackReporter: jest.fn(),
@@ -79,6 +80,7 @@ let warn: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
   Fake.instances.length = 0;
+  shaka.Player.instances.length = 0;
   (createPlaybackReporter as jest.Mock).mockImplementation(
     (_api, _session, snapshot) => {
       getSnapshot = snapshot;
@@ -434,5 +436,230 @@ describe('errors', () => {
     player.fire('pause');
     expect(listeners.onError).toHaveBeenCalledTimes(1);
     expect(reporter.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('HLS mode', () => {
+  const HLS: Partial<PlaybackSession> = {
+    mode: 'hls',
+    playMethod: 'Transcode',
+    url: 'http://server/videos/item-1/master.m3u8?PlaySessionId=play-1',
+    startMs: 90000,
+    maxStreamingBitrate: 8_000_000,
+  };
+
+  /** Lets the adapter's attach → load chain and its callbacks run. */
+  const flush = () =>
+    new Promise<void>((resolve) => setImmediate(() => resolve()));
+
+  const lastShaka = (): FakeShakaPlayer => shaka.Player.instances.at(-1)!;
+
+  /** An HLS controller whose Shaka load waits for `load.resolve()`. */
+  const setupHls = async (
+    session: Partial<PlaybackSession> = {},
+    {surface = true} = {},
+  ) => {
+    const load = deferred();
+    shaka.Player.loadResult.mockReturnValueOnce(load.promise);
+    const controller = new PlayerController(
+      api,
+      {...SESSION, ...HLS, ...session},
+      listeners,
+    );
+    const player = Fake.instances.at(-1)!;
+    if (surface) {
+      controller.attachSurface('surface-1');
+    }
+    await controller.ready;
+    return {controller, player, load, shakaPlayer: lastShaka()};
+  };
+
+  it('starts Shaka at the resume position, capped at the session bitrate', async () => {
+    const {player, shakaPlayer} = await setupHls();
+    await flush();
+    expect(shakaPlayer.attach).toHaveBeenCalledWith(player);
+    expect(shakaPlayer.load).toHaveBeenCalledWith(HLS.url, 90);
+    expect(shakaPlayer.configure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abr: {enabled: true, restrictions: {maxBandwidth: 8_000_000}},
+      }),
+    );
+    expect(player.autoplay).toBe(false);
+    expect(player.srcSets).toEqual([]);
+  });
+
+  it('hands the playlist to Shaka before the surface is set', async () => {
+    const init = deferred();
+    initializeResult.mockReturnValueOnce(init.promise);
+    const controller = new PlayerController(
+      api,
+      {...SESSION, ...HLS},
+      listeners,
+    );
+    const player = Fake.instances[0];
+    const order: string[] = [];
+    player.addEventListener.mockImplementation(() => order.push('listen'));
+    player.setSurfaceHandle.mockImplementation(() => {
+      order.push('surface');
+      // Shaka was created, attached and configured before this.
+      order.push(`shaka attached: ${lastShaka()?.attach.mock.calls.length}`);
+    });
+    controller.attachSurface('surface-1');
+    init.resolve();
+    await controller.ready;
+
+    expect(order.lastIndexOf('listen')).toBeLessThan(order.indexOf('surface'));
+    expect(order).toContain('shaka attached: 1');
+    expect(player.play).not.toHaveBeenCalled();
+  });
+
+  it('plays once the load resolved, when the surface came first', async () => {
+    const {player, load} = await setupHls();
+    await flush();
+    expect(player.setSurfaceHandle).toHaveBeenCalledWith('surface-1');
+    expect(player.play).not.toHaveBeenCalled();
+
+    load.resolve();
+    await flush();
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('plays once the surface is set, when the load resolved first', async () => {
+    const {controller, player, load} = await setupHls({}, {surface: false});
+    load.resolve();
+    await flush();
+    expect(player.play).not.toHaveBeenCalled();
+
+    controller.attachSurface('surface-1');
+    expect(player.play).toHaveBeenCalledTimes(1);
+
+    // A recreated surface doesn't start playback again.
+    controller.detachSurface('surface-1');
+    controller.attachSurface('surface-2');
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't seek on loadedmetadata (Shaka starts at the position)", async () => {
+    const {player, load} = await setupHls();
+    load.resolve();
+    await flush();
+    player.fire('loadedmetadata');
+    player.fire('seeked');
+    expect(player.seeks).toEqual([]);
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts the reporter on the first playing', async () => {
+    const {player, load} = await setupHls();
+    load.resolve();
+    await flush();
+    expect(reporter.start).not.toHaveBeenCalled();
+
+    player.paused = false;
+    player.fire('playing');
+    player.fire('playing');
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a Shaka error and stops the reporter', async () => {
+    const {player, load, shakaPlayer} = await setupHls();
+    load.resolve();
+    await flush();
+    player.fire('playing');
+
+    shakaPlayer.fire('error', {category: 1, code: 1002, severity: 2});
+    expect(listeners.onError).toHaveBeenCalledWith(
+      'A network error stopped playback. Check the connection to the server.',
+    );
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+
+    // One error only.
+    shakaPlayer.fire('error', {category: 3, code: 3016, severity: 2});
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a rejected load and never plays', async () => {
+    const {player, load} = await setupHls();
+    load.reject({category: 4, code: 4000, severity: 2});
+    await flush();
+    expect(listeners.onError).toHaveBeenCalledWith(
+      "The server's stream couldn't be read.",
+    );
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    expect(player.play).not.toHaveBeenCalled();
+  });
+
+  it('destroys Shaka before pausing, clearing the surface and deinitializing', async () => {
+    const {controller, player, load, shakaPlayer} = await setupHls();
+    load.resolve();
+    await flush();
+    const order: string[] = [];
+    shakaPlayer.unload.mockImplementation(async () => {
+      order.push('unload');
+    });
+    shakaPlayer.destroy.mockImplementation(async () => {
+      order.push('shaka destroy');
+    });
+    player.pause.mockImplementation(() => order.push('pause'));
+    player.clearSurfaceHandle.mockImplementation(() => order.push('clear'));
+    player.deinitialize.mockImplementation(async () => {
+      order.push('deinit');
+    });
+    player.removeEventListener.mockImplementation(() => order.push('remove'));
+
+    await controller.destroy();
+    expect(order.slice(0, 5)).toEqual([
+      'unload',
+      'shaka destroy',
+      'pause',
+      'clear',
+      'deinit',
+    ]);
+    expect(order.slice(5).every((step) => step === 'remove')).toBe(true);
+  });
+
+  it('logs a failed Shaka teardown and still deinitializes', async () => {
+    const {controller, player, shakaPlayer} = await setupHls();
+    shakaPlayer.unload.mockReturnValueOnce(Promise.reject(new Error('busy')));
+    await controller.destroy();
+    expect(shakaPlayer.destroy).toHaveBeenCalledTimes(1);
+    expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('tears down while the load is pending and ignores its rejection', async () => {
+    const {controller, player, load, shakaPlayer} = await setupHls();
+    await flush();
+    const destroying = controller.destroy();
+    // Shaka's unload interrupts the load (LOAD_INTERRUPTED, 7000).
+    load.reject({category: 7, code: 7000, severity: 2});
+    await destroying;
+    await flush();
+
+    expect(shakaPlayer.unload).toHaveBeenCalledTimes(1);
+    expect(shakaPlayer.destroy).toHaveBeenCalledTimes(1);
+    expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    expect(player.play).not.toHaveBeenCalled();
+    expect(listeners.onError).not.toHaveBeenCalled();
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't create Shaka when destroyed while initializing", async () => {
+    const init = deferred();
+    initializeResult.mockReturnValueOnce(init.promise);
+    const controller = new PlayerController(
+      api,
+      {...SESSION, ...HLS},
+      listeners,
+    );
+    const player = Fake.instances[0];
+    controller.attachSurface('surface-1');
+    const destroying = controller.destroy();
+    init.resolve();
+    await destroying;
+
+    expect(shaka.Player.instances).toHaveLength(0);
+    expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    expect(player.setSurfaceHandle).not.toHaveBeenCalled();
   });
 });

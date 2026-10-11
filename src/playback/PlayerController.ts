@@ -2,6 +2,11 @@ import type {Api} from '@jellyfin/sdk';
 import {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
 
 import {createPlaybackReporter, type PlaybackReporter} from './reporting';
+import {
+  createShakaSession,
+  shakaErrorMessage,
+  type ShakaSession,
+} from './shaka';
 import type {PlaybackSession, PlaybackSnapshot} from './types';
 
 /** What the player is doing, as the screen shows it. */
@@ -73,15 +78,22 @@ const MEDIA_EVENTS = [
 type MediaEvent = (typeof MEDIA_EVENTS)[number];
 
 /**
- * One play session on a Vega `VideoPlayer` in URL mode, after androidtv's
+ * One play session on a Vega `VideoPlayer`, after androidtv's
  * `PlaybackController` (state, initial seek, report loop). No React here: the
  * screen forwards the surface callbacks and remote keys.
  *
- * Lifecycle (react_native_for_vega_media_player_architecture.md and
+ * URL mode (react_native_for_vega_media_player_architecture.md and
  * vega-video-sample): `new VideoPlayer()` → `await initialize()` → listeners →
  * `setSurfaceHandle` (a surface that arrives first is cached) → `src`.
- * `destroy()` pauses, clears the surface, `deinitialize()`s, then removes the
- * listeners; a surface destroyed after that is ignored.
+ *
+ * HLS mode (media-player-shaka-player.html sample): `await initialize()` →
+ * listeners → `autoplay = false` → Shaka `load(url, start)` → the surface;
+ * `play()` once the load resolved and the surface is set. Shaka's start time
+ * replaces the resume seek.
+ *
+ * `destroy()` destroys Shaka first (HLS), then pauses, clears the surface,
+ * `deinitialize()`s and removes the listeners; a surface destroyed after
+ * that is ignored.
  */
 export class PlayerController {
   private readonly player = new VideoPlayer();
@@ -94,7 +106,13 @@ export class PlayerController {
   private surface?: string;
   private surfaceSet = false;
   private loaded = false;
-  /** Resume: seek on `loadedmetadata`, play on the `seeked` that follows. */
+  private shaka?: ShakaSession;
+  /** HLS: `play()` was called once the load and the surface were both done. */
+  private hlsStarted = false;
+  /**
+   * URL-mode resume: seek on `loadedmetadata`, play on the `seeked` that
+   * follows. HLS mode starts Shaka at the position instead.
+   */
   private initialSeek: 'pending' | 'seeking' | 'done';
   private started = false;
   private state: PlayerState = 'loading';
@@ -108,7 +126,8 @@ export class PlayerController {
     private readonly session: PlaybackSession,
     private readonly listeners: PlayerListeners = {},
   ) {
-    this.initialSeek = session.startMs > 0 ? 'pending' : 'done';
+    this.initialSeek =
+      session.mode === 'url' && session.startMs > 0 ? 'pending' : 'done';
     this.reporter = createPlaybackReporter(api, session, () => this.snapshot());
     this.handlers = {
       loadedmetadata: this.onLoadedMetadata,
@@ -245,7 +264,52 @@ export class PlayerController {
     for (const type of MEDIA_EVENTS) {
       this.player.addEventListener(type, this.handlers[type]);
     }
+    if (this.session.mode === 'hls') {
+      this.loadShaka();
+    }
     this.setSurface();
+  }
+
+  /** HLS: loads the playlist through Shaka before the surface is set. */
+  private loadShaka() {
+    try {
+      this.player.autoplay = false;
+      this.shaka = createShakaSession(this.player, {
+        maxBandwidth: this.session.maxStreamingBitrate,
+        onError: (message) => {
+          if (this.live()) {
+            this.fail(message);
+          }
+        },
+      });
+    } catch (reason) {
+      warn('Shaka setup', reason);
+      this.fail(INIT_ERROR_MESSAGE);
+      return;
+    }
+    this.shaka.load(this.session.url, this.session.startMs / 1000).then(
+      () => {
+        if (this.live()) {
+          this.loaded = true;
+          this.startHls();
+        }
+      },
+      (reason) => {
+        warn('Shaka load', reason);
+        if (this.live()) {
+          this.fail(shakaErrorMessage(reason));
+        }
+      },
+    );
+  }
+
+  /** HLS: plays once both the load resolved and the surface is set. */
+  private startHls() {
+    if (this.hlsStarted || !this.loaded || !this.surfaceSet || !this.live()) {
+      return;
+    }
+    this.hlsStarted = true;
+    attempt('play', () => this.player.play());
   }
 
   private setSurface() {
@@ -255,7 +319,11 @@ export class PlayerController {
     const handle = this.surface;
     attempt('setSurfaceHandle', () => this.player.setSurfaceHandle(handle));
     this.surfaceSet = true;
-    this.load();
+    if (this.session.mode === 'hls') {
+      this.startHls();
+    } else {
+      this.load();
+    }
   }
 
   private load() {
@@ -271,6 +339,9 @@ export class PlayerController {
   }
 
   private async release() {
+    // Shaka first (Vega sample: unload before deinitialize). Its destroy()
+    // also interrupts a load that is still pending.
+    await this.shaka?.destroy();
     attempt('pause', () => this.player.pause());
     if (this.surface && this.surfaceSet) {
       const handle = this.surface;

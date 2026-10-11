@@ -1,0 +1,270 @@
+import type {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
+
+import {DEFAULT_MAX_BITRATE} from '../../src/playback/deviceProfile';
+import type {FakeShaka, FakeShakaPlayer} from '../__mocks__/shaka';
+
+type Adapter = typeof import('../../src/playback/shaka');
+const vegaGlobal = global as unknown as {gmedia?: unknown};
+
+const media = {name: 'video-player'} as unknown as VideoPlayer;
+const URL = 'http://server/videos/item-1/master.m3u8?PlaySessionId=play-1';
+
+let adapter: Adapter;
+let shaka: FakeShaka;
+let polyfillInstall: jest.Mock;
+
+/** A fresh adapter (and mocks), so the one-time install runs again. */
+const loadAdapter = () => {
+  jest.isolateModules(() => {
+    adapter = require('../../src/playback/shaka');
+    shaka = require('../__mocks__/shaka').default;
+    polyfillInstall = require('../__mocks__/shakaPolyfill').default.install;
+  });
+};
+
+const lastPlayer = (): FakeShakaPlayer => shaka.Player.instances.at(-1)!;
+
+const shakaError = (category: number, severity = 2, code = 1001) => ({
+  category,
+  code,
+  severity,
+});
+
+const deferred = () => {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return {promise, resolve, reject};
+};
+
+let warn: jest.SpyInstance;
+
+beforeEach(() => {
+  loadAdapter();
+  vegaGlobal.gmedia = undefined;
+  warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  warn.mockRestore();
+});
+
+describe('setup', () => {
+  it('installs the polyfills once, before the first shaka.Player', () => {
+    const order: string[] = [];
+    polyfillInstall.mockImplementation(() =>
+      order.push(`polyfill:${shaka.Player.instances.length}`),
+    );
+    shaka.polyfill.installAll.mockImplementation(() =>
+      order.push(`installAll:${shaka.Player.instances.length}`),
+    );
+
+    adapter.createShakaSession(media);
+    expect(order).toEqual([...Array(5).fill('polyfill:0'), 'installAll:0']);
+    expect(shaka.Player.instances).toHaveLength(1);
+
+    adapter.createShakaSession(media);
+    expect(polyfillInstall).toHaveBeenCalledTimes(5);
+    expect(shaka.polyfill.installAll).toHaveBeenCalledTimes(1);
+    expect(shaka.Player.instances).toHaveLength(2);
+  });
+
+  it('points the document polyfill at the player before installing', () => {
+    let seen: unknown;
+    shaka.polyfill.installAll.mockImplementation(() => {
+      seen = vegaGlobal.gmedia;
+    });
+    adapter.createShakaSession(media);
+    expect(seen).toBe(media);
+  });
+
+  it('re-registers fetch for http/https and drops the caption parsers', () => {
+    adapter.createShakaSession(media);
+    const {NetworkingEngine, HttpFetchPlugin} = shaka.net;
+    for (const scheme of ['http', 'https']) {
+      expect(NetworkingEngine.unregisterScheme).toHaveBeenCalledWith(scheme);
+      expect(NetworkingEngine.registerScheme).toHaveBeenCalledWith(
+        scheme,
+        HttpFetchPlugin.parse,
+        NetworkingEngine.PluginPriority.APPLICATION,
+        true,
+      );
+    }
+    const {unregisterParser} = shaka.media.ClosedCaptionParser;
+    expect(unregisterParser).toHaveBeenCalledWith('video/mp4');
+    expect(unregisterParser).toHaveBeenCalledWith('video/mp2t');
+  });
+});
+
+describe('configuration', () => {
+  it("caps ABR at the session's bitrate", () => {
+    adapter.createShakaSession(media, {maxBandwidth: 8_000_000});
+    expect(lastPlayer().configure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abr: {enabled: true, restrictions: {maxBandwidth: 8_000_000}},
+      }),
+    );
+  });
+
+  it('caps ABR at the default bitrate without one', () => {
+    adapter.createShakaSession(media, {maxBandwidth: undefined});
+    expect(lastPlayer().configure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        abr: {enabled: true, restrictions: {maxBandwidth: DEFAULT_MAX_BITRATE}},
+      }),
+    );
+  });
+
+  it('keeps HLS sequence mode off', () => {
+    adapter.createShakaSession(media);
+    expect(adapter.HLS_SEQUENCE_MODE).toBe(false);
+    const [config] = lastPlayer().configure.mock.calls[0] as [
+      {manifest: {hls: {sequenceMode: boolean}}},
+    ];
+    expect(config.manifest.hls.sequenceMode).toBe(false);
+  });
+});
+
+describe('load', () => {
+  it('attaches to the player, then loads at the start time', async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    const order: string[] = [];
+    player.attach.mockImplementation(async () => {
+      order.push('attach');
+    });
+    player.load.mockImplementation(async () => {
+      order.push('load');
+    });
+
+    await session.load(URL, 90);
+    expect(order).toEqual(['attach', 'load']);
+    expect(player.attach).toHaveBeenCalledWith(media);
+    expect(player.load).toHaveBeenCalledWith(URL, 90);
+  });
+
+  it('passes a rejected load to the caller', async () => {
+    const session = adapter.createShakaSession(media);
+    const error = shakaError(1);
+    lastPlayer().load.mockReturnValueOnce(Promise.reject(error));
+    await expect(session.load(URL, 0)).rejects.toBe(error);
+  });
+
+  it("doesn't load when destroyed while attaching", async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    const attach = deferred();
+    player.attach.mockReturnValueOnce(attach.promise);
+
+    const loading = session.load(URL, 0);
+    const destroying = session.destroy();
+    attach.resolve();
+    await loading;
+    await destroying;
+    expect(player.load).not.toHaveBeenCalled();
+  });
+});
+
+describe('errors', () => {
+  it('forwards a critical error with a readable message', () => {
+    const onError = jest.fn();
+    adapter.createShakaSession(media, {onError});
+    lastPlayer().fire('error', shakaError(1));
+    expect(onError).toHaveBeenCalledWith(
+      'A network error stopped playback. Check the connection to the server.',
+    );
+  });
+
+  it('ignores recoverable errors', () => {
+    const onError = jest.fn();
+    adapter.createShakaSession(media, {onError});
+    lastPlayer().fire('error', shakaError(1, 1));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores errors after destroy()', async () => {
+    const onError = jest.fn();
+    const session = adapter.createShakaSession(media, {onError});
+    const player = lastPlayer();
+    await session.destroy();
+    player.fire('error', shakaError(7));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [3, "This video couldn't be decoded."],
+    [4, "The server's stream couldn't be read."],
+    [5, "This video couldn't be streamed."],
+    [6, 'Video playback error.'],
+  ])('maps category %i', (category, message) => {
+    expect(adapter.shakaErrorMessage(shakaError(category))).toBe(message);
+  });
+
+  it('falls back for anything that is not a Shaka error', () => {
+    expect(adapter.shakaErrorMessage(new Error('boom'))).toBe(
+      adapter.UNKNOWN_SHAKA_ERROR,
+    );
+    expect(adapter.shakaErrorMessage(undefined)).toBe(
+      adapter.UNKNOWN_SHAKA_ERROR,
+    );
+  });
+});
+
+describe('destroy', () => {
+  it('unloads, then destroys, and clears the document polyfill', async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    const order: string[] = [];
+    player.unload.mockImplementation(async () => {
+      order.push('unload');
+    });
+    player.destroy.mockImplementation(async () => {
+      order.push('destroy');
+    });
+
+    await session.destroy();
+    expect(order).toEqual(['unload', 'destroy']);
+    expect(vegaGlobal.gmedia).toBeNull();
+  });
+
+  it('is safe to call twice', async () => {
+    const session = adapter.createShakaSession(media);
+    const first = session.destroy();
+    expect(session.destroy()).toBe(first);
+    await first;
+    expect(lastPlayer().destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('unloads and destroys after a failed load', async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    player.load.mockReturnValueOnce(Promise.reject(shakaError(4)));
+    await expect(session.load(URL, 0)).rejects.toBeDefined();
+
+    await session.destroy();
+    expect(player.unload).toHaveBeenCalledTimes(1);
+    expect(player.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('still destroys when unload fails, and never rejects', async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    player.unload.mockReturnValueOnce(Promise.reject(shakaError(7)));
+    player.destroy.mockReturnValueOnce(Promise.reject(new Error('gone')));
+
+    await expect(session.destroy()).resolves.toBeUndefined();
+    expect(player.destroy).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves another session's player in the document polyfill", async () => {
+    const first = adapter.createShakaSession(media);
+    const other = {name: 'next-player'} as unknown as VideoPlayer;
+    adapter.createShakaSession(other);
+    await first.destroy();
+    expect(vegaGlobal.gmedia).toBe(other);
+  });
+});
