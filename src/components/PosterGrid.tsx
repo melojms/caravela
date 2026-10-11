@@ -180,9 +180,12 @@ export const PosterGrid = memo(
 );
 
 const styles = StyleSheet.create({
+  // A row of room below the last one: the offset that puts a whole row on
+  // top can be up to a row past the content's end, and a clamped scroll
+  // would cut the top row.
   content: {
     paddingTop: TOP_INSET,
-    paddingBottom: spacing.md,
+    paddingBottom: ROW_HEIGHT,
     paddingLeft: SIDE_INSET,
   },
   cell: {

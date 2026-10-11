@@ -149,6 +149,24 @@ describe('PosterGrid', () => {
       );
     });
 
+    it('can always scroll as far as a row boundary asks, last row included', () => {
+      const rows = 6;
+      const screen = render(
+        <PosterGrid items={makeItems(rows * 6)} numColumns={6} />,
+      );
+      const {paddingTop, paddingBottom} =
+        screen.UNSAFE_getByType(FlatList).props.contentContainerStyle;
+      const maxOffset =
+        paddingTop + rows * rowHeight + paddingBottom - viewport;
+
+      let top = 0;
+      for (let row = 0; row < rows; row++) {
+        top = gridTopRow(row, top, viewport, 0);
+        // A larger offset is clamped, which cuts the top row.
+        expect(gridRowOffset(top, 0)).toBeLessThanOrEqual(maxOffset);
+      }
+    });
+
     it('only scrolls to row boundaries when focus moves', () => {
       const scrollToOffset = jest
         .spyOn(FlatList.prototype, 'scrollToOffset')
