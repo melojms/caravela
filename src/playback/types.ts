@@ -1,5 +1,12 @@
 import type {PlayMethod} from '@jellyfin/sdk/lib/generated-client/models/play-method';
 
+/**
+ * How the player loads `url`: `url` sets it as the `VideoPlayer` source
+ * (direct play); `hls` loads it through Shaka in MSE mode (direct stream and
+ * transcode).
+ */
+export type PlaybackMode = 'url' | 'hls';
+
 /** What the player needs to start a resolved item and report on it. */
 export type PlaybackSession = {
   itemId: string;
@@ -7,7 +14,8 @@ export type PlaybackSession = {
   /** From PlaybackInfo; every report and `stopEncodingProcess` sends it. */
   playSessionId: string;
   playMethod: PlayMethod;
-  /** The URL to play. URL mode for direct play; an HLS URL from task 9 on. */
+  mode: PlaybackMode;
+  /** The static stream URL (`url` mode) or the HLS master playlist (`hls`). */
   url: string;
   /** Where playback starts, in ms (Resume position, or 0). */
   startMs: number;
@@ -19,7 +27,7 @@ export type PlaybackSession = {
 
 /** Why an item can't be played (yet). */
 export type PlaybackUnavailableReason =
-  /** Needs direct stream or transcoding: HLS through Shaka arrives in task 9. */
+  /** Can't direct play, and the server returned no `TranscodingUrl`. */
   | 'needs-transcode'
   /** The server returned no media source, or an `ErrorCode`. */
   | 'no-media-source';

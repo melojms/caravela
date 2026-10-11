@@ -48,6 +48,7 @@ const SESSION: PlaybackSession = {
   mediaSourceId: 'source-1',
   playSessionId: 'play-1',
   playMethod: 'DirectPlay',
+  mode: 'url',
   url: 'http://server/Videos/m1/stream?static=true',
   startMs: 0,
   durationMs: 7200000,

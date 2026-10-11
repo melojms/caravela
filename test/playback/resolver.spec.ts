@@ -120,6 +120,7 @@ describe('resolvePlayback', () => {
         mediaSourceId: 'source-1',
         playSessionId: 'session-1',
         playMethod: 'DirectPlay',
+        mode: 'url',
         url:
           'https://jf.example/base/Videos/item-1/stream?static=true' +
           '&mediaSourceId=source-1&deviceId=device%201' +
@@ -149,6 +150,7 @@ describe('resolvePlayback', () => {
         mediaSourceId: 'source-1',
         playSessionId: '',
         playMethod: 'DirectPlay',
+        mode: 'url',
         url:
           'https://jf.example/base/Videos/item-1/stream?static=true' +
           '&mediaSourceId=source-1&deviceId=device%201&api_key=tok%20en%2F%2B',

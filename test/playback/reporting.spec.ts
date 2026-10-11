@@ -28,6 +28,7 @@ const SESSION: PlaybackSession = {
   mediaSourceId: 'source-1',
   playSessionId: 'play-1',
   playMethod: 'DirectPlay',
+  mode: 'url',
   url: 'http://server/Videos/item-1/stream?static=true',
   startMs: 60000,
   audioStreamIndex: 1,

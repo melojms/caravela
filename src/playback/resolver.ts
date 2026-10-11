@@ -137,6 +137,7 @@ export async function resolvePlayback(
       mediaSourceId: source.Id,
       playSessionId: data.PlaySessionId ?? '',
       playMethod: PlayMethod.DirectPlay,
+      mode: 'url',
       url: directPlayUrl(api, itemId, source),
       startMs: request.startMs,
       ...(audioIndex != null ? {audioStreamIndex: audioIndex} : {}),
