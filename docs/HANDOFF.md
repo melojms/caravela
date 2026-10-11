@@ -70,7 +70,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
     - 6b `LibraryHeader.tsx` (title, focused name, status line, "N | total", Sort / Unwatched / Favorites / Letter icon buttons), `LetterPicker.tsx`, `PosterGrid` `onItemFocus`. `getItemLayout` with `numColumns` gets a **row** index (was treated as an item index).
     - 6c `src/screens/LibraryScreen.tsx`: Sort by reuses `TrackPicker`; Letter only while sorting by Name, picking it again clears it; the grid remounts per query (counter, not query text) and focuses its first card; refocus after Back like Home; refetch on return.
     - 6c fixes (simulator): the pressed toolbar button's tag comes from the press event (`FocusManager.getFocused()` returns nothing for it) and is refocused after `RESTORE_FOCUS_DELAY_MS`; **`scrollEnabled={false}` on the grid**, so only our row-aligned scroll moves it (Vega's scroll-on-focus left it half a row off); bottom padding keeps the last row aligned; Right stops at a row's end (an invisible focusable filler cell on a short last row hands focus back).
-- **Checks on `main` after task 6:** lint 0 errors (40 warnings, all Vega system-library notices plus the old `no-shadow`), Jest 972 passing, `npm run build:release` OK. Simulator only (as `demo`): Movies 76 items with paging, sort, both filters + empty state, letters, Details → Back refocus, Shows → placeholder, prefs restored after an app restart. **Not checked on the Fire TV yet** (waiting for the user's go-ahead).
+    - 6d (Fire TV): with `scrollEnabled={false}` Vega skips off-screen rows when moving Up, so each focused card points Up at the card above with `FocusManager.setNextFocus` (row 0 → toolbar); the short-last-row filler finds the last card via its node even if it was never focused.
+- **Checks on `main` after task 6:** lint 0 errors (40 warnings, Vega system-library notices plus the old `no-shadow`), Jest 976 passing, `npm run build:release` OK. Fire TV (as `demo`), all passing: row-aligned fast Down/Up through 77 movies, page 2 ready before focus reaches it (page 1 ~1.5 s cold), sort / filters / letters with focus back on the button, Right stops at row ends, Details → Back refocus, Shows → placeholder, prefs restored after a relaunch (reset to Name, no filters).
 - **Checks on `main` after 10f:** lint 0 errors, Jest 808 passing, `npm run build:release` OK. Fire TV: Adaline plays (audio → AAC 5.1, `AudioChannelsNotSupported`), with the DVD subtitle burned in too; Back ends sessions that never started; Ad Astra remux and E-AC-3 → AAC 5.1; The AI Doc direct play; the watchdog error and Retry seen with a temporary build.
 - **Next: task 11 (player overlay: trickplay, chapters, speed, zoom).** Start with the approach and wait for approval. Fold in from task 10:
   - Embedded subtitles take ~30 s to extract the first time (server side); show a "Loading subtitles" hint.
@@ -101,13 +102,14 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - Details: tests for a missing item `Id`, Back while a toggle is saving, the cast list changing after a refetch, and "Ends" not updating while the page stays open. Opening a similar movie already in the stack adds another copy.
   - Details buttons don't return focus to the last focused button (androidtv does).
   - On the simulator, right after Quick Connect sign-in Caravela went to the background once; relaunching (no reinstall) kept the session.
-  - Library: check task 6 on the Fire TV (row-aligned scrolling with `scrollEnabled={false}`, the 100 ms button refocus, paging speed).
-  - Library: `LIBRARY_FIELDS` is androidtv's full `itemFields` (MediaSources, Chapters, Trickplay…) for 60 items a page; switch to a lighter set if paging is slow on the TV.
+  - Library: `LIBRARY_FIELDS` is androidtv's full `itemFields` (MediaSources, Chapters, Trickplay…) for 60 items a page; page 1 is ~2 MB of JSON (174 KB gzipped) vs 72 KB with only the card fields; paging was fine on the TV, so it stays for now.
   - Library: 6 columns leave an empty strip on the right of the 1080p canvas (androidtv's medium posters fit 7); poster size / image type / grid direction prefs are for task 14.
   - Library: the Sort by panel opens bottom-right (`TrackPicker`'s position); androidtv's is top-right. The "loading more" spinner floats over the grid (no footer slot).
   - Library: `#` (`nameLessThan: 'A'`) is untested with a title that sorts before A. Genres and Collections browsing aren't done (out of task 6's scope).
   - Library: a failed prefs read caches an empty DTO, so the next save drops androidtv's other keys (e.g. `PosterSize`); androidtv does the same.
   - Library tests: a failed save keeps the local choice, Retry after an error, Back while a page loads.
+  - Library: a card without a rating line (e.g. Undercover) sits a little lower than the others in its row.
+  - Fire TV: the first Enter after launching the app was ignored twice.
   - Simulator: twice after a fresh-install password sign-in the app went back to the launcher; relaunching shows the user signed in. Home's first focus once landed on Continue watching instead of My media.
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
