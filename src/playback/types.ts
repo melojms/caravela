@@ -25,6 +25,34 @@ export type PlaybackSession = {
   durationMs?: number;
   /** The cap sent with PlaybackInfo, in bits per second; Shaka's ABR uses it. */
   maxStreamingBitrate?: number;
+  /** The source's audio streams, in server order. Missing means none known. */
+  audioTracks?: MediaTrack[];
+  /** The source's subtitle streams, in server order. Missing means none known. */
+  subtitleTracks?: SubtitleTrack[];
+};
+
+/** An audio or subtitle stream the viewer can pick. */
+export type MediaTrack = {
+  /** The stream's `Index`: PlaybackInfo and the reports use it. */
+  index: number;
+  /** What the picker shows (the server's `DisplayTitle`, or a fallback). */
+  label: string;
+  language?: string;
+  /** The server's `IsDefault` flag on the stream. */
+  isDefault?: boolean;
+};
+
+/**
+ * How a subtitle reaches the screen: `external` is text the app fetches as
+ * WebVTT and draws itself (switching is client-side); `burn-in` is drawn into
+ * the video by the server, so switching to or from it re-requests PlaybackInfo.
+ */
+export type SubtitleDelivery = 'external' | 'burn-in';
+
+export type SubtitleTrack = MediaTrack & {
+  delivery: SubtitleDelivery;
+  /** The WebVTT URL with the token, for `external` tracks. */
+  vttUrl?: string;
 };
 
 /** Why an item can't be played (yet). */
@@ -43,4 +71,8 @@ export type PlaybackResolution =
 export type PlaybackSnapshot = {
   positionMs: number;
   isPaused: boolean;
+  /** The audio stream playing now; falls back to the session's. */
+  audioStreamIndex?: number;
+  /** The subtitle showing now (-1 = off); falls back to the session's. */
+  subtitleStreamIndex?: number;
 };
