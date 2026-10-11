@@ -1,7 +1,8 @@
 import 'react-native';
 import {fireEvent, render} from '@testing-library/react-native';
 import * as React from 'react';
-import {FlatList} from 'react-native';
+import {FlatList, View} from 'react-native';
+import type {findNodeHandle as findNodeHandleType} from 'react-native';
 
 import {
   getRowLayout,
@@ -14,7 +15,7 @@ import {focus, layout, spacing} from '../src/theme';
 import {CardItem} from '../src/components/types';
 
 // FocusManager is a native TurboModule; swap in a recorder.
-const mockFocusManager = {focus: jest.fn()};
+const mockFocusManager = {focus: jest.fn(), setNextFocus: jest.fn()};
 jest.mock('@amazon-devices/react-native-kepler', () => {
   const actual = jest.requireActual('@amazon-devices/react-native-kepler');
   return new Proxy(actual, {
@@ -23,7 +24,60 @@ jest.mock('@amazon-devices/react-native-kepler', () => {
   });
 });
 
-beforeEach(() => mockFocusManager.focus.mockClear());
+beforeEach(() => {
+  mockFocusManager.focus.mockClear();
+  mockFocusManager.setNextFocus.mockClear();
+});
+
+// Jest's host Views have no element-node APIs, which Vega's have. Give each
+// cell's View a first child standing in for its card, with tag 1000 + the
+// card's index, and let findNodeHandle read that tag.
+const CARD_TAG_BASE = 1000;
+const withCardTags = () => {
+  let viewPrototype: object | undefined;
+  let reactNative: {findNodeHandle: typeof findNodeHandleType};
+  let original: PropertyDescriptor | undefined;
+  beforeEach(() => {
+    let probe: object | null = null;
+    render(
+      <View
+        ref={(node) => {
+          probe = node;
+        }}
+      />,
+    );
+    viewPrototype = Object.getPrototypeOf(probe);
+    Object.defineProperty(viewPrototype, 'firstElementChild', {
+      configurable: true,
+      get(this: {props?: {children?: {props?: {testID?: string}}}}) {
+        const match = /-item-(\d+)$/.exec(
+          this.props?.children?.props?.testID ?? '',
+        );
+        return match ? {cardTag: CARD_TAG_BASE + Number(match[1])} : null;
+      },
+    });
+    // The module object itself (`import * as` gets a copy Babel made), whose
+    // findNodeHandle is a getter.
+    reactNative = jest.requireActual('react-native');
+    original = Object.getOwnPropertyDescriptor(reactNative, 'findNodeHandle');
+    const actual = reactNative.findNodeHandle;
+    Object.defineProperty(reactNative, 'findNodeHandle', {
+      configurable: true,
+      get: () => (node: unknown) =>
+        (node as {cardTag?: number} | null)?.cardTag ??
+        actual(node as Parameters<typeof actual>[0]),
+    });
+  });
+  afterEach(() => {
+    if (original) {
+      Object.defineProperty(reactNative, 'findNodeHandle', original);
+    }
+    if (viewPrototype) {
+      delete (viewPrototype as {firstElementChild?: unknown})
+        .firstElementChild;
+    }
+  });
+};
 
 const makeItems = (count: number): CardItem[] =>
   Array.from({length: count}, (_, i) => ({id: `m${i}`, title: `Movie ${i}`}));
@@ -110,7 +164,8 @@ describe('PosterGrid', () => {
     it('sends Right from the last card of a short row back to it', () => {
       const screen = render(<PosterGrid items={makeItems(8)} numColumns={6} />);
       const filler = () => screen.getByTestId('poster-grid-row-end');
-      // Nothing to go back to until the last card has had focus.
+      // Without element nodes (plain Jest), nothing to go back to until the
+      // last card has had focus.
       fireEvent(filler(), 'focus');
       expect(mockFocusManager.focus).not.toHaveBeenCalled();
 
@@ -121,11 +176,67 @@ describe('PosterGrid', () => {
       expect(mockFocusManager.focus).toHaveBeenCalledWith(77);
     });
 
+    describe('before the last card has had focus', () => {
+      withCardTags();
+
+      // Down from the end of the row above lands on the filler first.
+      it('sends the filler to the last card', () => {
+        const screen = render(
+          <PosterGrid items={makeItems(8)} numColumns={6} />,
+        );
+        fireEvent(screen.getByTestId('poster-grid-row-end'), 'focus');
+        expect(mockFocusManager.focus).toHaveBeenCalledWith(
+          CARD_TAG_BASE + 7,
+        );
+      });
+    });
+
+    it('forgets a last card that more items pushed back', () => {
+      const screen = render(<PosterGrid items={makeItems(8)} numColumns={6} />);
+      fireEvent(screen.getByTestId('poster-grid-item-7'), 'focus', {
+        nativeEvent: {target: 77},
+      });
+      screen.rerender(<PosterGrid items={makeItems(10)} numColumns={6} />);
+
+      fireEvent(screen.getByTestId('poster-grid-row-end'), 'focus');
+      expect(mockFocusManager.focus).not.toHaveBeenCalledWith(77);
+    });
+
     it('has no filler when the last row is full', () => {
       const screen = render(
         <PosterGrid items={makeItems(12)} numColumns={6} />,
       );
       expect(screen.queryByTestId('poster-grid-row-end')).toBeNull();
+    });
+  });
+
+  // With scrollEnabled off, Vega's focus search skips the off-screen row
+  // above, so Up from the top row on screen left the grid.
+  describe('Up', () => {
+    withCardTags();
+
+    it('goes to the card right above', () => {
+      const screen = render(
+        <PosterGrid items={makeItems(30)} numColumns={6} />,
+      );
+      fireEvent(screen.getByTestId('poster-grid-item-15'), 'focus', {
+        nativeEvent: {target: 55},
+      });
+      expect(mockFocusManager.setNextFocus).toHaveBeenCalledWith(
+        55,
+        CARD_TAG_BASE + 9,
+        'up',
+      );
+    });
+
+    it('is left to Vega on the first row (it goes to the toolbar)', () => {
+      const screen = render(
+        <PosterGrid items={makeItems(30)} numColumns={6} />,
+      );
+      fireEvent(screen.getByTestId('poster-grid-item-3'), 'focus', {
+        nativeEvent: {target: 33},
+      });
+      expect(mockFocusManager.setNextFocus).not.toHaveBeenCalled();
     });
   });
 

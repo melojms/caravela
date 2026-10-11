@@ -1,6 +1,7 @@
 import {FocusManager} from '@amazon-devices/react-native-kepler';
 import React, {memo, ReactElement, useCallback, useMemo, useRef} from 'react';
 import {
+  findNodeHandle,
   FlatList,
   LayoutChangeEvent,
   ListRenderItemInfo,
@@ -51,6 +52,9 @@ const keyExtractor = (item: CardItem) => item.id;
 // jumping to the row above.
 const ROW_END_ID = '__row-end';
 const ROW_END: CardItem = {id: ROW_END_ID, title: ''};
+
+// A cell's View as an element node; its first child is the card's Pressable.
+type CellNode = {firstElementChild?: unknown};
 
 // With numColumns, VirtualizedList lays out rows, so `index` is a row index.
 export const getRowLayout = (
@@ -112,16 +116,29 @@ export const PosterGrid = memo(
       () => (shortBy ? [...items, ROW_END] : items),
       [items, shortBy],
     );
-    // The last card's native tag, for the row-end cell to send focus to.
-    const lastTag = useRef<number>(undefined);
-    // Vega's focus search skips a focus guide with only destinations, so the
-    // row-end cell is focusable and hands focus straight back.
-    const bounceToLast = useCallback(() => {
-      if (lastTag.current !== undefined) {
-        FocusManager.focus(lastTag.current);
-      }
+    // The mounted cells by grid index, to reach cards that never had focus.
+    const cells = useRef(new Map<number, CellNode>());
+    const cardTag = useCallback((index: number) => {
+      const card = cells.current.get(index)?.firstElementChild;
+      return card
+        ? findNodeHandle(card as Parameters<typeof findNodeHandle>[0]) ??
+            undefined
+        : undefined;
     }, []);
     const lastIndex = items.length - 1;
+    // The last focused card's tag, if it was the last card at the time.
+    const lastTag = useRef<{index: number; tag: number}>(undefined);
+    // Vega's focus search skips a focus guide with only destinations, so the
+    // row-end cell is focusable and hands focus straight back. Down from the
+    // end of the row above lands here too, before the last card had focus.
+    const bounceToLast = useCallback(() => {
+      const tag =
+        cardTag(lastIndex) ??
+        (lastTag.current?.index === lastIndex ? lastTag.current.tag : undefined);
+      if (tag !== undefined) {
+        FocusManager.focus(tag);
+      }
+    }, [cardTag, lastIndex]);
     const topRow = useRef(0);
     const viewportHeight = useRef(0);
     const headerHeight = useRef(0);
@@ -137,12 +154,19 @@ export const PosterGrid = memo(
       (item: CardItem, index: number, tag?: number) => {
         onItemFocus?.(item, index, tag);
         if (index === lastIndex && tag !== undefined) {
-          lastTag.current = tag;
+          lastTag.current = {index, tag};
+        }
+        const row = Math.floor(index / numColumns);
+        // With scrolling off, Vega's focus search skips the row above once
+        // it's off-screen, and Up from the top row on screen would leave the
+        // grid. The first row's Up stays Vega's (to the toolbar).
+        const above = row > 0 ? cardTag(index - numColumns) : undefined;
+        if (tag !== undefined && above !== undefined) {
+          FocusManager.setNextFocus(tag, above, 'up');
         }
         if (viewportHeight.current <= 0) {
           return;
         }
-        const row = Math.floor(index / numColumns);
         const next = gridTopRow(
           row,
           topRow.current,
@@ -157,7 +181,7 @@ export const PosterGrid = memo(
           });
         }
       },
-      [numColumns, onItemFocus, lastIndex],
+      [numColumns, onItemFocus, lastIndex, cardTag],
     );
 
     const renderItem = useCallback(
@@ -173,7 +197,15 @@ export const PosterGrid = memo(
             ]}
           />
         ) : (
-          <View style={styles.cell}>
+          <View
+            ref={(node) => {
+              if (node) {
+                cells.current.set(index, node as CellNode);
+              } else {
+                cells.current.delete(index);
+              }
+            }}
+            style={styles.cell}>
             {renderCard({
               item,
               variant: 'poster',
