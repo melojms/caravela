@@ -90,14 +90,13 @@ describe('buildDeviceProfile', () => {
       VideoCodec: 'h264',
       AudioCodec: 'aac,eac3',
     });
-    expect(directPlay(profile, 'mkv')?.VideoCodec).toBe('h264');
     // No VP9 or AV1, so nothing in WebM can be direct played.
     expect(directPlay(profile, 'webm')).toBeUndefined();
   });
 
   it('adds every supported codec, with Jellyfin aliases', () => {
     const profile = buildDeviceProfile({isTypeSupported: () => true});
-    expect(directPlay(profile, 'mkv')).toMatchObject({
+    expect(directPlay(profile, 'mp4,m4v,mov')).toMatchObject({
       VideoCodec: 'h264,hevc,vp9,av1',
       AudioCodec: 'aac,mp3,ac3,eac3,opus,flac,dts,dca,truehd,mlp',
     });
@@ -113,6 +112,18 @@ describe('buildDeviceProfile', () => {
     expect(
       profile.DirectPlayProfiles?.find((p) => p.Type === 'Audio')?.AudioCodec,
     ).toBe('aac,mp3,ac3,eac3,opus,flac,dts,dca,truehd,mlp');
+  });
+
+  it('leaves mkv out of direct play so the server remuxes it to HLS', () => {
+    const profile = buildDeviceProfile({isTypeSupported: () => true});
+    expect(
+      profile.DirectPlayProfiles?.filter((p) => p.Type === 'Video').map(
+        (p) => p.Container,
+      ),
+    ).toEqual(['mp4,m4v,mov', 'webm', 'ts']);
+    expect(
+      profile.DirectPlayProfiles?.some((p) => p.Container?.includes('mkv')),
+    ).toBe(false);
   });
 
   it('allows HEVC Main 10 only when probed', () => {
@@ -146,7 +157,7 @@ describe('buildDeviceProfile', () => {
         Value: 'none',
       });
     }
-    expect(directPlay(profile, 'mkv')).toBeUndefined();
+    expect(directPlay(profile, 'mp4,m4v,mov')).toBeUndefined();
   });
 
   it('sets the H.264 profiles, level and reference frame limits', () => {
@@ -328,7 +339,7 @@ describe('buildDeviceProfile', () => {
         MaxStreamingBitrate: 1e6,
       });
       expect(isTypeSupported).toHaveBeenCalledTimes(calls);
-      expect(directPlay(first, 'mkv')?.VideoCodec).toBe('h264');
+      expect(directPlay(first, 'mp4,m4v,mov')?.VideoCodec).toBe('h264');
     });
 
     it('re-probes when isTypeSupported is injected', () => {

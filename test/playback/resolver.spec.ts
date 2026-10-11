@@ -1,12 +1,16 @@
 import type {Api} from '@jellyfin/sdk';
 import {getMediaInfoApi} from '@jellyfin/sdk/lib/utils/api/media-info-api';
 
-import {buildDeviceProfile} from '../../src/playback/deviceProfile';
+import {
+  buildDeviceProfile,
+  DEFAULT_MAX_BITRATE,
+} from '../../src/playback/deviceProfile';
 import {
   NEEDS_TRANSCODE_MESSAGE,
   NO_MEDIA_SOURCE_MESSAGE,
   PLAYBACK_ERROR_MESSAGES,
   resolvePlayback,
+  transcodingUrl,
 } from '../../src/playback/resolver';
 import type {PlaybackRequest} from '../../src/playback/resolver';
 
@@ -14,6 +18,7 @@ jest.mock('@jellyfin/sdk/lib/utils/api/media-info-api', () => ({
   getMediaInfoApi: jest.fn(),
 }));
 jest.mock('../../src/playback/deviceProfile', () => ({
+  ...jest.requireActual('../../src/playback/deviceProfile'),
   buildDeviceProfile: jest.fn(() => ({Name: 'Caravela'})),
 }));
 
@@ -43,6 +48,19 @@ const SOURCE = {
   DefaultSubtitleStreamIndex: 3,
 };
 
+// What the server returns: `StreamInfo.ToUrl` already adds `ApiKey`.
+const HLS_PATH =
+  '/videos/item-1/master.m3u8?DeviceId=device%201&MediaSourceId=source-1' +
+  '&PlaySessionId=session-1&ApiKey=server-token';
+
+const HLS_SOURCE = {
+  ...SOURCE,
+  SupportsDirectPlay: false,
+  TranscodingUrl: HLS_PATH,
+  TranscodingSubProtocol: 'hls',
+  TranscodingContainer: 'ts',
+};
+
 const respond = (data: object) =>
   mediaInfoApi.getPostedPlaybackInfo.mockResolvedValue({data});
 
@@ -63,6 +81,9 @@ describe('resolvePlayback', () => {
     });
 
     expect(getMediaInfoApi).toHaveBeenCalledWith(api);
+    expect(buildDeviceProfile).toHaveBeenCalledWith({
+      maxStreamingBitrate: 20e6,
+    });
     expect(mediaInfoApi.getPostedPlaybackInfo).toHaveBeenCalledWith({
       itemId: 'item-1',
       playbackInfoDto: {
@@ -129,6 +150,7 @@ describe('resolvePlayback', () => {
         audioStreamIndex: 1,
         subtitleStreamIndex: 3,
         durationMs: 7_200_000,
+        maxStreamingBitrate: DEFAULT_MAX_BITRATE,
       },
     });
   });
@@ -155,6 +177,7 @@ describe('resolvePlayback', () => {
           'https://jf.example/base/Videos/item-1/stream?static=true' +
           '&mediaSourceId=source-1&deviceId=device%201&api_key=tok%20en%2F%2B',
         startMs: 90_000,
+        maxStreamingBitrate: DEFAULT_MAX_BITRATE,
       },
     });
   });
@@ -196,18 +219,104 @@ describe('resolvePlayback', () => {
     expect(result).toMatchObject({session: {mediaSourceId: 'source-1'}});
   });
 
-  it.each([
-    ['direct stream', {SupportsDirectPlay: false, TranscodingUrl: '/v.m3u8'}],
-    [
-      'transcode',
-      {
-        SupportsDirectPlay: false,
-        SupportsDirectStream: false,
-        TranscodingUrl: '/v.m3u8',
+  it('defaults the bitrate cap for the profile, the request and the session', async () => {
+    const result = await resolvePlayback(api, REQUEST);
+    expect(DEFAULT_MAX_BITRATE).toBe(100_000_000);
+    expect(buildDeviceProfile).toHaveBeenCalledWith({
+      maxStreamingBitrate: DEFAULT_MAX_BITRATE,
+    });
+    expect(
+      mediaInfoApi.getPostedPlaybackInfo.mock.calls[0][0].playbackInfoDto
+        .MaxStreamingBitrate,
+    ).toBe(DEFAULT_MAX_BITRATE);
+    expect(result).toMatchObject({
+      session: {maxStreamingBitrate: DEFAULT_MAX_BITRATE},
+    });
+  });
+
+  it('sends a custom bitrate cap with a given profile and keeps it on the session', async () => {
+    respond({MediaSources: [HLS_SOURCE], PlaySessionId: 's'});
+    const result = await resolvePlayback(api, {
+      ...REQUEST,
+      maxStreamingBitrate: 8e6,
+      deviceProfile: {Name: 'Custom'},
+    });
+    expect(buildDeviceProfile).not.toHaveBeenCalled();
+    expect(
+      mediaInfoApi.getPostedPlaybackInfo.mock.calls[0][0].playbackInfoDto
+        .MaxStreamingBitrate,
+    ).toBe(8e6);
+    expect(result).toMatchObject({
+      session: {mode: 'hls', maxStreamingBitrate: 8e6},
+    });
+  });
+
+  it('direct plays even when a TranscodingUrl is returned', async () => {
+    respond({
+      MediaSources: [{...HLS_SOURCE, SupportsDirectPlay: true}],
+      PlaySessionId: 's',
+    });
+    await expect(resolvePlayback(api, REQUEST)).resolves.toMatchObject({
+      session: {playMethod: 'DirectPlay', mode: 'url'},
+    });
+  });
+
+  it('direct streams (remux) to HLS with the session fields', async () => {
+    respond({MediaSources: [HLS_SOURCE], PlaySessionId: 'session-1'});
+    await expect(resolvePlayback(api, REQUEST)).resolves.toEqual({
+      kind: 'play',
+      session: {
+        itemId: 'item-1',
+        mediaSourceId: 'source-1',
+        playSessionId: 'session-1',
+        playMethod: 'DirectStream',
+        mode: 'hls',
+        url: `https://jf.example/base${HLS_PATH}`,
+        startMs: 90_000,
+        audioStreamIndex: 1,
+        subtitleStreamIndex: 3,
+        durationMs: 7_200_000,
+        maxStreamingBitrate: DEFAULT_MAX_BITRATE,
       },
+    });
+  });
+
+  it('transcodes when the source only supports transcoding', async () => {
+    respond({
+      MediaSources: [{...HLS_SOURCE, SupportsDirectStream: false}],
+      PlaySessionId: 's',
+    });
+    const result = await resolvePlayback(api, {
+      ...REQUEST,
+      audioStreamIndex: 2,
+      subtitleStreamIndex: -1,
+    });
+    expect(result).toMatchObject({
+      kind: 'play',
+      session: {
+        playMethod: 'Transcode',
+        mode: 'hls',
+        url: `https://jf.example/base${HLS_PATH}`,
+        audioStreamIndex: 2,
+        subtitleStreamIndex: -1,
+      },
+    });
+  });
+
+  it.each([
+    ['no TranscodingUrl', {TranscodingUrl: undefined}],
+    ['a null TranscodingUrl', {TranscodingUrl: null}],
+    ['an http sub-protocol', {TranscodingSubProtocol: 'http'}],
+    ['no sub-protocol', {TranscodingSubProtocol: undefined}],
+    [
+      'neither direct stream nor transcoding',
+      {SupportsDirectStream: false, SupportsTranscoding: false},
     ],
-  ])('returns needs-transcode for %s', async (_name, overrides) => {
-    respond({MediaSources: [{...SOURCE, ...overrides}], PlaySessionId: 's'});
+  ])('returns needs-transcode with %s', async (_name, overrides) => {
+    respond({
+      MediaSources: [{...HLS_SOURCE, ...overrides}],
+      PlaySessionId: 's',
+    });
     await expect(resolvePlayback(api, REQUEST)).resolves.toEqual({
       kind: 'unavailable',
       reason: 'needs-transcode',
@@ -249,5 +358,63 @@ describe('resolvePlayback', () => {
     const error = new Error('Network Error');
     mediaInfoApi.getPostedPlaybackInfo.mockRejectedValue(error);
     await expect(resolvePlayback(api, REQUEST)).rejects.toBe(error);
+  });
+});
+
+describe('transcodingUrl', () => {
+  const withBase = (basePath: string, accessToken = 'tok en/+') =>
+    ({...api, basePath, accessToken} as unknown as Api);
+
+  it.each([
+    ['with a path prefix', 'https://jf.example/base'],
+    ['without a path prefix', 'https://jf.example'],
+  ])('joins the URL with basePath %s', (_name, basePath) => {
+    expect(transcodingUrl(withBase(basePath), HLS_PATH)).toBe(
+      `${basePath}${HLS_PATH}`,
+    );
+  });
+
+  it('adds a slash when the path has none', () => {
+    expect(
+      transcodingUrl(withBase('https://jf.example'), 'videos/1/master.m3u8'),
+    ).toBe('https://jf.example/videos/1/master.m3u8?api_key=tok%20en%2F%2B');
+  });
+
+  it.each([
+    'ApiKey=server',
+    'api_key=server',
+    'apikey=server',
+    'API_KEY=server',
+  ])('keeps the token the server added (%s)', (token) => {
+    const path = `/videos/1/master.m3u8?a=1&${token}`;
+    expect(transcodingUrl(withBase('https://jf.example'), path)).toBe(
+      `https://jf.example${path}`,
+    );
+  });
+
+  it('adds api_key once when the server left it out', () => {
+    expect(
+      transcodingUrl(
+        withBase('https://jf.example'),
+        '/videos/1/master.m3u8?a=1',
+      ),
+    ).toBe(
+      'https://jf.example/videos/1/master.m3u8?a=1&api_key=tok%20en%2F%2B',
+    );
+    expect(
+      transcodingUrl(withBase('https://jf.example'), '/videos/1/master.m3u8'),
+    ).toBe('https://jf.example/videos/1/master.m3u8?api_key=tok%20en%2F%2B');
+  });
+
+  it('does not take another parameter ending in apikey for the token', () => {
+    expect(
+      transcodingUrl(withBase('https://jf.example'), '/v.m3u8?xApiKey=1'),
+    ).toBe('https://jf.example/v.m3u8?xApiKey=1&api_key=tok%20en%2F%2B');
+  });
+
+  it('adds nothing without an access token', () => {
+    expect(
+      transcodingUrl(withBase('https://jf.example', ''), '/v.m3u8?a=1'),
+    ).toBe('https://jf.example/v.m3u8?a=1');
   });
 });

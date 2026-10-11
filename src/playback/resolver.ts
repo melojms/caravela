@@ -1,13 +1,14 @@
 import type {Api} from '@jellyfin/sdk';
 import type {DeviceProfile} from '@jellyfin/sdk/lib/generated-client/models/device-profile';
 import type {MediaSourceInfo} from '@jellyfin/sdk/lib/generated-client/models/media-source-info';
+import {MediaStreamProtocol} from '@jellyfin/sdk/lib/generated-client/models/media-stream-protocol';
 import {PlayMethod} from '@jellyfin/sdk/lib/generated-client/models/play-method';
 import {PlaybackErrorCode} from '@jellyfin/sdk/lib/generated-client/models/playback-error-code';
 import {getMediaInfoApi} from '@jellyfin/sdk/lib/utils/api/media-info-api';
 
 import {msToTicks, ticksToMs} from '../api/itemInfo';
-import {buildDeviceProfile} from './deviceProfile';
-import type {PlaybackResolution} from './types';
+import {buildDeviceProfile, DEFAULT_MAX_BITRATE} from './deviceProfile';
+import type {PlaybackMode, PlaybackResolution} from './types';
 
 export type PlaybackRequest = {
   itemId: string;
@@ -17,11 +18,11 @@ export type PlaybackRequest = {
   mediaSourceId?: string;
   audioStreamIndex?: number;
   subtitleStreamIndex?: number;
-  /** In bits per second; the profile's limit applies when left out. */
+  /** In bits per second; defaults to `DEFAULT_MAX_BITRATE`. */
   maxStreamingBitrate?: number;
   /** Burn in the subtitle when the server transcodes (androidtv's option). */
   alwaysBurnInSubtitleWhenTranscoding?: boolean;
-  /** Defaults to `buildDeviceProfile()`. */
+  /** Defaults to `buildDeviceProfile({maxStreamingBitrate})`. */
   deviceProfile?: DeviceProfile;
 };
 
@@ -35,7 +36,7 @@ export const PLAYBACK_ERROR_MESSAGES: Record<PlaybackErrorCode, string> = {
 
 export const NO_MEDIA_SOURCE_MESSAGE = 'This item has no playable media.';
 export const NEEDS_TRANSCODE_MESSAGE =
-  "This file needs transcoding, which Caravela can't play yet.";
+  "The server can't stream this file to this device.";
 
 /**
  * The direct play URL, built like androidtv's `getVideoStreamUrl(static =
@@ -62,6 +63,21 @@ export function directPlayUrl(
 }
 
 /**
+ * The HLS URL for direct stream and transcode: the server's `TranscodingUrl`
+ * on `basePath`, as androidtv's `createUrl(…, ignorePathParameters = true)`
+ * and jellyfin-web do. The server already adds `ApiKey` (`StreamInfo.ToUrl`);
+ * `api_key` is only added when the URL has no token.
+ */
+export function transcodingUrl(api: Api, path: string): string {
+  const url = `${api.basePath}${path.startsWith('/') ? '' : '/'}${path}`;
+  if (!api.accessToken || /[?&](apikey|api_key)=/i.test(url)) {
+    return url;
+  }
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}api_key=${encodeURIComponent(api.accessToken)}`;
+}
+
+/**
  * Asks the server how to play an item (PlaybackInfo, as androidtv's
  * `PlaybackManager` does) and turns the answer into something to play.
  * Network and HTTP errors reject; the caller shows them.
@@ -72,14 +88,17 @@ export async function resolvePlayback(
 ): Promise<PlaybackResolution> {
   const {itemId, mediaSourceId, audioStreamIndex, subtitleStreamIndex} =
     request;
+  const maxStreamingBitrate =
+    request.maxStreamingBitrate ?? DEFAULT_MAX_BITRATE;
   const {data} = await getMediaInfoApi(api).getPostedPlaybackInfo({
     itemId,
     playbackInfoDto: {
       UserId: request.userId,
       MediaSourceId: mediaSourceId,
       StartTimeTicks: msToTicks(request.startMs),
-      DeviceProfile: request.deviceProfile ?? buildDeviceProfile(),
-      MaxStreamingBitrate: request.maxStreamingBitrate,
+      DeviceProfile:
+        request.deviceProfile ?? buildDeviceProfile({maxStreamingBitrate}),
+      MaxStreamingBitrate: maxStreamingBitrate,
       EnableDirectPlay: true,
       EnableDirectStream: true,
       EnableTranscoding: true,
@@ -119,7 +138,29 @@ export async function resolvePlayback(
     };
   }
 
-  if (!source.SupportsDirectPlay) {
+  // androidtv's order: direct play, then direct stream (remux), then
+  // transcode. Only HLS is accepted; Shaka plays it.
+  let playMethod: PlayMethod;
+  let mode: PlaybackMode;
+  let url: string;
+  const hlsUrl =
+    source.TranscodingUrl &&
+    source.TranscodingSubProtocol === MediaStreamProtocol.Hls
+      ? transcodingUrl(api, source.TranscodingUrl)
+      : undefined;
+  if (source.SupportsDirectPlay) {
+    playMethod = PlayMethod.DirectPlay;
+    mode = 'url';
+    url = directPlayUrl(api, itemId, source);
+  } else if (source.SupportsDirectStream && hlsUrl) {
+    playMethod = PlayMethod.DirectStream;
+    mode = 'hls';
+    url = hlsUrl;
+  } else if (source.SupportsTranscoding && hlsUrl) {
+    playMethod = PlayMethod.Transcode;
+    mode = 'hls';
+    url = hlsUrl;
+  } else {
     return {
       kind: 'unavailable',
       reason: 'needs-transcode',
@@ -136,15 +177,16 @@ export async function resolvePlayback(
       itemId,
       mediaSourceId: source.Id,
       playSessionId: data.PlaySessionId ?? '',
-      playMethod: PlayMethod.DirectPlay,
-      mode: 'url',
-      url: directPlayUrl(api, itemId, source),
+      playMethod,
+      mode,
+      url,
       startMs: request.startMs,
       ...(audioIndex != null ? {audioStreamIndex: audioIndex} : {}),
       ...(subtitleIndex != null ? {subtitleStreamIndex: subtitleIndex} : {}),
       ...(source.RunTimeTicks != null
         ? {durationMs: ticksToMs(source.RunTimeTicks)}
         : {}),
+      maxStreamingBitrate,
     },
   };
 }

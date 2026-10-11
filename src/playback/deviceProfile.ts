@@ -148,6 +148,8 @@ const AUDIO_CODECS: [ProbeName, string[]][] = [
  * the w3cmedia container registry). androidtv uses one profile for every
  * container because ExoPlayer demuxes them all; Vega's demuxers differ.
  * TS leaves out AC-3: Vega's TS demuxer drops AC-3 audio silently.
+ * No mkv: in URL mode the Fire TV can't seek in it (`Seek failed. Internal
+ * error 0`, code 50004), so the server remuxes it to HLS instead.
  */
 const DIRECT_PLAY_CONTAINERS: {
   container: string;
@@ -156,22 +158,6 @@ const DIRECT_PLAY_CONTAINERS: {
 }[] = [
   {
     container: 'mp4,m4v,mov',
-    video: ['h264', 'hevc', 'vp9', 'av1'],
-    audio: [
-      'aac',
-      'mp3',
-      'ac3',
-      'eac3',
-      'opus',
-      'flac',
-      'dts',
-      'dca',
-      'truehd',
-      'mlp',
-    ],
-  },
-  {
-    container: 'mkv',
     video: ['h264', 'hevc', 'vp9', 'av1'],
     audio: [
       'aac',
