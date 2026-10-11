@@ -30,6 +30,30 @@ Debug builds load JavaScript from the Metro dev server, so run `npm start` and f
 
 Use `npm run build:release` and `-b Release` for a release build. With more than one device connected, pass `--device <serial>` to the `vega device` commands.
 
+## Shaka Player (not included)
+
+Caravela plays transcoded and remuxed streams (HLS) with Amazon's Vega port of [Shaka Player](https://github.com/shaka-project/shaka-player). **This repository does not include it**, and the app won't build without it:
+
+- Shaka Player itself is Apache-2.0, but Amazon's Vega package also ships polyfills marked "Amazon proprietary/confidential", under Amazon's own licence terms. Those files can't be committed to a GPL repository.
+- So each checkout downloads and builds the package locally, and `scripts/setup-shaka.sh` copies the build and the polyfills into `src/vendor/shaka/`, which git ignores.
+
+Set it up once per checkout. It needs Git, Python 3, Java 21+ and Node.js; the build clones upstream Shaka 4.16.13 from GitHub and applies Amazon's patches.
+
+```sh
+# Outside the app directory
+mkdir -p ../shaka-build && cd ../shaka-build
+curl -fLO https://amzndevresources.com/vega/media-player/shaka-rel-v4.16.13-r1.2-devices_scope.tar.gz
+tar -xzf shaka-rel-v4.16.13-r1.2-devices_scope.tar.gz
+shaka-rel/scripts/setup.sh
+
+# Back in the app directory
+scripts/setup-shaka.sh ../shaka-build/shaka-rel
+```
+
+Amazon describes the package and its build in [Play adaptive content with Shaka Player](https://developer.amazon.com/docs/vega/latest/media-player-shaka-player.html). Downloading it means accepting Amazon's terms for it.
+
+**If you distribute builds:** a built app contains Amazon's proprietary polyfills, which the GPL doesn't cover. Caravela's licence has a linking exception ([LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)) that allows this combination on the GPL side, but Amazon's terms still apply to Amazon's files, so check them before you share or publish a build.
+
 ## Jellyfin API and saved logins
 
 - **SDK:** `@jellyfin/sdk` 1.0.0, generated from the Jellyfin 12.0 OpenAPI spec. Caravela supports **Jellyfin 12.0 and newer** and rejects older servers when you add them. The SDK and its axios dependency bundle and run under Vega Metro/Hermes (axios uses its `react-native` build).
@@ -38,4 +62,4 @@ Use `npm run build:release` and `-b Release` for a release build. With more than
 
 ## License
 
-GPL-2.0-or-later: you can redistribute and modify Caravela under the terms of the GNU General Public License, version 2 or (at your option) any later version. See [LICENSE](LICENSE).
+GPL-2.0-or-later: you can redistribute and modify Caravela under the terms of the GNU General Public License, version 2 or (at your option) any later version. See [LICENSE](LICENSE). As an additional permission, Caravela may be combined and distributed with Amazon's Vega media libraries and its Shaka Player port; see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md). Amazon's Shaka Player polyfills aren't part of this repository and aren't covered by this licence; see [Shaka Player (not included)](#shaka-player-not-included).

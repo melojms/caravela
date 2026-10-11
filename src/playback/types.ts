@@ -23,6 +23,8 @@ export type PlaybackSession = {
   subtitleStreamIndex?: number;
   /** Media duration in ms when the server knows it. */
   durationMs?: number;
+  /** The cap sent with PlaybackInfo, in bits per second; Shaka's ABR uses it. */
+  maxStreamingBitrate?: number;
 };
 
 /** Why an item can't be played (yet). */

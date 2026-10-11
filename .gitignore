@@ -15,3 +15,6 @@ generated
 
 # Private local notes (server address etc.)
 docs/LOCAL.md
+
+# Amazon's Vega Shaka Player build and polyfills (proprietary; see README)
+src/vendor/
