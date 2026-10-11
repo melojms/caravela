@@ -428,7 +428,7 @@ const subtitle = (
 
 function subtitleProfiles(): SubtitleProfile[] {
   return [
-    // Text formats: the player adds them as external text tracks.
+    // Text formats: the app fetches them as WebVTT and draws them.
     ...subtitle(
       ['vtt', 'webvtt', 'srt', 'subrip', 'ttml'],
       SubtitleDeliveryMethod.External,
@@ -485,7 +485,9 @@ export function createDeviceProfile(
     VideoCodec: hlsVideoCodecs,
     AudioCodec: audio.filter((codec) => audioCodecs.includes(codec)).join(','),
     CopyTimestamps: false,
-    EnableSubtitlesInManifest: true,
+    // The app fetches text subtitles as WebVTT and draws them itself, so Shaka
+    // must not load them from the manifest.
+    EnableSubtitlesInManifest: false,
   });
 
   return {

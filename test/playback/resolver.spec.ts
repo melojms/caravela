@@ -10,6 +10,7 @@ import {
   NO_MEDIA_SOURCE_MESSAGE,
   PLAYBACK_ERROR_MESSAGES,
   resolvePlayback,
+  subtitleVttUrl,
   transcodingUrl,
 } from '../../src/playback/resolver';
 import type {PlaybackRequest} from '../../src/playback/resolver';
@@ -151,6 +152,8 @@ describe('resolvePlayback', () => {
         subtitleStreamIndex: 3,
         durationMs: 7_200_000,
         maxStreamingBitrate: DEFAULT_MAX_BITRATE,
+        audioTracks: [],
+        subtitleTracks: [],
       },
     });
   });
@@ -178,6 +181,8 @@ describe('resolvePlayback', () => {
           '&mediaSourceId=source-1&deviceId=device%201&api_key=tok%20en%2F%2B',
         startMs: 90_000,
         maxStreamingBitrate: DEFAULT_MAX_BITRATE,
+        audioTracks: [],
+        subtitleTracks: [],
       },
     });
   });
@@ -277,6 +282,8 @@ describe('resolvePlayback', () => {
         subtitleStreamIndex: 3,
         durationMs: 7_200_000,
         maxStreamingBitrate: DEFAULT_MAX_BITRATE,
+        audioTracks: [],
+        subtitleTracks: [],
       },
     });
   });
@@ -416,5 +423,232 @@ describe('transcodingUrl', () => {
     expect(
       transcodingUrl(withBase('https://jf.example', ''), '/v.m3u8?a=1'),
     ).toBe('https://jf.example/v.m3u8?a=1');
+  });
+});
+
+describe('resolvePlayback tracks', () => {
+  const VIDEO = {Type: 'Video', Index: 0, DisplayTitle: '1080p H264'};
+  const STREAMS = [
+    VIDEO,
+    {
+      Type: 'Audio',
+      Index: 1,
+      DisplayTitle: 'English - AAC - Stereo - Default',
+      Language: 'eng',
+      IsDefault: true,
+    },
+    {Type: 'Audio', Index: 2, Title: 'Commentary', Language: 'fre'},
+    {Type: 'Audio', Index: 3, DisplayTitle: ' ', Language: 'ger'},
+    {Type: 'Audio', Index: 4, IsDefault: false},
+    {
+      Type: 'Subtitle',
+      Index: 5,
+      Codec: 'subrip',
+      DisplayTitle: 'English - SUBRIP',
+      Language: 'eng',
+      IsDefault: false,
+      DeliveryMethod: 'External',
+      DeliveryUrl: '/Videos/item-1/source-1/Subtitles/5/0/Stream.srt?ApiKey=x',
+    },
+    {
+      Type: 'Subtitle',
+      Index: 6,
+      Codec: 'ass',
+      DisplayTitle: 'Signs - ASS',
+      DeliveryMethod: 'Encode',
+    },
+    {Type: 'Subtitle', Index: 7, Codec: 'pgssub', DeliveryMethod: 'Embed'},
+    {Type: 'Subtitle', Index: 8, Codec: 'webvtt', DeliveryMethod: 'Hls'},
+    {Type: 'Subtitle', Index: 9, Codec: 'dvdsub', Language: 'spa'},
+    {
+      Type: 'Subtitle',
+      Index: 10,
+      Codec: 'srt',
+      DisplayTitle: 'Portuguese - SRT - External',
+      Language: 'por',
+      IsExternal: true,
+      DeliveryMethod: 'External',
+    },
+    {Type: 'Attachment', Index: 11},
+  ];
+
+  const vtt = (index: number) =>
+    'https://jf.example/base/Videos/item-1/source-1/Subtitles/' +
+    `${index}/0/Stream.vtt?api_key=tok%20en%2F%2B`;
+
+  const play = async (source: object, request = REQUEST) => {
+    respond({MediaSources: [source], PlaySessionId: 'session-1'});
+    const result = await resolvePlayback(api, request);
+    if (result.kind !== 'play') {
+      throw new Error(`expected a session, got ${result.reason}`);
+    }
+    return result.session;
+  };
+
+  it('maps audio streams in server order with label fallbacks', async () => {
+    const session = await play({...SOURCE, MediaStreams: STREAMS});
+    expect(session.audioTracks).toEqual([
+      {
+        index: 1,
+        label: 'English - AAC - Stereo - Default',
+        language: 'eng',
+        isDefault: true,
+      },
+      // androidtv: displayTitle ?: title.
+      {index: 2, label: 'Commentary', language: 'fre'},
+      // A blank DisplayTitle counts as missing: the language is next.
+      {index: 3, label: 'ger', language: 'ger'},
+      // Numbered by position among the audio streams.
+      {index: 4, label: 'Track 4', isDefault: false},
+    ]);
+  });
+
+  it('maps subtitle streams as external or burn-in by DeliveryMethod', async () => {
+    const session = await play({...SOURCE, MediaStreams: STREAMS});
+    expect(session.subtitleTracks).toEqual([
+      {
+        index: 5,
+        label: 'English - SUBRIP',
+        language: 'eng',
+        isDefault: false,
+        delivery: 'external',
+        vttUrl: vtt(5),
+      },
+      {index: 6, label: 'Signs - ASS', delivery: 'burn-in'},
+      {index: 7, label: 'Track 3', delivery: 'burn-in'},
+      {index: 8, label: 'Track 4', delivery: 'burn-in'},
+      // No DeliveryMethod: burn-in.
+      {index: 9, label: 'spa', language: 'spa', delivery: 'burn-in'},
+      // A sidecar file is a track too.
+      {
+        index: 10,
+        label: 'Portuguese - SRT - External',
+        language: 'por',
+        delivery: 'external',
+        vttUrl: vtt(10),
+      },
+    ]);
+  });
+
+  it('maps tracks for HLS sessions too', async () => {
+    const session = await play({...HLS_SOURCE, MediaStreams: STREAMS});
+    expect(session.mode).toBe('hls');
+    expect(session.audioTracks?.map((t) => t.index)).toEqual([1, 2, 3, 4]);
+    expect(
+      session.subtitleTracks?.filter((t) => t.delivery === 'external'),
+    ).toEqual([
+      expect.objectContaining({index: 5, vttUrl: vtt(5)}),
+      expect.objectContaining({index: 10, vttUrl: vtt(10)}),
+    ]);
+  });
+
+  it('skips streams without an Index', async () => {
+    const session = await play({
+      ...SOURCE,
+      MediaStreams: [
+        {Type: 'Audio', DisplayTitle: 'No index'},
+        {Type: 'Subtitle', DeliveryMethod: 'External'},
+      ],
+    });
+    expect(session.audioTracks).toEqual([]);
+    expect(session.subtitleTracks).toEqual([]);
+  });
+
+  it('has empty track lists without MediaStreams', async () => {
+    const session = await play(SOURCE);
+    expect(session.audioTracks).toEqual([]);
+    expect(session.subtitleTracks).toEqual([]);
+  });
+
+  it('keeps a default subtitle index of -1 (off)', async () => {
+    const session = await play({
+      ...SOURCE,
+      DefaultSubtitleStreamIndex: -1,
+      MediaStreams: STREAMS,
+    });
+    expect(session.subtitleStreamIndex).toBe(-1);
+    expect(session.audioStreamIndex).toBe(1);
+  });
+
+  it("uses the chosen source's streams when there are several", async () => {
+    respond({
+      MediaSources: [
+        {...SOURCE, MediaStreams: STREAMS},
+        {
+          ...SOURCE,
+          Id: 'source-2',
+          MediaStreams: [
+            {
+              Type: 'Audio',
+              Index: 1,
+              DisplayTitle: 'Japanese',
+              Language: 'jpn',
+            },
+            {
+              Type: 'Subtitle',
+              Index: 2,
+              DisplayTitle: 'English',
+              DeliveryMethod: 'External',
+            },
+          ],
+        },
+      ],
+      PlaySessionId: 'session-1',
+    });
+    const result = await resolvePlayback(api, {
+      ...REQUEST,
+      mediaSourceId: 'source-2',
+    });
+    expect(result).toMatchObject({
+      session: {
+        mediaSourceId: 'source-2',
+        audioTracks: [{index: 1, label: 'Japanese', language: 'jpn'}],
+        subtitleTracks: [
+          {
+            index: 2,
+            label: 'English',
+            delivery: 'external',
+            vttUrl:
+              'https://jf.example/base/Videos/item-1/source-2/Subtitles/' +
+              '2/0/Stream.vtt?api_key=tok%20en%2F%2B',
+          },
+        ],
+      },
+    });
+  });
+});
+
+describe('subtitleVttUrl', () => {
+  const withBase = (basePath: string, accessToken = 'tok en/+') =>
+    ({...api, basePath, accessToken} as unknown as Api);
+
+  it.each([
+    ['with a path prefix', 'https://jf.example/base'],
+    ['without a path prefix', 'https://jf.example'],
+  ])('builds the WebVTT endpoint on basePath %s', (_name, basePath) => {
+    expect(subtitleVttUrl(withBase(basePath), 'item-1', 'source-1', 3)).toBe(
+      `${basePath}/Videos/item-1/source-1/Subtitles/3/0/Stream.vtt` +
+        '?api_key=tok%20en%2F%2B',
+    );
+  });
+
+  it('encodes the ids and adds api_key once', () => {
+    const url = subtitleVttUrl(
+      withBase('https://jf.example'),
+      'item 1/?',
+      'src&1#',
+      12,
+    );
+    expect(url).toBe(
+      'https://jf.example/Videos/item%201%2F%3F/src%261%23/Subtitles/12/0/' +
+        'Stream.vtt?api_key=tok%20en%2F%2B',
+    );
+    expect(url.match(/api_key=/g)).toHaveLength(1);
+  });
+
+  it('adds nothing without an access token', () => {
+    expect(
+      subtitleVttUrl(withBase('https://jf.example', ''), 'i', 's', 0),
+    ).toBe('https://jf.example/Videos/i/s/Subtitles/0/0/Stream.vtt');
   });
 });

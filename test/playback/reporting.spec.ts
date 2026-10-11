@@ -418,3 +418,101 @@ describe('errors', () => {
     });
   });
 });
+
+describe('stream indexes', () => {
+  const indexes = (info: {
+    AudioStreamIndex?: number | null;
+    SubtitleStreamIndex?: number | null;
+  }) => [info.AudioStreamIndex, info.SubtitleStreamIndex];
+
+  it("sends the snapshot's indexes over the session's", async () => {
+    snapshot = {
+      positionMs: 60000,
+      isPaused: false,
+      audioStreamIndex: 2,
+      subtitleStreamIndex: -1,
+    };
+    const reporter = setup();
+    await reporter.start();
+    await advance(PROGRESS_INTERVAL_MS);
+
+    expect(
+      indexes(sessionApi.reportPlaybackStart.mock.calls[0][0].playbackStartInfo),
+    ).toEqual([2, -1]);
+    expect(indexes(progressCalls()[0])).toEqual([2, -1]);
+  });
+
+  it("falls back to the session's when the snapshot has none", async () => {
+    const reporter = setup();
+    await reporter.start();
+    await advance(PROGRESS_INTERVAL_MS);
+
+    expect(
+      indexes(sessionApi.reportPlaybackStart.mock.calls[0][0].playbackStartInfo),
+    ).toEqual([1, 3]);
+    expect(indexes(progressCalls()[0])).toEqual([1, 3]);
+  });
+
+  it('falls back per index', async () => {
+    snapshot = {positionMs: 60000, isPaused: false, subtitleStreamIndex: 5};
+    const reporter = setup();
+    await reporter.start();
+    await reporter.update();
+    expect(indexes(progressCalls()[0])).toEqual([1, 5]);
+  });
+
+  it('picks up a client-side subtitle switch between two progress reports', async () => {
+    const reporter = setup();
+    await reporter.start();
+    await advance(PROGRESS_INTERVAL_MS);
+    snapshot = {...snapshot, subtitleStreamIndex: 4};
+    await reporter.update();
+    snapshot = {...snapshot, subtitleStreamIndex: -1};
+    await advance(PROGRESS_INTERVAL_MS);
+
+    expect(progressCalls().map(indexes)).toEqual([
+      [1, 3],
+      [1, 4],
+      [1, -1],
+    ]);
+  });
+
+  it("uses the session's indexes when the first snapshot throws", async () => {
+    const reporter = createPlaybackReporter(api, SESSION, () => {
+      throw new Error('player not ready');
+    });
+    await reporter.start();
+    expect(
+      indexes(sessionApi.reportPlaybackStart.mock.calls[0][0].playbackStartInfo),
+    ).toEqual([1, 3]);
+  });
+
+  it('sends the latest indexes after a throwing snapshot recovers', async () => {
+    let fail = false;
+    const reporter = createPlaybackReporter(api, SESSION, () => {
+      if (fail) {
+        throw new Error('player busy');
+      }
+      return snapshot;
+    });
+    await reporter.start();
+    fail = true;
+    await advance(PROGRESS_INTERVAL_MS);
+    fail = false;
+    snapshot = {...snapshot, audioStreamIndex: 2, subtitleStreamIndex: 6};
+    await advance(PROGRESS_INTERVAL_MS);
+
+    expect(progressCalls().map(indexes)).toEqual([[2, 6]]);
+  });
+
+  // PlaybackStopInfo has no stream index fields (SDK 1.0.0 and the server).
+  it('sends stopped without stream indexes', async () => {
+    snapshot = {...snapshot, audioStreamIndex: 2, subtitleStreamIndex: 4};
+    const reporter = setup();
+    await reporter.start();
+    await reporter.stop();
+    const [[{playbackStopInfo}]] = sessionApi.reportPlaybackStopped.mock.calls;
+    expect(playbackStopInfo).not.toHaveProperty('AudioStreamIndex');
+    expect(playbackStopInfo).not.toHaveProperty('SubtitleStreamIndex');
+  });
+});

@@ -244,6 +244,17 @@ describe('buildDeviceProfile', () => {
   });
 
   describe('transcoding profiles', () => {
+    it('keeps subtitles out of the HLS manifest (the app draws them)', () => {
+      const profile = buildDeviceProfile({isTypeSupported: () => true});
+      const hls = (profile.TranscodingProfiles ?? []).filter(
+        (p) => p.Type === 'Video' && p.Protocol === 'hls',
+      );
+      expect(hls).toHaveLength(2);
+      for (const p of hls) {
+        expect(p.EnableSubtitlesInManifest).toBe(false);
+      }
+    });
+
     it('offers HLS in TS and fMP4, with HEVC when supported', () => {
       const profile = buildDeviceProfile({isTypeSupported: () => true});
       const [ts, fmp4, audio] = profile.TranscodingProfiles ?? [];
@@ -253,7 +264,7 @@ describe('buildDeviceProfile', () => {
         Protocol: 'hls',
         VideoCodec: 'hevc,h264',
         CopyTimestamps: false,
-        EnableSubtitlesInManifest: true,
+        EnableSubtitlesInManifest: false,
       };
       expect(ts).toEqual({
         ...common,

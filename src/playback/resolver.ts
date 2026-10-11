@@ -1,14 +1,22 @@
 import type {Api} from '@jellyfin/sdk';
 import type {DeviceProfile} from '@jellyfin/sdk/lib/generated-client/models/device-profile';
 import type {MediaSourceInfo} from '@jellyfin/sdk/lib/generated-client/models/media-source-info';
+import type {MediaStream} from '@jellyfin/sdk/lib/generated-client/models/media-stream';
+import {MediaStreamType} from '@jellyfin/sdk/lib/generated-client/models/media-stream-type';
 import {MediaStreamProtocol} from '@jellyfin/sdk/lib/generated-client/models/media-stream-protocol';
 import {PlayMethod} from '@jellyfin/sdk/lib/generated-client/models/play-method';
 import {PlaybackErrorCode} from '@jellyfin/sdk/lib/generated-client/models/playback-error-code';
+import {SubtitleDeliveryMethod} from '@jellyfin/sdk/lib/generated-client/models/subtitle-delivery-method';
 import {getMediaInfoApi} from '@jellyfin/sdk/lib/utils/api/media-info-api';
 
 import {msToTicks, ticksToMs} from '../api/itemInfo';
 import {buildDeviceProfile, DEFAULT_MAX_BITRATE} from './deviceProfile';
-import type {PlaybackMode, PlaybackResolution} from './types';
+import type {
+  MediaTrack,
+  PlaybackMode,
+  PlaybackResolution,
+  SubtitleTrack,
+} from './types';
 
 export type PlaybackRequest = {
   itemId: string;
@@ -75,6 +83,84 @@ export function transcodingUrl(api: Api, path: string): string {
   }
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}api_key=${encodeURIComponent(api.accessToken)}`;
+}
+
+/**
+ * A text subtitle as WebVTT: the server's subtitle stream endpoint (the one
+ * `StreamInfo` builds for `DeliveryUrl`) with the format forced to `vtt`, so
+ * SRT, TTML and embedded text all arrive in one format. Start ticks are 0, as
+ * the server uses for direct play and HLS. The request has no headers, so the
+ * token goes in `api_key`.
+ */
+export function subtitleVttUrl(
+  api: Api,
+  itemId: string,
+  mediaSourceId: string,
+  index: number,
+): string {
+  return transcodingUrl(
+    api,
+    `/Videos/${encodeURIComponent(itemId)}/${encodeURIComponent(
+      mediaSourceId,
+    )}/Subtitles/${index}/0/Stream.vtt`,
+  );
+}
+
+const nonEmpty = (value: string | null | undefined): string | undefined =>
+  value?.trim() ? value : undefined;
+
+/**
+ * androidtv labels a stream with `displayTitle ?: title`; the language and a
+ * numbered fallback cover streams the server left untitled.
+ */
+function toMediaTrack(stream: MediaStream, position: number): MediaTrack {
+  const language = nonEmpty(stream.Language);
+  return {
+    index: stream.Index ?? -1,
+    label:
+      nonEmpty(stream.DisplayTitle) ??
+      nonEmpty(stream.Title) ??
+      language ??
+      `Track ${position + 1}`,
+    ...(language ? {language} : {}),
+    ...(stream.IsDefault != null ? {isDefault: stream.IsDefault} : {}),
+  };
+}
+
+const streamsOfType = (source: MediaSourceInfo, type: MediaStreamType) =>
+  (source.MediaStreams ?? []).filter(
+    (stream) => stream.Type === type && stream.Index != null,
+  );
+
+/** The source's audio streams, in server order. */
+function audioTracks(source: MediaSourceInfo): MediaTrack[] {
+  return streamsOfType(source, MediaStreamType.Audio).map(toMediaTrack);
+}
+
+/**
+ * The source's subtitle streams (embedded and sidecar), in server order.
+ * PlaybackInfo sets `DeliveryMethod` on every subtitle stream
+ * (`MediaInfoHelper.SetDeviceSpecificSubtitleInfo`): `External` ones are
+ * fetched as WebVTT and drawn by the app; anything else is burned in.
+ */
+function subtitleTracks(
+  api: Api,
+  itemId: string,
+  mediaSourceId: string,
+  source: MediaSourceInfo,
+): SubtitleTrack[] {
+  return streamsOfType(source, MediaStreamType.Subtitle).map(
+    (stream, position) => {
+      const track = toMediaTrack(stream, position);
+      return stream.DeliveryMethod === SubtitleDeliveryMethod.External
+        ? {
+            ...track,
+            delivery: 'external',
+            vttUrl: subtitleVttUrl(api, itemId, mediaSourceId, track.index),
+          }
+        : {...track, delivery: 'burn-in'};
+    },
+  );
 }
 
 /**
@@ -187,6 +273,8 @@ export async function resolvePlayback(
         ? {durationMs: ticksToMs(source.RunTimeTicks)}
         : {}),
       maxStreamingBitrate,
+      audioTracks: audioTracks(source),
+      subtitleTracks: subtitleTracks(api, itemId, source.Id, source),
     },
   };
 }

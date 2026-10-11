@@ -71,8 +71,10 @@ export function createPlaybackReporter(
     IsPaused: snapshot.isPaused,
     CanSeek: true,
     IsMuted: false,
-    AudioStreamIndex: session.audioStreamIndex,
-    SubtitleStreamIndex: session.subtitleStreamIndex,
+    // A client-side subtitle switch changes the snapshot, not the session.
+    AudioStreamIndex: snapshot.audioStreamIndex ?? session.audioStreamIndex,
+    SubtitleStreamIndex:
+      snapshot.subtitleStreamIndex ?? session.subtitleStreamIndex,
     RepeatMode: RepeatMode.RepeatNone,
     PlaybackOrder: PlaybackOrder.Default,
   });
