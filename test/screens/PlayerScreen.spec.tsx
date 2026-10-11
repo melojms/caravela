@@ -631,6 +631,7 @@ describe('PlayerScreen tracks', () => {
       await flush();
       expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
         itemId: 'm1',
+        mediaSourceId: 'source-1',
         userId: 'u1',
         startMs: 754000,
         subtitleStreamIndex: 4,
@@ -659,8 +660,11 @@ describe('PlayerScreen tracks', () => {
       stopped.resolve();
       await flush();
       expect(resolvePlayback).toHaveBeenCalledTimes(2);
+      // Names the source: without it, the server ignores the indexes and
+      // applies the user's remembered tracks.
       expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
         itemId: 'm1',
+        mediaSourceId: 'source-1',
         userId: 'u1',
         startMs: 754000,
         audioStreamIndex: 2,
@@ -710,6 +714,7 @@ describe('PlayerScreen tracks', () => {
       expect(order).toEqual(['deinitialize', 'resolve']);
       expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
         itemId: 'm1',
+        mediaSourceId: 'source-1',
         userId: 'u1',
         startMs: 60000,
         audioStreamIndex: 1,
@@ -732,6 +737,7 @@ describe('PlayerScreen tracks', () => {
       await flush();
       expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
         itemId: 'm1',
+        mediaSourceId: 'source-1',
         userId: 'u1',
         startMs: 754000,
         audioStreamIndex: 2,
@@ -761,6 +767,7 @@ describe('PlayerScreen tracks', () => {
       await flush();
       expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
         itemId: 'm1',
+        mediaSourceId: 'source-1',
         userId: 'u1',
         startMs: 754000,
         audioStreamIndex: 1,

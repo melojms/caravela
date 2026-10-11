@@ -30,10 +30,14 @@ type Phase =
 
 type Position = {positionMs: number; durationMs: number};
 
-/** The tracks the viewer picked; the server's defaults apply until then. */
+/**
+ * The tracks the viewer picked; the server's defaults apply until then. The
+ * server only honours the indexes for a named media source (otherwise it
+ * applies the user's remembered tracks), so a pick names its session's.
+ */
 type TrackChoice = Pick<
   PlaybackRequest,
-  'audioStreamIndex' | 'subtitleStreamIndex'
+  'mediaSourceId' | 'audioStreamIndex' | 'subtitleStreamIndex'
 >;
 
 /** A session and the tracks playing (or about to play) in it. */
@@ -338,6 +342,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       resumeFromRef.current = controller.positionMs;
     }
     choiceRef.current = {
+      mediaSourceId: next.session.mediaSourceId,
       ...(next.audioIndex !== undefined && {audioStreamIndex: next.audioIndex}),
       subtitleStreamIndex: next.subtitleIndex,
     };
@@ -375,7 +380,11 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       return;
     }
     // External or off on both sides: no new session.
-    choiceRef.current = {...choiceRef.current, subtitleStreamIndex: index};
+    choiceRef.current = {
+      ...choiceRef.current,
+      mediaSourceId: phase.session.mediaSourceId,
+      subtitleStreamIndex: index,
+    };
     controller.setSubtitleStreamIndex(index);
     setSubtitlePick({session: phase.session, index});
   };
