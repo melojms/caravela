@@ -62,16 +62,14 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
     - 10d `PlayerScreen.tsx` + `src/screens/PlayerSubtitles.tsx` (a position feed, so only subtitles re-render while playing) + `PlayerController.setSubtitleStreamIndex`. Paused overlay: Play / Subtitles / Audio (Audio only with >1 track). External ↔ external / None is client-side; audio and burn-in in/out destroy the controller, wait for stopped, then re-resolve at the paused position.
     - 10e (Fire TV) fixes: OK pauses on its **release** (the press showed the overlay and the release pressed Play); a switch sends **`mediaSourceId`**, or the server ignores the requested indexes and uses the user's remembered tracks.
 - **Checks on `main`:** lint 0 errors (32 warnings, Vega system-library notices plus an old `no-shadow` in a test), Jest 783 passing, `npm run build:release` OK. Task 10 on the **Fire TV** (as `demo`): external SRT in direct play (The AI Doc) and remux (Ad Astra, Ice Road, Unbreakable), embedded subrip (Paterson), ASS burn-in (Ice Road) and PGS burn-in (Unbreakable) all work; no subtitle offset after an HLS resume; SRT → SRT → None updates `/Sessions` without a new session; burn-in off returns to remux and the transcode ends; audio switch (Ad Astra E-AC-3 ↔ AAC) reloads at the position and keeps the subtitle.
-- **Next: task 10 follow-ups (10f), then task 11.** Start with the approach and wait for approval:
-  - The Age of Adaline doesn't play: the profile allows 8-channel AAC, the server copies the 7.1 AAC track, and the Fire TV's parser fails. The screen stays black with no spinner or error. Fix in `deviceProfile.ts` (e.g. cap AAC at 6 channels) and make the player show an error instead of a black screen.
-  - A session that never started leaves its transcode running: `reporting.ts` only sends stopped after start.
-  - The subtitle line sits on top of the paused overlay's progress bar and buttons; move it up or hide it while paused.
-  - The text-shadow outline is a faint glow on bright scenes; consider a stronger shadow or several stacked ones.
-  - Embedded subtitles take ~30 s to extract the first time (server side); consider a "Loading subtitles" hint.
-  - While a reloaded session loads (after a switch) the overlay is hidden, so Back leaves the player.
-  - Playback already sends `EnableSubtitlesInManifest: true` for HLS and `ignoreTextStreamFailures` in Shaka; the player has no `KeplerCaptionsView` yet.
-  - `PlaybackSnapshot` has no audio/subtitle indexes; the reporter's indexes are fixed per session (see follow-ups).
-  - PLAN step 4 says to call `stopEncodingProcess` before re-requesting PlaybackInfo on an audio/burn-in switch. SDK 1.0.0 and the 12.2 server don't have it; task 9 showed `reportPlaybackStopped` ends the transcode, so plan the switch around that (stop the old session, then resolve a new one at the position).
+    - 10f-1: AAC capped at 6 channels (the Fire TV's AAC parser fails on 7.1 and the start hangs with no error event; `isTypeSupported` ignores channel counts; AC-3/E-AC-3 are unsupported, so they're always converted to AAC ≤6). Stopped is sent even when start never went out (12.2 ends that transcode). A **start watchdog** in `PlayerController`: 30 s with no progress before the first `playing` → the error view with Retry (starts measured at 3.7–5.3 s); the spinner stays up until the first `playing` (Shaka's start seek used to hide it).
+    - 10f-2: the outline is 8 black copies of each line offset by 5% of the text size (a crisp stroke on the TV; `textShadow` alone was a faint glow). Subtitles are hidden while the overlay or a picker is up and come back at the current cue on resume.
+- **Checks on `main` after 10f:** lint 0 errors, Jest 808 passing, `npm run build:release` OK. Fire TV: Adaline plays (audio → AAC 5.1, `AudioChannelsNotSupported`), with the DVD subtitle burned in too; Back ends sessions that never started; Ad Astra remux and E-AC-3 → AAC 5.1; The AI Doc direct play; the watchdog error and Retry seen with a temporary build.
+- **Next: task 11 (player overlay: trickplay, chapters, speed, zoom).** Start with the approach and wait for approval. Fold in from task 10:
+  - Embedded subtitles take ~30 s to extract the first time (server side); show a "Loading subtitles" hint.
+  - While a reloaded session loads after a switch the overlay is hidden, so Back leaves the player.
+  - Subtitles are hidden under the overlay; Amazon's caption guidance is to move them above the controls instead. Decide with the new overlay.
+  - The watchdog doesn't cover stalls after playback started; a user who pauses during a long load gets the error after 30 s.
 - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
   - Servers: there's no way to remove a saved server or user (the TV now also has Jellyfin's demo server and its `demo` user, added for the README screenshots).
@@ -148,6 +146,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
 - **Device checks:** playback checks use the **Fire TV** (the user chose it in task 8; the simulator stalls playback 3–6 s in). UI-only checks can use the Vega simulator (details in Gotchas). Captions also need the TV.
 - **Signing in during a check:** a fresh install wipes the session. Agents sign in as `demo` with an empty password (no user needed). Only if a check needs `melojms` (e.g. its library or resume points): Quick Connect; tell the agent to print the code on its own line as `QUICK CONNECT CODE: <code>`, keep polling, and fetch a new code if one expires. The orchestrating session relays the code to the user, who approves it in jellyfin-web. Never use `melojms`'s password.
 - **Shared Fire TV** (`192.168.50.124:5555`): every install, launch, input or screenshot runs inside `flock /tmp/caravela-device.lock -c '…'`.
+  - Never start a long-running process (e.g. `loggingctl log -f`) inside the lock: it inherits the lock and holds it forever. Start log capture outside `flock`, detached, and stop it by pid.
   - When agents run in parallel, hold the lock for a whole flow (install → navigate → screenshot), not per step. Otherwise agents interleave on the TV.
   - **Typing:** focus the TextInput (the keyboard opens), wait about 3 s, then `inputd-cli send_text <text>`. Check with a screenshot: a stray key press can add a letter in front. Press Back to close the keyboard.
 - **Before merging to `main`:**
