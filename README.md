@@ -1,8 +1,81 @@
-# Caravela
+<p align="center">
+  <img src="assets/brand/caravela-icon.svg" alt="Caravela" width="128" height="128">
+</p>
 
-A Fire TV (Vega OS) client for movies and TV shows.
+<h1 align="center">Caravela</h1>
 
-Caravela is an unofficial client that works with Jellyfin servers; it is not affiliated with the Jellyfin project.
+<p align="center">
+  A Jellyfin client for Fire TV on Vega OS, for your movies and TV shows.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPL--2.0--or--later-blue" alt="Licence: GPL-2.0-or-later"></a>
+  <img src="https://img.shields.io/badge/platform-Fire%20TV%20%C2%B7%20Vega%20OS-ff9900" alt="Platform: Fire TV · Vega OS">
+  <img src="https://img.shields.io/badge/Jellyfin-12.0%2B-aa5cc3" alt="Jellyfin 12.0+">
+  <img src="https://img.shields.io/badge/status-work%20in%20progress-yellow" alt="Status: work in progress">
+</p>
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/melojms"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+</p>
+
+<p align="center">
+  <sub>Caravela is an unofficial client that works with Jellyfin servers; it is not affiliated with the Jellyfin project.</sub>
+</p>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/readme/home.jpg" alt="Home screen with rows of movies and a focused card"></td>
+    <td width="50%"><img src="docs/screenshots/readme/details.jpg" alt="Movie details page"></td>
+  </tr>
+  <tr>
+    <td align="center">Home</td>
+    <td align="center">Movie details</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/readme/player.jpg" alt="Player paused with the overlay showing"></td>
+    <td width="50%"><img src="docs/screenshots/readme/sign-in.jpg" alt="User picker on the Jellyfin demo server"></td>
+  </tr>
+  <tr>
+    <td align="center">Player, paused</td>
+    <td align="center">Sign-in: the user picker</td>
+  </tr>
+</table>
+
+<p align="center"><sub>Content from the <a href="https://demo.jellyfin.org/stable">Jellyfin demo server</a>.</sub></p>
+
+## Status
+
+> [!NOTE]
+> Caravela is a **work in progress**. It isn't on the Amazon Appstore yet; for now you build it yourself and sideload it onto a Fire TV in developer mode.
+
+What works today:
+
+- Sign-in with Quick Connect or a password, with several saved servers and users.
+- Home rows from your server (My media, Continue watching, Next up, Recently added).
+- Movie details: cast and crew, similar titles, watched and favourite toggles.
+- Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin.
+
+Coming next, roughly in this order:
+
+- Subtitles and audio track switching
+- Player controls with trickplay previews and chapters
+- Intro skip and Next up
+- TV show, season and episode details
+- Library grids for Movies and Shows
+- Search
+- Settings
+
+## Features
+
+- Made for the remote: D-pad focus, a top toolbar and Back that behaves like the official Android TV app.
+- Looks and feels like Jellyfin's Android TV client, with the focused item's backdrop behind Home.
+- Quick Connect sign-in by default, so you don't type a password with the remote.
+- Several servers and users, with auto-login off, for the last user or for a specific one.
+- Plays what the Fire TV can handle directly and asks the server to remux or transcode the rest.
+- Free software under GPL-2.0-or-later.
 
 ## Requirements
 
@@ -11,6 +84,8 @@ Caravela is an unofficial client that works with Jellyfin servers; it is not aff
 - A Fire TV running Vega OS with developer mode on, or the Vega Virtual Device
 
 ## Build and run
+
+Set up [Shaka Player](#shaka-player-not-included) first; the app won't build without it.
 
 ```sh
 npm install
@@ -59,6 +134,14 @@ Amazon describes the package and its build in [Play adaptive content with Shaka 
 - **SDK:** `@jellyfin/sdk` 1.0.0, generated from the Jellyfin 12.0 OpenAPI spec. Caravela supports **Jellyfin 12.0 and newer** and rejects older servers when you add them. The SDK and its axios dependency bundle and run under Vega Metro/Hermes (axios uses its `react-native` build).
 - **URL polyfill:** Vega's built-in `URL` has no `search` setter, but the SDK's generated client sets `url.search` on every request. `src/api/urlPolyfill.js` replaces the global `URL` and `URLSearchParams` with core-js's versions, and `index.js` imports it first. `react-native-url-polyfill` doesn't work on Vega because it reads `NativeModules.BlobModule` on load, which crashes the bridgeless RN 0.83 runtime.
 - **Storage:** servers, users, tokens and the auto-login setting are saved as one JSON entry in AsyncStorage, using Vega's port `@amazon-devices/react-native-async-storage__async-storage` ~2.1. Vega has no secure key/value store for apps, so **access tokens are stored unencrypted** in the app's sandboxed SQLite database. The store sits behind the `AuthStore` interface, so it can move to secure storage if Vega adds one.
+
+## Support
+
+Caravela is a spare-time project. If it's useful to you and you'd like to help it along, you can buy me a coffee. Bug reports and ideas in the issues are just as welcome.
+
+<p>
+  <a href="https://www.buymeacoffee.com/melojms"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+</p>
 
 ## License
 
