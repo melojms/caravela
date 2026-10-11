@@ -1,6 +1,6 @@
 # Handoff
 
-Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 10).
+Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 6).
 
 ## Starting a fresh session
 1. Read the "Next" item under Status (task 11, the player overlay, plus the task 10 items folded into it) and the "Playback design" section in docs/PLAN.md (step 6, on-screen controls).
@@ -64,13 +64,19 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
 - **Checks on `main`:** lint 0 errors (32 warnings, Vega system-library notices plus an old `no-shadow` in a test), Jest 783 passing, `npm run build:release` OK. Task 10 on the **Fire TV** (as `demo`): external SRT in direct play (The AI Doc) and remux (Ad Astra, Ice Road, Unbreakable), embedded subrip (Paterson), ASS burn-in (Ice Road) and PGS burn-in (Unbreakable) all work; no subtitle offset after an HLS resume; SRT → SRT → None updates `/Sessions` without a new session; burn-in off returns to remux and the transcode ends; audio switch (Ad Astra E-AC-3 ↔ AAC) reloads at the position and keeps the subtitle.
     - 10f-1: AAC capped at 6 channels (the Fire TV's AAC parser fails on 7.1 and the start hangs with no error event; `isTypeSupported` ignores channel counts; AC-3/E-AC-3 are unsupported, so they're always converted to AAC ≤6). Stopped is sent even when start never went out (12.2 ends that transcode). A **start watchdog** in `PlayerController`: 30 s with no progress before the first `playing` → the error view with Retry (starts measured at 3.7–5.3 s); the spinner stays up until the first `playing` (Shaka's start seek used to hide it).
     - 10f-2: the outline is 8 black copies of each line offset by 5% of the text size (a crisp stroke on the TV; `textShadow` alone was a faint glow). Subtitles are hidden while the overlay or a picker is up and come back at the current cue on resume.
+- **Task 6: library grids** (briefs `docs/tasks/06*.md`). My media's Movies/TV cards open `Library` (`{libraryId, title, collectionType, displayPreferencesId}`); the mock `Movies`/`Shows` screens and `src/dev/mockItems.ts` are gone.
+    - 6-0 `src/api/libraryTypes.ts`: androidtv's sort options per kind (Name, Date added / Date show added, Premier date, Rating, Community rating, Critic rating, Last played, Runtime / Date episode added), filters, prefs, letters.
+    - 6a `src/api/library.ts` (`useLibraryItems`: `getLibraryApi().getItems` — it's not on `getItemsApi` in SDK 1.0.0 — pages of 60, `nameStartsWith`, `#` → `nameLessThan: 'A'`, status text) and `src/api/libraryPrefs.ts`: sort and filters saved server-side under client **`jellyfin-androidtv`** with androidtv's Kotlin enum names (`SORT_NAME`, `ASCENDING`, `"true"`), so they're shared with the official app; both spellings are read. The letter isn't saved.
+    - 6b `LibraryHeader.tsx` (title, focused name, status line, "N | total", Sort / Unwatched / Favorites / Letter icon buttons), `LetterPicker.tsx`, `PosterGrid` `onItemFocus`. `getItemLayout` with `numColumns` gets a **row** index (was treated as an item index).
+    - 6c `src/screens/LibraryScreen.tsx`: Sort by reuses `TrackPicker`; Letter only while sorting by Name, picking it again clears it; the grid remounts per query (counter, not query text) and focuses its first card; refocus after Back like Home; refetch on return.
+    - 6c fixes (simulator): the pressed toolbar button's tag comes from the press event (`FocusManager.getFocused()` returns nothing for it) and is refocused after `RESTORE_FOCUS_DELAY_MS`; **`scrollEnabled={false}` on the grid**, so only our row-aligned scroll moves it (Vega's scroll-on-focus left it half a row off); bottom padding keeps the last row aligned; Right stops at a row's end (an invisible focusable filler cell on a short last row hands focus back).
+- **Checks on `main` after task 6:** lint 0 errors (40 warnings, all Vega system-library notices plus the old `no-shadow`), Jest 972 passing, `npm run build:release` OK. Simulator only (as `demo`): Movies 76 items with paging, sort, both filters + empty state, letters, Details → Back refocus, Shows → placeholder, prefs restored after an app restart. **Not checked on the Fire TV yet** (waiting for the user's go-ahead).
 - **Checks on `main` after 10f:** lint 0 errors, Jest 808 passing, `npm run build:release` OK. Fire TV: Adaline plays (audio → AAC 5.1, `AudioChannelsNotSupported`), with the DVD subtitle burned in too; Back ends sessions that never started; Ad Astra remux and E-AC-3 → AAC 5.1; The AI Doc direct play; the watchdog error and Retry seen with a temporary build.
 - **Next: task 11 (player overlay: trickplay, chapters, speed, zoom).** Start with the approach and wait for approval. Fold in from task 10:
   - Embedded subtitles take ~30 s to extract the first time (server side); show a "Loading subtitles" hint.
   - While a reloaded session loads after a switch the overlay is hidden, so Back leaves the player.
   - Subtitles are hidden under the overlay; Amazon's caption guidance is to move them above the controls instead. Decide with the new overlay.
   - The watchdog doesn't cover stalls after playback started; a user who pauses during a long load gets the error after 30 s.
-- **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
   - Servers: there's no way to remove a saved server or user (the TV now also has Jellyfin's demo server and its `demo` user, added for the README screenshots).
   - Servers: "Change server" always opens Add server, even with several saved; getting back to a saved server means typing its address again.
@@ -95,13 +101,18 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - Details: tests for a missing item `Id`, Back while a toggle is saving, the cast list changing after a refetch, and "Ends" not updating while the page stays open. Opening a similar movie already in the stack adds another copy.
   - Details buttons don't return focus to the last focused button (androidtv does).
   - On the simulator, right after Quick Connect sign-in Caravela went to the background once; relaunching (no reinstall) kept the session.
-  - The Movies grid needs top padding while scrolling: the previous row's year labels show at the top.
-  - Add tests for repeated `onEndReached` calls, the end of paging, and progress values ≤0 or ≥1.
+  - Library: check task 6 on the Fire TV (row-aligned scrolling with `scrollEnabled={false}`, the 100 ms button refocus, paging speed).
+  - Library: `LIBRARY_FIELDS` is androidtv's full `itemFields` (MediaSources, Chapters, Trickplay…) for 60 items a page; switch to a lighter set if paging is slow on the TV.
+  - Library: 6 columns leave an empty strip on the right of the 1080p canvas (androidtv's medium posters fit 7); poster size / image type / grid direction prefs are for task 14.
+  - Library: the Sort by panel opens bottom-right (`TrackPicker`'s position); androidtv's is top-right. The "loading more" spinner floats over the grid (no footer slot).
+  - Library: `#` (`nameLessThan: 'A'`) is untested with a title that sorts before A. Genres and Collections browsing aren't done (out of task 6's scope).
+  - Library: a failed prefs read caches an empty DTO, so the next save drops androidtv's other keys (e.g. `PosterSize`); androidtv does the same.
+  - Library tests: a failed save keeps the local choice, Retry after an error, Back while a page loads.
+  - Simulator: twice after a fresh-install password sign-in the app went back to the launcher; relaunching shows the user signed in. Home's first focus once landed on Continue watching instead of My media.
   - Two saved servers with the same name make the "Only <user> on <server>" label ambiguous.
   - The user picker doesn't reload when you come back to it; a pending `restoreSession` still signs in after you leave.
   - Discovery can't tell a TLS failure from "offline"; both show the unreachable message.
   - Jest warns "a worker process has failed to exit gracefully" (a leaked timer somewhere); find it with `--detectOpenHandles`.
-  - Movies and Shows open with nothing focused; focus their first item (5.5c-1 left it out of scope).
   - The 100 ms refocus delay on Home is tuned on this TV only; the refocus tag points at a recycled Carousel view, so a refetch that reorders a row may focus a different card.
   - Lock files: only regenerate `package-lock.json` when a rebase conflicts on it. Regenerating from an existing `node_modules` strips `resolved`/`integrity`.
   - KEY_HOME sent with `inputd-cli` from inside Caravela did nothing (Back worked). Check with the real remote.
