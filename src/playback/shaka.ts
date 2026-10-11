@@ -2,8 +2,9 @@ import type {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
 
 // Amazon's Vega build of Shaka Player and its polyfills live in the
 // gitignored src/vendor/shaka/ (scripts/setup-shaka.sh). This is the only
-// file that imports them; Jest maps them to test/__mocks__/.
-import shaka from '../vendor/shaka/dist/shaka-player.compiled';
+// file that imports them; Jest maps them to test/__mocks__/. Shaka's build
+// itself loads in install(), after the polyfills.
+import type ShakaModule from '../vendor/shaka/dist/shaka-player.compiled';
 import DocumentPolyfill from '../vendor/shaka/polyfills/DocumentPolyfill';
 import ElementPolyfill from '../vendor/shaka/polyfills/ElementPolyfill';
 import TextDecoderPolyfill from '../vendor/shaka/polyfills/TextDecoderPolyfill';
@@ -19,7 +20,12 @@ import {DEFAULT_MAX_BITRATE} from './deviceProfile';
  */
 export const HLS_SEQUENCE_MODE = false;
 
-const {Category, Severity} = shaka.util.Error;
+/**
+ * `shaka.util.Error.Category` and `Severity` values, copied because Shaka's
+ * build only loads with the first session.
+ */
+const Category = {NETWORK: 1, MEDIA: 3, MANIFEST: 4, STREAMING: 5} as const;
+const Severity = {CRITICAL: 2} as const;
 
 /** Readable messages for Shaka error categories. */
 export const SHAKA_ERROR_MESSAGES: Partial<Record<number, string>> = {
@@ -55,24 +61,31 @@ const log = (what: string, reason: unknown) => {
 /** Where Amazon's document polyfill finds the media element. */
 const vegaGlobal = global as unknown as {gmedia?: unknown};
 
-let installed = false;
+let shaka: typeof ShakaModule | undefined;
 
 /**
  * One-time setup, the same steps as Amazon's Vega wrapper: their polyfills
  * (MiscPolyfill too: Shaka 4.16 crashes without it), Shaka's own polyfills,
  * Shaka's fetch plugin re-registered for http/https at application
  * priority, and no in-band closed-caption parsing (we don't show CEA-608).
+ *
+ * Shaka's build is required only after Amazon's polyfills: it reads
+ * `navigator.userAgent` (MiscPolyfill sets it) as it loads, and an error
+ * thrown while a module loads aborts the app on Vega.
  */
-function install() {
-  if (installed) {
-    return;
+function install(): typeof ShakaModule {
+  if (shaka) {
+    return shaka;
   }
-  installed = true;
   DocumentPolyfill.install();
   ElementPolyfill.install();
   TextDecoderPolyfill.install();
   W3CMediaPolyfill.install();
   MiscPolyfill.install();
+  // The build is CommonJS without `__esModule`: its exports are the
+  // namespace, as the default import used to read them.
+  const loaded = require('../vendor/shaka/dist/shaka-player.compiled');
+  shaka = (loaded.__esModule ? loaded.default : loaded) as typeof ShakaModule;
   shaka.polyfill.installAll();
 
   const {NetworkingEngine, HttpFetchPlugin} = shaka.net;
@@ -87,6 +100,7 @@ function install() {
   }
   shaka.media.ClosedCaptionParser.unregisterParser('video/mp4');
   shaka.media.ClosedCaptionParser.unregisterParser('video/mp2t');
+  return shaka;
 }
 
 export type ShakaSessionOptions = {
@@ -113,9 +127,9 @@ export function createShakaSession(
 ): ShakaSession {
   // Amazon's document polyfill answers `createElement('video')` with this.
   vegaGlobal.gmedia = media;
-  install();
+  const shakaLib = install();
 
-  const player = new shaka.Player();
+  const player = new shakaLib.Player();
   let destroying: Promise<void> | undefined;
 
   player.addEventListener('error', (event: Event) => {

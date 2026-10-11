@@ -13,13 +13,18 @@ let adapter: Adapter;
 let shaka: FakeShaka;
 let polyfillInstall: jest.Mock;
 
-/** A fresh adapter (and mocks), so the one-time install runs again. */
+const SHAKA_BUILD = '../../src/vendor/shaka/dist/shaka-player.compiled';
+
+/**
+ * A fresh adapter (and mocks), so the one-time install runs again. A reset
+ * registry rather than `isolateModules`: the adapter loads Shaka lazily, after
+ * this returns, and must get the same mock as the test.
+ */
 const loadAdapter = () => {
-  jest.isolateModules(() => {
-    adapter = require('../../src/playback/shaka');
-    shaka = require('../__mocks__/shaka').default;
-    polyfillInstall = require('../__mocks__/shakaPolyfill').default.install;
-  });
+  jest.resetModules();
+  adapter = require('../../src/playback/shaka');
+  shaka = require('../__mocks__/shaka').default;
+  polyfillInstall = require('../__mocks__/shakaPolyfill').default.install;
 };
 
 const lastPlayer = (): FakeShakaPlayer => shaka.Player.instances.at(-1)!;
@@ -53,6 +58,28 @@ afterEach(() => {
 });
 
 describe('setup', () => {
+  // On the TV, Shaka's build reads `navigator.userAgent` while it loads, and
+  // MiscPolyfill sets it. Loaded first, it threw inside Metro's require, which
+  // aborts the app.
+  it("loads Shaka's build only after Amazon's polyfills are installed", () => {
+    jest.resetModules();
+    const install = require('../__mocks__/shakaPolyfill').default.install;
+    let installsBeforeShaka: number | undefined;
+    jest.doMock(SHAKA_BUILD, () => {
+      installsBeforeShaka = install.mock.calls.length;
+      return jest.requireActual('../__mocks__/shaka');
+    });
+    try {
+      const fresh: Adapter = require('../../src/playback/shaka');
+      expect(installsBeforeShaka).toBeUndefined();
+
+      fresh.createShakaSession(media);
+      expect(installsBeforeShaka).toBe(5);
+    } finally {
+      jest.dontMock(SHAKA_BUILD);
+    }
+  });
+
   it('installs the polyfills once, before the first shaka.Player', () => {
     const order: string[] = [];
     polyfillInstall.mockImplementation(() =>
