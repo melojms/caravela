@@ -279,13 +279,17 @@ describe('LibraryScreen', () => {
       expect(mutate).not.toHaveBeenCalled();
     });
 
-    it('focuses the Sort button again when the picker closes', () => {
+    it('focuses the Sort button again once the picker has closed', () => {
+      jest.useFakeTimers();
       mockFocusManager.getFocused.mockReturnValue(41);
       renderLibrary();
       fireEvent.press(screen.getByTestId('library-header-sort'));
-      expect(mockFocusManager.focus).not.toHaveBeenCalled();
-
       fireEvent.press(screen.getByTestId('library-sort-picker-row-2'));
+
+      // Vega drops focus when the picker unmounts; focusing at once is lost.
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS - 1));
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
+      act(() => jest.advanceTimersByTime(1));
       expect(mockFocusManager.focus).toHaveBeenCalledWith(41);
     });
   });
@@ -348,7 +352,8 @@ describe('LibraryScreen', () => {
       expect(lastQuery()?.letter).toBeUndefined();
     });
 
-    it('closes on Back and keeps the letter', () => {
+    it('closes on Back, keeps the letter and refocuses the button', () => {
+      jest.useFakeTimers();
       mockFocusManager.getFocused.mockReturnValue(44);
       renderLibrary();
       fireEvent.press(screen.getByTestId('library-header-letter'));
@@ -360,7 +365,11 @@ describe('LibraryScreen', () => {
 
       expect(screen.queryByTestId('library-letter-picker')).toBeNull();
       expect(lastQuery()?.letter).toBe('C');
-      expect(mockFocusManager.focus).toHaveBeenLastCalledWith(44);
+      mockFocusManager.focus.mockClear();
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS - 1));
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
+      act(() => jest.advanceTimersByTime(1));
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(44);
     });
   });
 

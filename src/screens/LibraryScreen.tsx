@@ -106,11 +106,19 @@ export const LibraryScreen = ({
   const closePicker = useCallback(() => setPicker(undefined), []);
   const onSortPress = useCallback(() => openPicker('sort'), [openPicker]);
   const onLetterPress = useCallback(() => openPicker('letter'), [openPicker]);
+  // Vega drops focus when the picker's focused view unmounts, and a focus()
+  // straight away is lost, so wait like Home does after a pop.
   useEffect(() => {
-    if (!picker && pickerOpener.current !== undefined) {
-      FocusManager.focus(pickerOpener.current);
-      pickerOpener.current = undefined;
+    const opener = pickerOpener.current;
+    if (picker || opener === undefined) {
+      return;
     }
+    pickerOpener.current = undefined;
+    const timer = setTimeout(
+      () => FocusManager.focus(opener),
+      RESTORE_FOCUS_DELAY_MS,
+    );
+    return () => clearTimeout(timer);
   }, [picker]);
 
   const selectedSort = sortOptions.findIndex(
