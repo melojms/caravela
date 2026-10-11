@@ -5,6 +5,8 @@ import {
   INIT_ERROR_MESSAGE,
   PlayerController,
   type PlayerListeners,
+  START_TIMEOUT_MESSAGE,
+  START_TIMEOUT_MS,
   UNKNOWN_PLAYER_ERROR,
   mediaErrorMessage,
 } from '../../src/playback/PlayerController';
@@ -93,10 +95,13 @@ beforeEach(() => {
     onError: jest.fn(),
   };
   warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  // The start watchdog's timer; HLS tests flush with a real setImmediate.
+  jest.useFakeTimers({doNotFake: ['setImmediate', 'nextTick']});
 });
 
 afterEach(() => {
   warn.mockRestore();
+  jest.useRealTimers();
 });
 
 describe('initialization', () => {
@@ -479,6 +484,110 @@ describe('errors', () => {
   });
 });
 
+describe('start watchdog', () => {
+  const advance = (ms: number) => jest.advanceTimersByTime(ms);
+
+  it('reports an error when nothing moves before the first playing', async () => {
+    const {controller} = await setup();
+    advance(START_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    // The error path: controls and later events do nothing.
+    controller.togglePause();
+    expect(Fake.instances[0].play).not.toHaveBeenCalled();
+  });
+
+  it('keeps going while the start progresses, however slowly', async () => {
+    const {player} = await setup();
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('progress');
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('loadedmetadata');
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('loadeddata');
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('canplay');
+    advance(START_TIMEOUT_MS - 1000);
+    player.setPosition(0.5);
+    player.fire('timeupdate');
+    advance(START_TIMEOUT_MS - 1000);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    player.paused = false;
+    player.fire('playing');
+    advance(START_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it("doesn't count a timeupdate that doesn't move", async () => {
+    const {player} = await setup();
+    player.setPosition(5);
+    player.fire('timeupdate');
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('timeupdate');
+    advance(1000);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+  });
+
+  it('stops after the first playing, even when playback stalls later', async () => {
+    const {player} = await setup();
+    startPlaying(player);
+    player.fire('waiting');
+    advance(START_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('is cleared on destroy', async () => {
+    const {controller} = await setup();
+    await controller.destroy();
+    expect(jest.getTimerCount()).toBe(0);
+    advance(START_TIMEOUT_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('is cleared by a player error, which is the only one reported', async () => {
+    const {player} = await setup();
+    player.error = {code: 3, message: 'decode'};
+    player.fire('error');
+    expect(jest.getTimerCount()).toBe(0);
+    advance(START_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(
+      "This video couldn't be decoded.",
+    );
+  });
+
+  it("doesn't run when initialize() fails", async () => {
+    initializeResult.mockReturnValueOnce(Promise.reject(new Error('no')));
+    const controller = new PlayerController(api, SESSION, listeners);
+    await controller.ready;
+    expect(jest.getTimerCount()).toBe(0);
+    expect(listeners.onError).toHaveBeenCalledWith(INIT_ERROR_MESSAGE);
+  });
+
+  it('gives Retry a fresh controller with its own watchdog', async () => {
+    const first = await setup();
+    advance(START_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    await first.controller.destroy();
+
+    // What the screen's Retry does: a new controller for the same session.
+    const retry = await setup();
+    expect(retry.player).not.toBe(first.player);
+    expect(retry.player.srcSets).toEqual([SESSION.url]);
+    advance(START_TIMEOUT_MS - 1000);
+    startPlaying(retry.player);
+    advance(START_TIMEOUT_MS * 2);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(retry.controller.playerState).toBe('playing');
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('HLS mode', () => {
   const HLS: Partial<PlaybackSession> = {
     mode: 'hls',
@@ -616,6 +725,37 @@ describe('HLS mode', () => {
     // One error only.
     shakaPlayer.fire('error', {category: 3, code: 3016, severity: 2});
     expect(listeners.onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a start that stalls after the load (7.1 AAC on the Fire TV)', async () => {
+    // The TV's events for The Age of Adaline: the audio parser fails in the
+    // pipeline, and nothing follows Shaka's seek to the start.
+    const {controller, player, load} = await setupHls();
+    load.resolve();
+    await flush();
+    player.paused = false;
+    player.fire('play');
+    player.fire('waiting');
+    player.fire('loadedmetadata');
+    player.fire('seeking');
+    player.fire('seeked');
+    // The spinner stays until the first frame plays.
+    expect(controller.playerState).toBe('loading');
+
+    jest.advanceTimersByTime(START_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    expect(reporter.start).not.toHaveBeenCalled();
+  });
+
+  it('shows playing after the first playing that follows the start seek', async () => {
+    const {controller, player, load} = await setupHls();
+    load.resolve();
+    await flush();
+    player.paused = false;
+    player.fire('seeked');
+    player.fire('playing');
+    expect(controller.playerState).toBe('playing');
   });
 
   it('reports a rejected load and never plays', async () => {

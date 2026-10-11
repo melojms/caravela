@@ -36,6 +36,17 @@ export const PLAYER_ERROR_MESSAGES: Record<number, string> = {
 /** androidtv's `video_error_unknown_error` fallback. */
 export const UNKNOWN_PLAYER_ERROR = 'Video playback error.';
 export const INIT_ERROR_MESSAGE = "The video player couldn't start.";
+export const START_TIMEOUT_MESSAGE =
+  "The video didn't start. This device may not support its format.";
+
+/**
+ * How long a start may go without progress before it counts as failed. Vega
+ * sends no `error` when its audio parser rejects a stream (7.1 AAC in TS):
+ * the pipeline stops and no event follows. On the TV a start plays within
+ * ~5 s (a burned-in subtitle transcode too), with at most ~2.5 s between
+ * events; any progress event restarts the wait.
+ */
+export const START_TIMEOUT_MS = 30000;
 
 /** A readable message for a `MediaError` (or nothing the player set). */
 export function mediaErrorMessage(error?: {code?: number} | null): string {
@@ -72,6 +83,9 @@ const MEDIA_EVENTS = [
   'seeking',
   'seeked',
   'timeupdate',
+  'progress',
+  'canplay',
+  'loadeddata',
   'ended',
   'error',
 ] as const;
@@ -90,6 +104,9 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * listeners → `autoplay = false` → Shaka `load(url, start)` → the surface;
  * `play()` once the load resolved and the surface is set. Shaka's start time
  * replaces the resume seek.
+ *
+ * Until the first `playing`, a start watchdog turns a load that stops
+ * making progress into the error state (Retry makes a new controller).
  *
  * `destroy()` destroys Shaka first (HLS), then pauses, clears the surface,
  * `deinitialize()`s and removes the listeners; a surface destroyed after
@@ -115,6 +132,11 @@ export class PlayerController {
    */
   private initialSeek: 'pending' | 'seeking' | 'done';
   private started = false;
+  /** The first `playing` came: the start watchdog is done. */
+  private hasPlayed = false;
+  /** Fails the start if nothing moves for {@link START_TIMEOUT_MS}. */
+  private startTimer?: ReturnType<typeof setTimeout>;
+  private lastTimeupdate?: number;
   private state: PlayerState = 'loading';
   private failed = false;
   /** The subtitle showing now (-1 = off); the screen draws external ones. */
@@ -141,7 +163,10 @@ export class PlayerController {
       waiting: this.onWaiting,
       seeking: this.onWaiting,
       seeked: this.onSeeked,
-      timeupdate: this.emitPosition,
+      timeupdate: this.onTimeupdate,
+      progress: this.onStartProgress,
+      canplay: this.onStartProgress,
+      loadeddata: this.onStartProgress,
       ended: this.onEnded,
       error: this.onError,
     };
@@ -244,6 +269,7 @@ export class PlayerController {
       return this.destroying;
     }
     this.destroyed = true;
+    this.clearStartTimer();
     // The reporter reads the position now, before the player goes away.
     const stopped = this.reporter.stop();
     this.destroying = (async () => {
@@ -281,6 +307,7 @@ export class PlayerController {
     for (const type of MEDIA_EVENTS) {
       this.player.addEventListener(type, this.handlers[type]);
     }
+    this.armStartTimer();
     if (this.session.mode === 'hls') {
       this.loadShaka();
     }
@@ -412,6 +439,43 @@ export class PlayerController {
     }
   }
 
+  /** (Re)starts the start watchdog; nothing once the first `playing` came. */
+  private armStartTimer() {
+    this.clearStartTimer();
+    if (this.hasPlayed || !this.live()) {
+      return;
+    }
+    this.startTimer = setTimeout(() => {
+      this.startTimer = undefined;
+      if (!this.hasPlayed && this.live()) {
+        this.fail(START_TIMEOUT_MESSAGE);
+      }
+    }, START_TIMEOUT_MS);
+  }
+
+  private clearStartTimer() {
+    if (this.startTimer !== undefined) {
+      clearTimeout(this.startTimer);
+      this.startTimer = undefined;
+    }
+  }
+
+  /** Data arrived or decoding moved: the start isn't stuck (yet). */
+  private onStartProgress = () => {
+    if (!this.hasPlayed) {
+      this.armStartTimer();
+    }
+  };
+
+  private onTimeupdate = () => {
+    this.emitPosition();
+    const time = this.read(() => this.player.currentTime);
+    if (time !== this.lastTimeupdate) {
+      this.lastTimeupdate = time;
+      this.onStartProgress();
+    }
+  };
+
   private emitPosition = () => {
     if (this.live()) {
       this.listeners.onPositionChange?.(this.positionMs, this.durationMs);
@@ -422,6 +486,7 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
+    this.onStartProgress();
     this.emitPosition();
     if (this.initialSeek === 'pending') {
       this.initialSeek = 'seeking';
@@ -441,6 +506,8 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
+    this.hasPlayed = true;
+    this.clearStartTimer();
     this.setState('playing');
     if (!this.started && this.initialSeek === 'done') {
       this.started = true;
@@ -472,7 +539,11 @@ export class PlayerController {
       attempt('play', () => this.player.play());
       return;
     }
-    this.setState(this.paused ? 'paused' : 'playing');
+    // Shaka seeks to the start position before the first frame: the
+    // spinner stays until `playing`.
+    this.setState(
+      this.paused ? 'paused' : this.hasPlayed ? 'playing' : 'loading',
+    );
     this.reporter.update();
   };
 
@@ -493,6 +564,7 @@ export class PlayerController {
 
   private fail(message: string) {
     this.failed = true;
+    this.clearStartTimer();
     this.reporter.stop();
     this.listeners.onError?.(message);
   }
