@@ -2,7 +2,13 @@ import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collecti
 import {ItemSortBy} from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import {SortOrder} from '@jellyfin/sdk/lib/generated-client/models/sort-order';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
-import {act, fireEvent, render, screen} from '@testing-library/react-native';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react-native';
 import {AxiosError, AxiosHeaders} from 'axios';
 import React, {useSyncExternalStore} from 'react';
 import {BackHandler} from 'react-native';
@@ -467,6 +473,16 @@ describe('LibraryScreen', () => {
       expect(preferredCards()).toEqual(['library-grid-item-0']);
       expect(text('library-header-focused-name')).toBe('');
       expect(text('library-header-counter')).toBe('');
+    });
+
+    it('keeps Right on the last column inside the grid', () => {
+      renderLibrary();
+      // Without the trap, Vega moves Right from the last column up to the
+      // nearest toolbar button.
+      const area = screen.getByTestId('library-grid-area');
+      expect(area.props).toMatchObject({trapFocusRight: true});
+      expect(area.props.trapFocusUp).toBeFalsy();
+      expect(within(area).getByTestId('library-grid-item-0')).toBeTruthy();
     });
 
     it('loads the next page at the end, repeatedly', () => {

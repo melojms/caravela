@@ -1,4 +1,7 @@
-import {FocusManager} from '@amazon-devices/react-native-kepler';
+import {
+  FocusManager,
+  TVFocusGuideView,
+} from '@amazon-devices/react-native-kepler';
 import {useFocusEffect} from '@amazon-devices/react-navigation__native';
 import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 import {ItemSortBy} from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
@@ -339,7 +342,12 @@ export const LibraryScreen = ({
     );
   } else {
     content = (
-      <View style={styles.grid}>
+      // androidtv stops Right at a row's end; Vega would otherwise move it up
+      // to the nearest toolbar button.
+      <TVFocusGuideView
+        style={styles.grid}
+        trapFocusRight
+        testID="library-grid-area">
         <PosterGrid
           key={gridKey}
           items={cards}
@@ -354,7 +362,7 @@ export const LibraryScreen = ({
             <ActivityIndicator size="small" color={colors.cyan} />
           </View>
         ) : null}
-      </View>
+      </TVFocusGuideView>
     );
   }
 

@@ -1,8 +1,10 @@
-import React, {memo, ReactElement, useCallback, useRef} from 'react';
+import {FocusManager} from '@amazon-devices/react-native-kepler';
+import React, {memo, ReactElement, useCallback, useMemo, useRef} from 'react';
 import {
   FlatList,
   LayoutChangeEvent,
   ListRenderItemInfo,
+  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
@@ -40,8 +42,15 @@ const SIDE_INSET = Math.ceil(
   (cardSize('poster').width * (focus.scale - 1)) / 2 + focus.borderWidth,
 );
 const TOP_INSET = spacing.md;
+const CELL_WIDTH = cardSize('poster').width + layout.cardGap;
 
 const keyExtractor = (item: CardItem) => item.id;
+
+// A last cell after a short last row. It sends Right from the last card back
+// to that card, so focus stops at the row's end like androidtv instead of
+// jumping to the row above.
+const ROW_END_ID = '__row-end';
+const ROW_END: CardItem = {id: ROW_END_ID, title: ''};
 
 // With numColumns, VirtualizedList lays out rows, so `index` is a row index.
 export const getRowLayout = (
@@ -98,6 +107,21 @@ export const PosterGrid = memo(
     testID = 'poster-grid',
   }: PosterGridProps) => {
     const listRef = useRef<FlatList<CardItem>>(null);
+    const shortBy = items.length % numColumns;
+    const data = useMemo(
+      () => (shortBy ? [...items, ROW_END] : items),
+      [items, shortBy],
+    );
+    // The last card's native tag, for the row-end cell to send focus to.
+    const lastTag = useRef<number>(undefined);
+    // Vega's focus search skips a focus guide with only destinations, so the
+    // row-end cell is focusable and hands focus straight back.
+    const bounceToLast = useCallback(() => {
+      if (lastTag.current !== undefined) {
+        FocusManager.focus(lastTag.current);
+      }
+    }, []);
+    const lastIndex = items.length - 1;
     const topRow = useRef(0);
     const viewportHeight = useRef(0);
     const headerHeight = useRef(0);
@@ -112,6 +136,9 @@ export const PosterGrid = memo(
     const handleFocus = useCallback(
       (item: CardItem, index: number, tag?: number) => {
         onItemFocus?.(item, index, tag);
+        if (index === lastIndex && tag !== undefined) {
+          lastTag.current = tag;
+        }
         if (viewportHeight.current <= 0) {
           return;
         }
@@ -130,30 +157,50 @@ export const PosterGrid = memo(
           });
         }
       },
-      [numColumns, onItemFocus],
+      [numColumns, onItemFocus, lastIndex],
     );
 
     const renderItem = useCallback(
-      ({item, index}: ListRenderItemInfo<CardItem>) => (
-        <View style={styles.cell}>
-          {renderCard({
-            item,
-            variant: 'poster',
-            onPress: onItemPress,
-            onFocus: (focusedItem, tag) => handleFocus(focusedItem, index, tag),
-            hasTVPreferredFocus: focusFirstItem && index === 0,
-            testID: `${testID}-item-${index}`,
-          })}
-        </View>
-      ),
-      [onItemPress, handleFocus, focusFirstItem, testID],
+      ({item, index}: ListRenderItemInfo<CardItem>) =>
+        item.id === ROW_END_ID ? (
+          <Pressable
+            testID={`${testID}-row-end`}
+            accessible={false}
+            onFocus={bounceToLast}
+            style={[
+              styles.rowEnd,
+              {width: (numColumns - shortBy) * CELL_WIDTH - layout.cardGap},
+            ]}
+          />
+        ) : (
+          <View style={styles.cell}>
+            {renderCard({
+              item,
+              variant: 'poster',
+              onPress: onItemPress,
+              onFocus: (focusedItem, tag) =>
+                handleFocus(focusedItem, index, tag),
+              hasTVPreferredFocus: focusFirstItem && index === 0,
+              testID: `${testID}-item-${index}`,
+            })}
+          </View>
+        ),
+      [
+        onItemPress,
+        handleFocus,
+        focusFirstItem,
+        testID,
+        bounceToLast,
+        numColumns,
+        shortBy,
+      ],
     );
 
     return (
       <FlatList
         ref={listRef}
         testID={testID}
-        data={items}
+        data={data}
         key={numColumns}
         numColumns={numColumns}
         keyExtractor={keyExtractor}
@@ -191,6 +238,9 @@ const styles = StyleSheet.create({
     paddingTop: TOP_INSET,
     paddingBottom: ROW_HEIGHT,
     paddingLeft: SIDE_INSET,
+  },
+  rowEnd: {
+    height: ROW_HEIGHT,
   },
   cell: {
     height: ROW_HEIGHT,

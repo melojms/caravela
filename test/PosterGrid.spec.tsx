@@ -13,6 +13,18 @@ import {cardOuterHeight, cardSize} from '../src/components/FocusableCard';
 import {focus, layout, spacing} from '../src/theme';
 import {CardItem} from '../src/components/types';
 
+// FocusManager is a native TurboModule; swap in a recorder.
+const mockFocusManager = {focus: jest.fn()};
+jest.mock('@amazon-devices/react-native-kepler', () => {
+  const actual = jest.requireActual('@amazon-devices/react-native-kepler');
+  return new Proxy(actual, {
+    get: (target, key) =>
+      key === 'FocusManager' ? mockFocusManager : target[key],
+  });
+});
+
+beforeEach(() => mockFocusManager.focus.mockClear());
+
 const makeItems = (count: number): CardItem[] =>
   Array.from({length: count}, (_, i) => ({id: `m${i}`, title: `Movie ${i}`}));
 
@@ -92,6 +104,29 @@ describe('PosterGrid', () => {
     const grow = (cardSize('poster').width * (focus.scale - 1)) / 2;
 
     expect(paddingLeft).toBeGreaterThanOrEqual(grow + focus.borderWidth);
+  });
+
+  describe('row end', () => {
+    it('sends Right from the last card of a short row back to it', () => {
+      const screen = render(<PosterGrid items={makeItems(8)} numColumns={6} />);
+      const filler = () => screen.getByTestId('poster-grid-row-end');
+      // Nothing to go back to until the last card has had focus.
+      fireEvent(filler(), 'focus');
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
+
+      fireEvent(screen.getByTestId('poster-grid-item-7'), 'focus', {
+        nativeEvent: {target: 77},
+      });
+      fireEvent(filler(), 'focus');
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(77);
+    });
+
+    it('has no filler when the last row is full', () => {
+      const screen = render(
+        <PosterGrid items={makeItems(12)} numColumns={6} />,
+      );
+      expect(screen.queryByTestId('poster-grid-row-end')).toBeNull();
+    });
   });
 
   describe('row layout', () => {
