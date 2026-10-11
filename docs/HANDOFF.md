@@ -51,6 +51,13 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
 - **Next: Shaka HLS (task 9).** Start with the approach and wait for approval. See docs/PLAN.md "Playback design" steps 2–4 and the Vega Shaka doc (https://developer.amazon.com/docs/vega/latest/media-player-shaka-player.html).
   - **Decided:** drop mkv from direct play, so the server remuxes it to HLS. On the Fire TV, URL mode can't seek in mkv (`Seek failed. Internal error 0`, code 50004), so Resume on an mkv starts from 0 until then.
   - Check that a transcode ends when stopped is reported (Dashboard → Active devices), since there's no `stopEncodingProcess`.
+  - **What task 9 builds on:**
+    - `deviceProfile.ts` already sends HLS transcoding profiles (TS and fMP4, hevc when probed, then h264), so the server already returns a `TranscodingUrl`.
+    - `resolver.ts` turns anything that isn't direct play into `needs-transcode` and drops the URL. Task 9 returns `TranscodingUrl` (prefixed with `api.basePath`) with `PlayMethod` DirectStream/Transcode. That may mean extending `PlaybackSession` in `types.ts`; commit it to `main` first if subtasks run in parallel.
+    - `PlayerController.ts` is URL mode only. Shaka mode needs `player.load()` before the surface, and Shaka unloaded before `deinitialize()` (PLAN step 3).
+    - The 12.2 OpenAPI spec lists no HLS paths, so use the server's `TranscodingUrl` as is.
+  - **Shaka build:** the Vega doc says to generate Shaka's `dist` from Amazon's Vega release **outside the app root**, never from the upstream npm package. Its `npm install` builds Shaka with Java/Python. In task 8 the permission check blocked an agent from running `npm install` on downloaded code, so plan for the user to approve or run that step.
+  - **TV probe results (task 8):** h264, hevc, vp9 and av1 (incl. 10-bit), Dolby Vision, aac/mp3/opus/flac/dts/truehd/ac3/eac3. The simulator lacks Dolby Vision, ac3 and eac3.
   - **Skipped for now:** task 6 (library grids) still shows mock data in Movies/Shows; that's fine because details/playback are reachable from Home's rows.
 - **Follow-ups:**
   - Playback: on the simulator, playback stalls 3–6 s in (audio clock stops, no event); fine on the TV. Use the TV for playback checks.
@@ -105,13 +112,14 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
 ## How we work
 - **One task, one worktree:** `git worktree add -b task/NN-name ../caravela-wt/task-NN main`. Write the brief at `docs/tasks/NN-*.md` inside that worktree.
 - **Start the agent in a herdr pane** (check `HERDR_ENV=1`; your own pane is `$HERDR_PANE_ID`, e.g. `w4:p1`):
-  - `herdr pane split $HERDR_PANE_ID --direction right --cwd <worktree> --no-focus` (prints JSON with the new `pane_id`).
+  - `herdr pane split $HERDR_PANE_ID --direction right --cwd <worktree> --no-focus` (prints JSON; the new id is at `.result.pane.pane_id`).
   - `herdr agent start <name> --kind claude --pane <id> -- "Read docs/tasks/NN-*.md and execute it end to end. The user already approved the approach for this task."`
     - It often returns `timed out waiting for agent startup` even though the agent started fine. Check with `herdr pane read <id> --source recent` before retrying; don't start it twice.
   - Wait with `herdr agent wait <pane> --until done --until idle --until blocked`, run in the background. **`--timeout` is in milliseconds**; leave it out to wait indefinitely.
   - Follow-up instructions to a running or idle agent: `herdr agent prompt <pane> "…"` (queued if it's busy).
   - Reading results: `herdr pane read` only returns the last screen. For the full final report, read the agent's transcript: the session id is in `herdr pane list` (`agent_session.value`), and the file is `~/.claude/projects/*task-NN*/<session id>.jsonl` (take the last assistant text blocks).
   - Text on the agent's `❯` input line after it finishes is usually Claude Code's prompt suggestion, not something the user sent.
+  - An agent waiting on Quick Connect polls with background shells, so `herdr agent wait --until idle` returns while it is still waiting. The code may only be in a screenshot or scrolled off the pane: read the last assistant text in its transcript, and if it is missing, `herdr agent prompt` it to print the code as text.
 - **Parallel work:** two independent tasks can run at once. Keep each brief's file scope separate.
   - When two parallel tasks share data shapes, commit the shared types to `main` first (task 7 did this in `src/components/types.ts`), so each brief can build against them without the other's files.
 - **Device checks:** playback checks use the **Fire TV** (the user chose it in task 8; the simulator stalls playback 3–6 s in). UI-only checks can use the Vega simulator (details in Gotchas). Captions also need the TV.
