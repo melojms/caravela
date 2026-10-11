@@ -154,6 +154,7 @@ const backHandler = () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFocusManager.getFocused.mockReturnValue(undefined);
   jest.useRealTimers();
   mockFocusEffect = undefined;
   listeners.clear();
@@ -291,6 +292,35 @@ describe('LibraryScreen', () => {
       expect(mockFocusManager.focus).not.toHaveBeenCalled();
       act(() => jest.advanceTimersByTime(1));
       expect(mockFocusManager.focus).toHaveBeenCalledWith(41);
+    });
+    it("refocuses the pressed button when Vega can't say what's focused", () => {
+      jest.useFakeTimers();
+      // Vega's FocusManager.getFocused() returns nothing for toolbar buttons.
+      mockFocusManager.getFocused.mockReturnValue(undefined);
+      renderLibrary();
+      fireEvent.press(screen.getByTestId('library-header-sort'), {
+        nativeEvent: {target: 52},
+      });
+      act(() => {
+        backHandler()();
+      });
+
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+      expect(mockFocusManager.focus).toHaveBeenCalledWith(52);
+    });
+
+    it('lets the grid keep focus when a new result takes it first', () => {
+      jest.useFakeTimers();
+      renderLibrary();
+      fireEvent.press(screen.getByTestId('library-header-sort'), {
+        nativeEvent: {target: 52},
+      });
+      fireEvent.press(screen.getByTestId('library-sort-picker-row-1'));
+      // A cached result shows at once and its first card takes focus.
+      fireEvent(screen.getByTestId('library-grid-item-0'), 'focus');
+
+      act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+      expect(mockFocusManager.focus).not.toHaveBeenCalled();
     });
   });
 

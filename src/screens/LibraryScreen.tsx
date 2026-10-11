@@ -4,7 +4,13 @@ import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collecti
 import {ItemSortBy} from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import {useQueryClient} from '@tanstack/react-query';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import {
+  ActivityIndicator,
+  type GestureResponderEvent,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {isUnauthorized} from '../api/home';
 import {libraryKeys, libraryStatusText, useLibraryItems} from '../api/library';
@@ -87,6 +93,10 @@ export const LibraryScreen = ({
 
   const [focused, setFocused] = useState<FocusedCard>();
   const lastFocused = useRef<FocusedCard>(undefined);
+  // The pending refocus of the toolbar button that opened a picker. A card that takes focus first (a new
+  // result that was cached) cancels it: androidtv gives the grid focus when
+  // results arrive.
+  const openerRefocus = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onItemFocus = useCallback(
     (item: CardItem, index: number, tag?: number) => {
       const card = {
@@ -97,6 +107,8 @@ export const LibraryScreen = ({
         tag,
       };
       lastFocused.current = card;
+      clearTimeout(openerRefocus.current);
+      openerRefocus.current = undefined;
       setFocused(card);
       setFocusTakenKey(gridKeyRef.current);
     },
@@ -108,13 +120,29 @@ export const LibraryScreen = ({
   const [picker, setPicker] = useState<Picker>();
   // The toolbar button that opened the picker, focused again when it closes.
   const pickerOpener = useRef<number>(undefined);
-  const openPicker = useCallback((which: Picker) => {
-    pickerOpener.current = FocusManager.getFocused();
-    setPicker(which);
-  }, []);
+  // The opener is the button's native tag, from its press event: Vega's
+  // FocusManager.getFocused() returns nothing for a pressed toolbar button.
+  const openPicker = useCallback(
+    (which: Picker, event?: GestureResponderEvent) => {
+      const tag = Number(event?.nativeEvent?.target);
+      pickerOpener.current = Number.isFinite(tag)
+        ? tag
+        : FocusManager.getFocused();
+      setPicker(which);
+    },
+    [],
+  );
   const closePicker = useCallback(() => setPicker(undefined), []);
-  const onSortPress = useCallback(() => openPicker('sort'), [openPicker]);
-  const onLetterPress = useCallback(() => openPicker('letter'), [openPicker]);
+  // LibraryHeader hands these straight to its Pressables, which pass the
+  // press event.
+  const onSortPress = useCallback(
+    (event?: GestureResponderEvent) => openPicker('sort', event),
+    [openPicker],
+  );
+  const onLetterPress = useCallback(
+    (event?: GestureResponderEvent) => openPicker('letter', event),
+    [openPicker],
+  );
   // Vega drops focus when the picker's focused view unmounts, and a focus()
   // straight away is lost, so wait like Home does after a pop.
   useEffect(() => {
@@ -123,10 +151,11 @@ export const LibraryScreen = ({
       return;
     }
     pickerOpener.current = undefined;
-    const timer = setTimeout(
-      () => FocusManager.focus(opener),
-      RESTORE_FOCUS_DELAY_MS,
-    );
+    const timer = setTimeout(() => {
+      openerRefocus.current = undefined;
+      FocusManager.focus(opener);
+    }, RESTORE_FOCUS_DELAY_MS);
+    openerRefocus.current = timer;
     return () => clearTimeout(timer);
   }, [picker]);
 
