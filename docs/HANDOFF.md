@@ -3,7 +3,7 @@
 Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after task 10).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status (the task 10 follow-ups, then task 11, the player overlay) and the "Playback design" section in docs/PLAN.md.
+1. Read the "Next" item under Status (task 11, the player overlay, plus the task 10 items folded into it) and the "Playback design" section in docs/PLAN.md (step 6, on-screen controls).
 2. Describe the approach and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
 4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
