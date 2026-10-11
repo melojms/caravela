@@ -30,10 +30,22 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
 };
 
 /**
- * Vega's RN supports `textShadow*` but has no text stroke, so the outline is
- * a centred shadow; its blur radius scales with the text size.
+ * Vega's RN has no text stroke, and a centred `textShadow` only draws a faint
+ * glow. So the outline is androidtv's stroke built from copies of the line in
+ * the outline colour, drawn behind it and nudged this far (as a fraction of
+ * the text size) in each of these 8 directions.
  */
-const OUTLINE_RADIUS_RATIO = 0.12;
+const OUTLINE_WIDTH_RATIO = 0.05;
+const OUTLINE_DIRECTIONS: readonly (readonly [number, number])[] = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+];
 
 const isTransparent = (color: string) =>
   color === colors.transparent || /^#[0-9a-f]{6}00$/i.test(color);
@@ -69,20 +81,23 @@ export const SubtitleView = memo(
       return null;
     }
 
-    const lineStyle: TextStyle = {
+    const textStyle: TextStyle = {
       color: style.textColor,
-      backgroundColor: style.backgroundColor,
       fontSize: style.textSize,
       lineHeight: Math.round(style.textSize * 1.25),
     };
-    if (!isTransparent(style.outlineColor)) {
-      lineStyle.textShadowColor = style.outlineColor;
-      lineStyle.textShadowOffset = {width: 0, height: 0};
-      lineStyle.textShadowRadius = Math.max(
-        1,
-        style.textSize * OUTLINE_RADIUS_RATIO,
-      );
-    }
+    const outlineWidth = style.textSize * OUTLINE_WIDTH_RATIO;
+    const outline = isTransparent(style.outlineColor)
+      ? []
+      : OUTLINE_DIRECTIONS.map(
+          ([dx, dy]): TextStyle => ({
+            color: style.outlineColor,
+            left: dx * outlineWidth,
+            right: -dx * outlineWidth,
+            top: dy * outlineWidth,
+            bottom: -dy * outlineWidth,
+          }),
+        );
 
     return (
       <View
@@ -92,18 +107,38 @@ export const SubtitleView = memo(
         style={styles.root}>
         <View style={[styles.lines, {bottom: `${style.bottomOffset * 100}%`}]}>
           {cues.map((cue, cueIndex) =>
-            cue.lines.map((line, lineIndex) => (
-              <Text
-                key={`${cueIndex}-${cue.startMs}-${lineIndex}`}
-                testID={`${testID}-line-${cueIndex}-${lineIndex}`}
-                style={[styles.line, lineStyle]}>
-                {line.map((span, spanIndex) => (
-                  <Text key={spanIndex} style={spanStyle(span)}>
-                    {span.text}
+            cue.lines.map((line, lineIndex) => {
+              const lineTestID = `${testID}-line-${cueIndex}-${lineIndex}`;
+              const spans = line.map((span, spanIndex) => (
+                <Text key={spanIndex} style={spanStyle(span)}>
+                  {span.text}
+                </Text>
+              ));
+              // The copies fill the box the line sizes, so they wrap alike.
+              return (
+                <View
+                  key={`${cueIndex}-${cue.startMs}-${lineIndex}`}
+                  testID={`${lineTestID}-box`}
+                  style={[
+                    styles.line,
+                    {backgroundColor: style.backgroundColor},
+                  ]}>
+                  {outline.map((offset, outlineIndex) => (
+                    <Text
+                      key={outlineIndex}
+                      testID={`${lineTestID}-outline-${outlineIndex}`}
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                      style={[styles.text, textStyle, styles.outline, offset]}>
+                      {spans}
+                    </Text>
+                  ))}
+                  <Text testID={lineTestID} style={[styles.text, textStyle]}>
+                    {spans}
                   </Text>
-                ))}
-              </Text>
-            )),
+                </View>
+              );
+            }),
           )}
         </View>
       </View>
@@ -123,8 +158,13 @@ const styles = StyleSheet.create({
   },
   line: {
     maxWidth: '80%',
+  },
+  text: {
     textAlign: 'center',
     fontWeight: '400',
     paddingHorizontal: px(8),
+  },
+  outline: {
+    position: 'absolute',
   },
 });

@@ -48,6 +48,11 @@ type PlayerSubtitlesProps = {
   /** The external track's WebVTT URL; none draws nothing. */
   vttUrl?: string;
   positions: PositionFeed;
+  /**
+   * Draws nothing while set (the paused overlay is up), but keeps following
+   * the feed, so the current cue shows again as soon as it clears.
+   */
+  hidden?: boolean;
 };
 
 /**
@@ -55,7 +60,11 @@ type PlayerSubtitlesProps = {
  * feed itself and only renders when the set of active cues changes. A failed
  * load draws nothing.
  */
-export const PlayerSubtitles = ({vttUrl, positions}: PlayerSubtitlesProps) => {
+export const PlayerSubtitles = ({
+  vttUrl,
+  positions,
+  hidden = false,
+}: PlayerSubtitlesProps) => {
   const {cues, error} = useSubtitleCues(vttUrl);
   const [active, setActive] = useState(NO_CUES);
   const activeRef = useRef(NO_CUES);
@@ -79,5 +88,5 @@ export const PlayerSubtitles = ({vttUrl, positions}: PlayerSubtitlesProps) => {
     }
   }, [error]);
 
-  return <SubtitleView cues={active} />;
+  return <SubtitleView cues={hidden ? NO_CUES : active} />;
 };

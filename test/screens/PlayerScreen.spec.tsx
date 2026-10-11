@@ -484,13 +484,26 @@ describe('PlayerScreen tracks', () => {
     return result;
   };
 
+  const pause = (player: FakePlayer) => {
+    pressKey('pause');
+    player.paused = true;
+    fire(player, 'pause');
+  };
+
+  /** Presses the overlay's Play and lets the player start again. */
+  const resume = (player: FakePlayer) => {
+    fireEvent.press(screen.getByTestId('player-play'));
+    player.paused = false;
+    fire(player, 'playing');
+  };
+
   const lastBackListener = () => {
     const calls = jest.mocked(BackHandler.addEventListener).mock.calls;
     return calls[calls.length - 1][1] as () => boolean;
   };
 
   const subtitleText = () =>
-    screen.queryAllByTestId(/^subtitle-view-line-/).map((line) =>
+    screen.queryAllByTestId(/^subtitle-view-line-\d+-\d+$/).map((line) =>
       [line.props.children]
         .flat()
         .map((span: {props: {children: string}}) => span.props.children)
@@ -589,13 +602,14 @@ describe('PlayerScreen tracks', () => {
   describe('client-side subtitle switch', () => {
     it('switches external → external → off without a new session', async () => {
       const {player} = await renderPaused(2);
-      expect(subtitleText()).toEqual(['Hello']);
+      // Hidden under the overlay.
+      expect(subtitleText()).toEqual([]);
 
       fireEvent.press(screen.getByTestId('player-subtitles'));
       fireEvent.press(screen.getByTestId('player-subtitle-picker-row-4'));
       await flush();
       expect(screen.queryByTestId('player-subtitle-picker')).toBeNull();
-      expect(subtitleText()).toEqual(['Olá']);
+      expect(subtitleText()).toEqual([]);
       expect(fetchMock).toHaveBeenLastCalledWith(VTT_PT, expect.anything());
       // The controller reports the new index right away.
       expect(reporter.update).toHaveBeenCalled();
@@ -604,19 +618,24 @@ describe('PlayerScreen tracks', () => {
         audioStreamIndex: 1,
         subtitleStreamIndex: 4,
       });
+      resume(player);
+      expect(subtitleText()).toEqual(['Olá']);
 
+      pause(player);
       fireEvent.press(screen.getByTestId('player-subtitles'));
       expect(
         screen.getByTestId('player-subtitle-picker-row-4-check'),
       ).toBeTruthy();
       fireEvent.press(screen.getByTestId('player-subtitle-picker-row--1'));
       await flush();
-      expect(subtitleText()).toEqual([]);
       expect(report().subtitleStreamIndex).toBe(-1);
+      resume(player);
+      expect(subtitleText()).toEqual([]);
 
       expect(resolvePlayback).toHaveBeenCalledTimes(1);
       expect(Fake.instances).toEqual([player]);
-      expect(player.play).not.toHaveBeenCalled();
+      // Only the overlay's Play resumed.
+      expect(player.play).toHaveBeenCalledTimes(2);
     });
 
     it('keeps a client-side pick across Retry', async () => {
@@ -814,6 +833,83 @@ describe('PlayerScreen tracks', () => {
       next.resolve({kind: 'play', session: TRACKED});
       await flush();
       expect(Fake.instances).toHaveLength(1);
+    });
+  });
+
+  describe('subtitles under the overlay', () => {
+    it('hides the cue while paused and draws it again on resume, with no wait for a timeupdate', async () => {
+      const {player} = await renderPlaying();
+      play(player);
+      await flush();
+      player.setPosition(2);
+      fire(player, 'timeupdate');
+      expect(subtitleText()).toEqual(['Hello']);
+
+      pause(player);
+      expect(screen.getByTestId('player-overlay')).toBeTruthy();
+      expect(screen.queryByTestId('subtitle-view')).toBeNull();
+      // The paused player still reports its position; nothing draws.
+      fire(player, 'timeupdate');
+      expect(subtitleText()).toEqual([]);
+
+      resume(player);
+      expect(screen.queryByTestId('player-overlay')).toBeNull();
+      expect(subtitleText()).toEqual(['Hello']);
+    });
+
+    it('draws the cue at the position playback resumes from', async () => {
+      const {player} = await renderPlaying();
+      play(player);
+      player.setPosition(2);
+      fire(player, 'timeupdate');
+      await flush();
+      pause(player);
+
+      player.setPosition(5.5);
+      resume(player);
+      expect(subtitleText()).toEqual(['Second line']);
+    });
+
+    it('hides the cue while a picker is open, and after it closes until playback resumes', async () => {
+      const {player} = await renderPaused(2);
+      fireEvent.press(screen.getByTestId('player-subtitles'));
+      expect(screen.getByTestId('player-subtitle-picker')).toBeTruthy();
+      expect(subtitleText()).toEqual([]);
+
+      act(() => {
+        lastBackListener()();
+      });
+      expect(screen.queryByTestId('player-subtitle-picker')).toBeNull();
+      expect(subtitleText()).toEqual([]);
+
+      resume(player);
+      expect(subtitleText()).toEqual(['Hello']);
+    });
+
+    it('hides the cue while loading after a seek, when the overlay shows', async () => {
+      const {player} = await renderPlaying();
+      play(player);
+      player.setPosition(2);
+      fire(player, 'timeupdate');
+      await flush();
+      expect(subtitleText()).toEqual(['Hello']);
+
+      fire(player, 'seeking');
+      expect(screen.getByTestId('player-overlay')).toBeTruthy();
+      expect(subtitleText()).toEqual([]);
+
+      player.setPosition(5.5);
+      fire(player, 'seeked', 'playing');
+      expect(subtitleText()).toEqual(['Second line']);
+    });
+
+    it("doesn't refetch the track while hidden", async () => {
+      const {player} = await renderPaused(2);
+      resume(player);
+      pause(player);
+      resume(player);
+      expect(subtitleText()).toEqual(['Hello']);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 

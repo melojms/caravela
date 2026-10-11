@@ -398,8 +398,13 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         onSurfaceViewCreated={onSurfaceViewCreated}
         onSurfaceViewDestroyed={onSurfaceViewDestroyed}
       />
+      {/* Hidden while the overlay is up (androidtv's overlay covers them). */}
       {playing && shownSubtitle?.delivery === 'external' && (
-        <PlayerSubtitles vttUrl={shownSubtitle.vttUrl} positions={positions} />
+        <PlayerSubtitles
+          vttUrl={shownSubtitle.vttUrl}
+          positions={positions}
+          hidden={showOverlay}
+        />
       )}
       {showSpinner && (
         <View style={styles.center} testID="player-loading">
