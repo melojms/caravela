@@ -22,7 +22,11 @@ export type PlaybackReporter = {
   start(): Promise<void>;
   /** Play, pause or seek: sends progress now and restarts the timer. */
   update(): Promise<void>;
-  /** Playback ended: sends stopped with the last position. Safe to repeat. */
+  /**
+   * Playback ended or was left: sends stopped with the last position (the
+   * start position if start never went out), so the server ends the session
+   * and its transcode. Safe to repeat.
+   */
   stop(): Promise<void>;
 };
 
@@ -177,12 +181,10 @@ export function createPlaybackReporter(
       state = 'stopped';
       pendingUpdate = false;
       clearTimer();
-      if (!wasStarted) {
-        stopping = Promise.resolve();
-        return stopping;
-      }
       // Read now: the player may be torn down by the time the request goes.
-      const snapshot = readSnapshot() ?? last;
+      // Never started: the server already began the PlaySessionId's
+      // transcode, so stopped still goes out, at the start position.
+      const snapshot = wasStarted ? readSnapshot() ?? last : last;
       const previous = inFlight;
       stopping = (async () => {
         // Stopped goes last, so a late progress can't reopen the session.

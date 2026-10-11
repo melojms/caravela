@@ -305,12 +305,66 @@ describe('stop', () => {
     expect(sessionApi.reportPlaybackProgress).not.toHaveBeenCalled();
   });
 
-  it('sends nothing when playback never started', async () => {
+  describe('when playback never started', () => {
+    it('sends stopped once, with the start position', async () => {
+      // The player may report anything before it plays (e.g. 0 for HLS).
+      snapshot = {positionMs: 0, isPaused: true};
+      const reporter = setup();
+      const first = reporter.stop();
+      expect(reporter.stop()).toBe(first);
+      await first;
+      await reporter.stop();
+
+      expect(sessionApi.reportPlaybackStopped).toHaveBeenCalledTimes(1);
+      expect(sessionApi.reportPlaybackStopped).toHaveBeenCalledWith({
+        playbackStopInfo: {
+          ItemId: 'item-1',
+          MediaSourceId: 'source-1',
+          PlaySessionId: 'play-1',
+          PositionTicks: 600000000,
+          Failed: false,
+        },
+      });
+    });
+
+    it('sends 0 for a session that starts at 0', async () => {
+      const reporter = setup({...SESSION, startMs: 0});
+      await reporter.stop();
+      expect(sessionApi.reportPlaybackStopped).toHaveBeenCalledWith({
+        playbackStopInfo: expect.objectContaining({PositionTicks: 0}),
+      });
+    });
+
+    it('sends no start or progress after it', async () => {
+      const reporter = setup();
+      await reporter.stop();
+      await reporter.start();
+      await reporter.update();
+      await advance(PAUSED_PROGRESS_INTERVAL_MS * 2);
+      expect(sessionApi.reportPlaybackStart).not.toHaveBeenCalled();
+      expect(sessionApi.reportPlaybackProgress).not.toHaveBeenCalled();
+      expect(sessionApi.reportPlaybackStopped).toHaveBeenCalledTimes(1);
+    });
+
+    it('never rejects when stopped fails', async () => {
+      sessionApi.reportPlaybackStopped.mockRejectedValue(new Error('500'));
+      const reporter = setup();
+      await expect(reporter.stop()).resolves.toBeUndefined();
+    });
+  });
+
+  it('sends stopped after an in-flight start', async () => {
+    const start = deferred();
+    sessionApi.reportPlaybackStart.mockReturnValue(start.promise);
     const reporter = setup();
-    await reporter.stop();
-    await reporter.start();
+    reporter.start();
+    const stopped = reporter.stop();
+    await Promise.resolve();
     expect(sessionApi.reportPlaybackStopped).not.toHaveBeenCalled();
-    expect(sessionApi.reportPlaybackStart).not.toHaveBeenCalled();
+
+    start.resolve();
+    await stopped;
+    expect(sessionApi.reportPlaybackStopped).toHaveBeenCalledTimes(1);
   });
 
   it('still sends stopped after earlier reports failed', async () => {
