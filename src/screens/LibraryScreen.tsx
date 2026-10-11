@@ -24,9 +24,9 @@ import {ScreenContainer} from './ScreenContainer';
 
 type Picker = 'sort' | 'letter';
 
-/** The last focused card, with the query it was focused under. */
+/** The last focused card, with the query generation it was focused under. */
 type FocusedCard = {
-  queryKey: string;
+  generation: number;
   id: string;
   name: string;
   index: number;
@@ -62,15 +62,24 @@ export const LibraryScreen = ({
   const items = useLibraryItems(libraryId, collectionType, query);
   const queryKey = query ? JSON.stringify(query) : '';
 
+  // Goes up on every query change, even back to an earlier query, so focus
+  // bookkeeping from a previous visit to the same query never matches.
+  const [queryGen, setQueryGen] = useState({queryKey, generation: 0});
+  let generation = queryGen.generation;
+  if (queryGen.queryKey !== queryKey) {
+    generation += 1;
+    setQueryGen({queryKey, generation});
+  }
+
   // A new query remounts the grid, which focuses its first card again (the
   // grid keeps its top row in a ref). `remount` also does when the last
   // focused card is gone.
   const [remount, setRemount] = useState(0);
-  const gridKey = `${queryKey}#${remount}`;
+  const gridKey = `${generation}#${remount}`;
   const gridKeyRef = useRef(gridKey);
   gridKeyRef.current = gridKey;
-  const queryKeyRef = useRef(queryKey);
-  queryKeyRef.current = queryKey;
+  const generationRef = useRef(generation);
+  generationRef.current = generation;
   // The grid key a card was focused under. Until then the first card asks for
   // focus; after, nothing does, so a first card that's scrolled back into
   // view doesn't take focus.
@@ -81,7 +90,7 @@ export const LibraryScreen = ({
   const onItemFocus = useCallback(
     (item: CardItem, index: number, tag?: number) => {
       const card = {
-        queryKey: queryKeyRef.current,
+        generation: generationRef.current,
         id: item.id,
         name: item.title,
         index,
@@ -94,7 +103,7 @@ export const LibraryScreen = ({
     [],
   );
   // The header only shows a focused card from the current query.
-  const current = focused?.queryKey === queryKey ? focused : undefined;
+  const current = focused?.generation === generation ? focused : undefined;
 
   const [picker, setPicker] = useState<Picker>();
   // The toolbar button that opened the picker, focused again when it closes.
@@ -199,7 +208,7 @@ export const LibraryScreen = ({
   const restoreFocus = useRef<() => void>(undefined);
   restoreFocus.current = () => {
     const last = lastFocused.current;
-    if (!last || last.queryKey !== queryKey || !cards.length) {
+    if (!last || last.generation !== generation || !cards.length) {
       return;
     }
     if (cards.some((card) => card.id === last.id)) {
@@ -217,14 +226,14 @@ export const LibraryScreen = ({
     const last = lastFocused.current;
     if (
       screenFocused.current &&
-      last?.queryKey === queryKey &&
+      last?.generation === generation &&
       cards.length &&
       !cards.some((card) => card.id === last.id)
     ) {
       lastFocused.current = undefined;
       setRemount((count) => count + 1);
     }
-  }, [cards, queryKey]);
+  }, [cards, generation]);
 
   // Coming back from Details focuses the last card again, like Home, and
   // refetches stale library queries (Details can change favourites and

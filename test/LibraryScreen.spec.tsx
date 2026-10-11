@@ -415,6 +415,30 @@ describe('LibraryScreen', () => {
       expect(preferredCards()).toEqual(['library-grid-item-0']);
     });
 
+    it('focuses the first card again when an earlier query comes back', () => {
+      // `#` matches nothing, so no card takes focus under it.
+      jest
+        .mocked(useLibraryItems)
+        .mockImplementation((_id, _kind, query) =>
+          query?.letter === '#' ? itemsState({cards: [], total: 0}) : items,
+        );
+      renderLibrary();
+      fireEvent(screen.getByTestId('library-grid-item-2'), 'focus');
+      expect(preferredCards()).toEqual([]);
+
+      fireEvent.press(screen.getByTestId('library-header-letter'));
+      fireEvent.press(screen.getByTestId('library-letter-picker-#'));
+      expect(screen.getByTestId('library-empty')).toBeTruthy();
+      // Picking # again clears it: the query is the first one again.
+      fireEvent.press(screen.getByTestId('library-header-letter'));
+      fireEvent.press(screen.getByTestId('library-letter-picker-#'));
+
+      expect(lastQuery()?.letter).toBeUndefined();
+      expect(preferredCards()).toEqual(['library-grid-item-0']);
+      expect(text('library-header-focused-name')).toBe('');
+      expect(text('library-header-counter')).toBe('');
+    });
+
     it('loads the next page at the end, repeatedly', () => {
       const fetchNextPage = jest.fn();
       items = itemsState({fetchNextPage, hasNextPage: true});
