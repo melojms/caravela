@@ -167,6 +167,11 @@ describe('PosterGrid', () => {
       }
     });
 
+    it("turns off Vega's own scroll-to-focus, which aligns cards, not rows", () => {
+      const screen = render(<PosterGrid items={makeItems(36)} />);
+      expect(screen.UNSAFE_getByType(FlatList).props.scrollEnabled).toBe(false);
+    });
+
     it('only scrolls to row boundaries when focus moves', () => {
       const scrollToOffset = jest
         .spyOn(FlatList.prototype, 'scrollToOffset')

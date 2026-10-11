@@ -172,6 +172,10 @@ export const PosterGrid = memo(
         updateCellsBatchingPeriod={50}
         windowSize={5}
         removeClippedSubviews
+        // Focus drives the scrolling (handleFocus). Vega's own scroll-to-focus
+        // aligns the card, not the row, and on a long jump it stopped short of
+        // the row boundary.
+        scrollEnabled={false}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       />
