@@ -145,13 +145,13 @@ describe('configuration', () => {
     );
   });
 
-  it('keeps HLS sequence mode off', () => {
+  it('turns HLS sequence mode on', () => {
     adapter.createShakaSession(media);
-    expect(adapter.HLS_SEQUENCE_MODE).toBe(false);
+    expect(adapter.HLS_SEQUENCE_MODE).toBe(true);
     const [config] = lastPlayer().configure.mock.calls[0] as [
       {manifest: {hls: {sequenceMode: boolean}}},
     ];
-    expect(config.manifest.hls.sequenceMode).toBe(false);
+    expect(config.manifest.hls.sequenceMode).toBe(true);
   });
 });
 

@@ -15,10 +15,12 @@ import {DEFAULT_MAX_BITRATE} from './deviceProfile';
 
 /**
  * Shaka's HLS sequence mode (append segments in order, ignoring their
- * timestamps). Off, as Amazon's wrapper sets it for non-TS content; the Vega
- * docs suggest turning it on if TS streams stall. Decided on the TV.
+ * timestamps). On, as Amazon's wrapper keeps it for TS: when Jellyfin starts
+ * a transcode mid-file (a resume), its TS segments' timestamps restart near
+ * 0, so with it off a resume on the TV buffered at 2-15 s while waiting at
+ * the resume point and never started.
  */
-export const HLS_SEQUENCE_MODE = false;
+export const HLS_SEQUENCE_MODE = true;
 
 /**
  * `shaka.util.Error.Category` and `Severity` values, copied because Shaka's
