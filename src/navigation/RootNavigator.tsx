@@ -14,11 +14,10 @@ import type {AuthStore} from '../auth/store';
 import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
 import {DetailsScreen} from '../screens/DetailsScreen';
 import {HomeScreen} from '../screens/HomeScreen';
-import {MoviesScreen} from '../screens/MoviesScreen';
+import {LibraryScreen} from '../screens/LibraryScreen';
 import {PlayerScreen} from '../screens/PlayerScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SettingsScreen} from '../screens/SettingsScreen';
-import {ShowsScreen} from '../screens/ShowsScreen';
 import {AddServerScreen} from '../screens/auth/AddServerScreen';
 import {LaunchScreen} from '../screens/auth/LaunchScreen';
 import {PasswordScreen} from '../screens/auth/PasswordScreen';
@@ -73,8 +72,7 @@ const RootStack = () => {
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Search" component={SearchScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
-          <Stack.Screen name="Movies" component={MoviesScreen} />
-          <Stack.Screen name="Shows" component={ShowsScreen} />
+          <Stack.Screen name="Library" component={LibraryScreen} />
           <Stack.Screen name="Details" component={DetailsScreen} />
           <Stack.Screen
             name="DetailsPlaceholder"

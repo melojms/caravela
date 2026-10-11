@@ -46,6 +46,24 @@ jest.mock('../src/api/home', () => {
   };
 });
 
+// The library grid stays loading too.
+jest.mock('../src/api/libraryPrefs', () => ({
+  useLibraryPrefs: () => ({isPending: true, isError: false}),
+  useSaveLibraryPrefs: () => ({mutate: jest.fn()}),
+}));
+jest.mock('../src/api/library', () => ({
+  ...jest.requireActual('../src/api/library'),
+  useLibraryItems: () => ({
+    cards: [],
+    total: 0,
+    fetchNextPage: jest.fn(),
+    isPending: true,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  }),
+}));
+
 // Details stays loading: these tests only check where cards lead.
 jest.mock('../src/api/details', () => ({
   useItemDetails: () => ({isPending: true, isError: false, error: null}),
@@ -183,8 +201,8 @@ describe('App', () => {
   });
 
   it.each([
-    ['row-myMedia-item-0', 'movies-screen'],
-    ['row-myMedia-item-1', 'shows-screen'],
+    ['row-myMedia-item-0', 'library-screen'],
+    ['row-myMedia-item-1', 'library-screen'],
     ['row-resume-item-0', 'details-loading'],
   ])('opens %s and Back returns to Home', async (card, target) => {
     const screen = render(<App />);

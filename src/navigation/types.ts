@@ -20,8 +20,6 @@ export type RootStackParamList = AuthStackParamList & {
   Home: undefined;
   Search: undefined;
   Settings: undefined;
-  Movies: undefined;
-  Shows: undefined;
   /** A movies or TV shows library's grid. */
   Library: {
     libraryId: string;

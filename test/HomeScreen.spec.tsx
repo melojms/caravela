@@ -372,19 +372,41 @@ describe('HomeScreen', () => {
   });
 
   it.each([
-    ['movies', 'lib-movies', 0, 'Movies'],
-    ['tvshows', 'lib-shows', 1, 'Shows'],
+    ['movies', 0, 'lib-movies', 'Movies'],
+    ['tvshows', 1, 'lib-shows', 'Shows'],
   ] as const)(
     'opens the %s library from My media',
-    (_type, _id, index, target) => {
+    (collectionType, index, libraryId, title) => {
       queries.sections = loaded<HomeSection[]>(['myMedia']);
+      queries.myMedia = loaded([
+        {...MOVIES, DisplayPreferencesId: 'dp-movies'},
+        {...SHOWS, DisplayPreferencesId: 'dp-shows'},
+      ]);
       renderHome();
 
       fireEvent.press(screen.getByTestId(`row-myMedia-item-${index}`));
       expect(navigate).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(target);
+      expect(navigate).toHaveBeenCalledWith('Library', {
+        libraryId,
+        title,
+        collectionType,
+        displayPreferencesId: libraryId.replace('lib-', 'dp-'),
+      });
     },
   );
+
+  it("uses the library's id when it has no DisplayPreferencesId", () => {
+    queries.sections = loaded<HomeSection[]>(['myMedia']);
+    renderHome();
+
+    fireEvent.press(screen.getByTestId('row-myMedia-item-1'));
+    expect(navigate).toHaveBeenCalledWith('Library', {
+      libraryId: 'lib-shows',
+      title: 'Shows',
+      collectionType: 'tvshows',
+      displayPreferencesId: 'lib-shows',
+    });
+  });
 
   it('opens the details of a My media card of another type', () => {
     queries.sections = loaded<HomeSection[]>(['myMedia']);

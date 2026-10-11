@@ -252,18 +252,26 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
       }),
     [navigation],
   );
-  // My media cards open their library's screen, by the library's type.
-  const libraryTypes = useRef(new Map<string, BaseItemDto['CollectionType']>());
-  libraryTypes.current = new Map(
-    (myMedia.data ?? []).map((view) => [view.Id ?? '', view.CollectionType]),
+  // My media cards open their library's grid; other library types open
+  // details as before.
+  const myMediaViews = useRef(new Map<string, BaseItemDto>());
+  myMediaViews.current = new Map(
+    (myMedia.data ?? []).map((view) => [view.Id ?? '', view]),
   );
   const openLibrary = useCallback(
     (item: CardItem) => {
-      const type = libraryTypes.current.get(item.id);
-      if (type === CollectionType.Movies) {
-        navigation.navigate('Movies');
-      } else if (type === CollectionType.Tvshows) {
-        navigation.navigate('Shows');
+      const library = myMediaViews.current.get(item.id);
+      const type = library?.CollectionType;
+      if (
+        library &&
+        (type === CollectionType.Movies || type === CollectionType.Tvshows)
+      ) {
+        navigation.navigate('Library', {
+          libraryId: item.id,
+          title: library.Name ?? item.title,
+          collectionType: type,
+          displayPreferencesId: library.DisplayPreferencesId ?? item.id,
+        });
       } else {
         openDetails(item);
       }
