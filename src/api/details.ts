@@ -112,7 +112,7 @@ type ToggleContext = {previous?: BaseItemDto};
 /**
  * A user-data toggle on the cached item (favorite, played). `toggle()` sends
  * the opposite of the cached state; the cache flips first, rolls back on
- * error, then the item and Home refetch.
+ * error, then every details query and Home refetch.
  */
 function useUserDataToggle(
   itemId: string,
@@ -159,9 +159,13 @@ function useUserDataToggle(
         item ? {...item, UserData: userData} : item,
       );
     },
+    // Marking a series or season changes its episodes, next up and seasons
+    // too, so every details query refetches, the item included.
     onSettled: () =>
       Promise.all([
-        queryClient.invalidateQueries({queryKey: itemKey}),
+        queryClient.invalidateQueries({
+          queryKey: detailsKeys.all(serverId, userId),
+        }),
         queryClient.invalidateQueries({
           queryKey: homeKeys.all(serverId, userId),
         }),

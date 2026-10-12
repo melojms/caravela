@@ -7,6 +7,7 @@ import {getImageApi} from '@jellyfin/sdk/lib/utils/api/image-api';
 import {
   audioCodecName,
   detailsInfoItems,
+  detailsTitles,
   endTime,
   formatMillis,
   formatRunTime,
@@ -17,6 +18,8 @@ import {
   resolutionName,
   resumeLabel,
   resumePositionMs,
+  seasonPlayTarget,
+  seriesShowsResume,
   ticksToMs,
   videoRangeNames,
 } from '../../src/api/itemInfo';
@@ -461,5 +464,346 @@ describe('peopleToCards', () => {
   it('is empty without people', () => {
     expect(peopleToCards({}, api)).toEqual([]);
     expect(peopleToCards({People: []}, api)).toEqual([]);
+  });
+});
+
+describe('infoRowEntries per type', () => {
+  const now = new Date(2024, 0, 3, 21, 30);
+
+  it('shows an episode as S1:E2, then the date, rating and badges', () => {
+    const item: BaseItemDto = {
+      Type: 'Episode',
+      CommunityRating: 8.1,
+      ParentIndexNumber: 1,
+      IndexNumber: 2,
+      PremiereDate: new Date(2004, 8, 29).toISOString(),
+      OfficialRating: 'TV-14',
+      MediaSources: [source(video({Width: 1280, Height: 720}))],
+    };
+
+    expect(infoRowEntries(item)).toEqual([
+      {kind: 'communityRating', value: 8.1},
+      {kind: 'text', text: 'S1:E2'},
+      {kind: 'text', text: 'Sep 29, 2004'},
+      {kind: 'text', text: 'TV-14'},
+      {kind: 'badge', text: '720p'},
+    ]);
+  });
+
+  it('names double episodes, specials and unnumbered episodes', () => {
+    const text = (item: BaseItemDto) =>
+      infoRowEntries({Type: 'Episode', ...item});
+    expect(
+      text({ParentIndexNumber: 2, IndexNumber: 3, IndexNumberEnd: 4}),
+    ).toEqual([{kind: 'text', text: 'S2:E3–4'}]);
+    expect(text({ParentIndexNumber: 0, IndexNumber: 1})).toEqual([
+      {kind: 'text', text: 'Special'},
+    ]);
+    expect(text({IndexNumber: 5})).toEqual([{kind: 'text', text: 'E5'}]);
+    expect(text({ParentIndexNumber: 3})).toEqual([{kind: 'text', text: 'S3'}]);
+    expect(text({})).toEqual([]);
+  });
+
+  it('shows a series with its production year and status', () => {
+    const item: BaseItemDto = {
+      Type: 'Series',
+      CommunityRating: 8.3,
+      CriticRating: 81,
+      PremiereDate: new Date(2004, 8, 22).toISOString(),
+      ProductionYear: 2004,
+      Status: 'Ended',
+      OfficialRating: 'TV-14',
+    };
+
+    expect(infoRowEntries(item)).toEqual([
+      {kind: 'communityRating', value: 8.3},
+      {kind: 'criticRating', value: 81},
+      {kind: 'text', text: '2004'},
+      {kind: 'text', text: 'Ended'},
+      {kind: 'text', text: 'TV-14'},
+    ]);
+  });
+
+  it('names each series status and skips unknown ones', () => {
+    const status = (Status?: string) =>
+      infoRowEntries({Type: 'Series', Status});
+    expect(status('Continuing')).toEqual([{kind: 'text', text: 'Continuing'}]);
+    expect(status('Unreleased')).toEqual([
+      {kind: 'text', text: 'Not yet released'},
+    ]);
+    expect(status('Cancelled')).toEqual([]);
+    expect(status(undefined)).toEqual([]);
+  });
+
+  it('shows a season like a movie', () => {
+    expect(
+      infoRowEntries({
+        Type: 'Season',
+        PremiereDate: new Date(2005, 8, 21).toISOString(),
+        ProductionYear: 2005,
+      }),
+    ).toEqual([{kind: 'text', text: 'Sep 21, 2005'}]);
+    expect(infoRowEntries({Type: 'Season', ProductionYear: 2005})).toEqual([
+      {kind: 'text', text: '2005'},
+    ]);
+  });
+
+  it("shows a living person's birthday and age", () => {
+    const item: BaseItemDto = {
+      Type: 'Person',
+      PremiereDate: new Date(1974, 7, 20).toISOString(),
+      ProductionLocations: ['Lafayette, California, USA'],
+    };
+
+    expect(infoRowEntries(item, now)).toEqual([
+      {kind: 'text', text: 'Born Aug 20, 1974 (49)'},
+      {kind: 'text', text: 'Lafayette, California, USA'},
+    ]);
+  });
+
+  it('counts the age on the birthday', () => {
+    const born = (date: Date) =>
+      infoRowEntries(
+        {Type: 'Person', PremiereDate: date.toISOString()},
+        new Date(2024, 0, 3),
+      );
+    expect(born(new Date(2000, 0, 3))).toEqual([
+      {kind: 'text', text: 'Born Jan 3, 2000 (24)'},
+    ]);
+    expect(born(new Date(2000, 0, 4))).toEqual([
+      {kind: 'text', text: 'Born Jan 4, 2000 (23)'},
+    ]);
+  });
+
+  it("shows a dead person's age at death and the date", () => {
+    const item: BaseItemDto = {
+      Type: 'Person',
+      PremiereDate: new Date(1928, 6, 26).toISOString(),
+      EndDate: new Date(1999, 2, 7).toISOString(),
+    };
+
+    expect(infoRowEntries(item, now)).toEqual([
+      {kind: 'text', text: 'Born Jul 26, 1928 (70)'},
+      {kind: 'text', text: 'Died Mar 7, 1999'},
+    ]);
+  });
+
+  it('shows nothing for a person without dates or a birthplace', () => {
+    expect(infoRowEntries({Type: 'Person', ProductionYear: 1970})).toEqual([]);
+    expect(
+      infoRowEntries({Type: 'Person', ProductionLocations: ['  ']}),
+    ).toEqual([]);
+    expect(
+      infoRowEntries({Type: 'Person', PremiereDate: 'not a date'}),
+    ).toEqual([]);
+  });
+
+  it('keeps a movie as before', () => {
+    const item: BaseItemDto = {
+      PremiereDate: new Date(2016, 10, 11).toISOString(),
+      ProductionYear: 2016,
+      Status: 'Ended',
+      ParentIndexNumber: 1,
+      IndexNumber: 2,
+    };
+    const expected = [{kind: 'text', text: 'Nov 11, 2016'}];
+    expect(infoRowEntries(item)).toEqual(expected);
+    expect(infoRowEntries({...item, Type: 'Movie'})).toEqual(expected);
+  });
+});
+
+describe('detailsInfoItems per type', () => {
+  const now = new Date(2024, 0, 3, 21, 30);
+
+  it('shows the season count first for a series', () => {
+    const item: BaseItemDto = {
+      Type: 'Series',
+      ChildCount: 6,
+      RunTimeTicks: 42 * MINUTE_TICKS,
+      People: [{Name: 'J. J. Abrams', Type: 'Director'}],
+    };
+
+    expect(detailsInfoItems(item, {now, use24Hour: true})).toEqual([
+      {label: 'Seasons', value: '6'},
+      {label: 'Runs', value: '42m'},
+      {label: 'Ends', value: '22:12'},
+    ]);
+  });
+
+  it('shows 0 seasons without a count', () => {
+    expect(detailsInfoItems({Type: 'Series'}, {now, use24Hour: true})).toEqual([
+      {label: 'Seasons', value: '0'},
+    ]);
+  });
+
+  it('shows nothing for a person', () => {
+    expect(
+      detailsInfoItems(
+        {Type: 'Person', RunTimeTicks: 42 * MINUTE_TICKS},
+        {now, use24Hour: true},
+      ),
+    ).toEqual([]);
+  });
+
+  it('shows Directed by for an episode', () => {
+    expect(
+      detailsInfoItems(
+        {Type: 'Episode', People: [{Name: 'Jack Bender', Type: 'Director'}]},
+        {now, use24Hour: true},
+      ),
+    ).toEqual([{label: 'Directed by', value: 'Jack Bender'}]);
+  });
+});
+
+describe('detailsTitles', () => {
+  it('shows an episode name over the series and number', () => {
+    expect(
+      detailsTitles({
+        Type: 'Episode',
+        Name: 'Pilot (2)',
+        SeriesName: 'Lost',
+        ParentIndexNumber: 1,
+        IndexNumber: 2,
+      }),
+    ).toEqual({title: 'Pilot (2)', subtitle: 'Lost S1 E2'});
+  });
+
+  it('shows only the number for an episode without a series name', () => {
+    expect(
+      detailsTitles({
+        Type: 'Episode',
+        Name: 'Pilot',
+        ParentIndexNumber: 1,
+        IndexNumber: 1,
+      }),
+    ).toEqual({title: 'Pilot', subtitle: 'S1 E1'});
+    expect(detailsTitles({Type: 'Episode', Name: 'Pilot'})).toEqual({
+      title: 'Pilot',
+      subtitle: undefined,
+    });
+  });
+
+  it('shows a season name over its series', () => {
+    expect(
+      detailsTitles({Type: 'Season', Name: 'Season 1', SeriesName: 'Lost'}),
+    ).toEqual({title: 'Season 1', subtitle: 'Lost'});
+  });
+
+  it('shows only the name for a season without a series name', () => {
+    expect(detailsTitles({Type: 'Season', Name: 'Season 1'})).toEqual({
+      title: 'Season 1',
+      subtitle: undefined,
+    });
+    expect(
+      detailsTitles({Type: 'Season', Name: 'Season 1', SeriesName: ' '}),
+    ).toEqual({title: 'Season 1', subtitle: undefined});
+  });
+
+  it('shows only the name for anything else', () => {
+    expect(detailsTitles({Type: 'Movie', Name: 'Arrival'})).toEqual({
+      title: 'Arrival',
+    });
+    expect(detailsTitles({Type: 'Series', Name: 'Lost'})).toEqual({
+      title: 'Lost',
+    });
+    expect(detailsTitles({Type: 'Person', Name: 'Amy Adams'})).toEqual({
+      title: 'Amy Adams',
+    });
+    expect(detailsTitles({})).toEqual({title: ''});
+  });
+});
+
+describe('peopleToCards with kinds', () => {
+  const item: BaseItemDto = {
+    People: [
+      {Id: 'p1', Name: 'Matthew Fox', Type: 'Actor'},
+      {Id: 'p2', Name: 'Guest One', Role: 'Pilot', Type: 'GuestStar'},
+      {Id: 'p3', Name: 'Jack Bender', Type: 'Director'},
+      {Id: 'p4', Name: 'Guest Two', Type: 'GuestStar'},
+      {Id: 'p5', Name: 'No Kind'},
+    ],
+  };
+
+  it('keeps only guest stars, in order', () => {
+    expect(
+      peopleToCards(item, api, ['GuestStar']).map((card) => [
+        card.id,
+        card.subtitle,
+      ]),
+    ).toEqual([
+      ['p2', 'Pilot'],
+      ['p4', 'GuestStar'],
+    ]);
+  });
+
+  it('keeps everyone without kinds, and no one with none', () => {
+    expect(peopleToCards(item, api)).toHaveLength(5);
+    expect(peopleToCards(item, api, [])).toEqual([]);
+  });
+});
+
+describe('seasonPlayTarget', () => {
+  const ep = (id: string, played?: boolean): BaseItemDto => ({
+    Id: id,
+    UserData: played === undefined ? undefined : {Key: id, Played: played},
+  });
+
+  it('picks the first episode when none is played', () => {
+    expect(seasonPlayTarget([ep('e1', false), ep('e2')])?.Id).toBe('e1');
+  });
+
+  it('picks the first unplayed episode', () => {
+    expect(
+      seasonPlayTarget([ep('e1', true), ep('e2', false), ep('e3', false)])?.Id,
+    ).toBe('e2');
+    expect(
+      seasonPlayTarget([ep('e1', true), ep('e2', true), ep('e3')])?.Id,
+    ).toBe('e3');
+  });
+
+  it('picks the first episode when all are played', () => {
+    expect(seasonPlayTarget([ep('e1', true), ep('e2', true)])?.Id).toBe('e1');
+  });
+
+  it('has nothing to play in an empty season', () => {
+    expect(seasonPlayTarget([])).toBeUndefined();
+  });
+});
+
+describe('seriesShowsResume', () => {
+  const series = (userData: Partial<NonNullable<BaseItemDto['UserData']>>) => ({
+    Type: 'Series' as const,
+    UserData: {Key: 's', ...userData},
+  });
+  const nextUp = (ticks: number): BaseItemDto => ({
+    Id: 'e2',
+    UserData: {Key: 'e2', PlaybackPositionTicks: ticks},
+  });
+
+  it('shows Resume for a partly watched series', () => {
+    expect(seriesShowsResume(series({PlayedPercentage: 40}))).toBe(true);
+    expect(seriesShowsResume(series({PlayedPercentage: 40}), nextUp(0))).toBe(
+      true,
+    );
+  });
+
+  it('shows Resume when the next-up episode has a position', () => {
+    expect(seriesShowsResume(series({}), nextUp(MINUTE_TICKS))).toBe(true);
+  });
+
+  it('hides Resume for an unstarted series', () => {
+    expect(seriesShowsResume(series({}))).toBe(false);
+    expect(seriesShowsResume(series({}), nextUp(0))).toBe(false);
+    expect(seriesShowsResume(series({}), null)).toBe(false);
+    expect(seriesShowsResume({Type: 'Series'})).toBe(false);
+  });
+
+  it('hides Resume for a finished series', () => {
+    expect(
+      seriesShowsResume(
+        series({Played: true, PlayedPercentage: 40}),
+        nextUp(MINUTE_TICKS),
+      ),
+    ).toBe(false);
   });
 });
