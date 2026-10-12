@@ -42,6 +42,14 @@
     <td align="center">Player, paused</td>
     <td align="center">Sign-in: the user picker</td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/readme/series.jpg" alt="Series details page with its Next up row"></td>
+    <td width="50%"><img src="docs/screenshots/readme/episode.jpg" alt="Episode details page with Previous episode and Go to series"></td>
+  </tr>
+  <tr>
+    <td align="center">Series details</td>
+    <td align="center">Episode details</td>
+  </tr>
 </table>
 
 <p align="center"><sub>Content from the <a href="https://demo.jellyfin.org/stable">Jellyfin demo server</a>.</sub></p>
@@ -55,16 +63,15 @@ What works today:
 
 - Sign-in with Quick Connect or a password, with several saved servers and users.
 - Home rows from your server (My media, Continue watching, Next up, Recently added).
-- Movie details: cast and crew, similar titles, watched and favourite toggles.
+- Library grids for Movies and Shows, with sorting, filters and a letter picker shared with the official Android TV app.
+- Details pages for movies, series, seasons, episodes and people: cast and crew, seasons and episodes, next up, similar titles, watched and favourite toggles.
 - Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin.
+- Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
 
 Coming next, roughly in this order:
 
-- Subtitles and audio track switching
 - Player controls with trickplay previews and chapters
-- Intro skip and Next up
-- TV show, season and episode details
-- Library grids for Movies and Shows
+- Intro skip, autoplay of the next episode and Next up
 - Search
 - Settings
 
