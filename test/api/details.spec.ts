@@ -44,6 +44,7 @@ const SERVER_ID = session.server.id;
 const USER_ID = 'u1';
 const ITEM_KEY = detailsKeys.item(SERVER_ID, USER_ID, 'm1');
 const HOME_KEY = homeKeys.all(SERVER_ID, USER_ID);
+const DETAILS_KEY = detailsKeys.all(SERVER_ID, USER_ID);
 
 const MOVIE: BaseItemDto = {
   Id: 'm1',
@@ -254,7 +255,7 @@ describe('useToggleFavorite', () => {
     expect(cachedItem()).toEqual(MOVIE);
   });
 
-  it('invalidates the item and Home once settled', async () => {
+  it('invalidates every details query and Home once settled', async () => {
     userDataApi.markFavoriteItem.mockResolvedValue({data: {IsFavorite: true}});
     const invalidate = jest.spyOn(client, 'invalidateQueries');
     const {result} = renderHook(() => useToggleFavorite('m1'), {wrapper});
@@ -262,7 +263,7 @@ describe('useToggleFavorite', () => {
     act(() => result.current.toggle());
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith({queryKey: ITEM_KEY});
+    expect(invalidate).toHaveBeenCalledWith({queryKey: DETAILS_KEY});
     expect(invalidate).toHaveBeenCalledWith({queryKey: HOME_KEY});
   });
 
@@ -274,8 +275,23 @@ describe('useToggleFavorite', () => {
     act(() => result.current.toggle());
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith({queryKey: ITEM_KEY});
+    expect(invalidate).toHaveBeenCalledWith({queryKey: DETAILS_KEY});
     expect(invalidate).toHaveBeenCalledWith({queryKey: HOME_KEY});
+  });
+
+  it('marks cached season and episode queries stale too', async () => {
+    const seasonsKey = [...DETAILS_KEY, 'seasons', 'series1'];
+    const otherUserKey = detailsKeys.item(SERVER_ID, 'u2', 'm1');
+    client.setQueryData(seasonsKey, []);
+    client.setQueryData(otherUserKey, MOVIE);
+    userDataApi.markFavoriteItem.mockResolvedValue({data: {IsFavorite: true}});
+    const {result} = renderHook(() => useToggleFavorite('m1'), {wrapper});
+
+    act(() => result.current.toggle());
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.getQueryState(seasonsKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(otherUserKey)?.isInvalidated).toBe(false);
   });
 
   it('keeps the server user data once it answers', async () => {
@@ -373,7 +389,7 @@ describe('useTogglePlayed', () => {
     expect(cachedItem()).toEqual(MOVIE);
   });
 
-  it('invalidates the item and Home once settled', async () => {
+  it('invalidates every details query and Home once settled', async () => {
     userDataApi.markPlayedItem.mockResolvedValue({data: {Played: true}});
     const invalidate = jest.spyOn(client, 'invalidateQueries');
     const {result} = renderHook(() => useTogglePlayed('m1'), {wrapper});
@@ -381,7 +397,7 @@ describe('useTogglePlayed', () => {
     act(() => result.current.toggle());
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(invalidate).toHaveBeenCalledWith({queryKey: ITEM_KEY});
+    expect(invalidate).toHaveBeenCalledWith({queryKey: DETAILS_KEY});
     expect(invalidate).toHaveBeenCalledWith({queryKey: HOME_KEY});
   });
 });

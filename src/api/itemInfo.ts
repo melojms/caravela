@@ -1,10 +1,12 @@
 import type {Api} from '@jellyfin/sdk';
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import {ImageType} from '@jellyfin/sdk/lib/generated-client/models/image-type';
 import type {MediaSourceInfo} from '@jellyfin/sdk/lib/generated-client/models/media-source-info';
 import type {MediaStream} from '@jellyfin/sdk/lib/generated-client/models/media-stream';
 import {MediaStreamType} from '@jellyfin/sdk/lib/generated-client/models/media-stream-type';
 import {PersonKind} from '@jellyfin/sdk/lib/generated-client/models/person-kind';
+import {SeriesStatus} from '@jellyfin/sdk/lib/generated-client/models/series-status';
 import {VideoRangeType} from '@jellyfin/sdk/lib/generated-client/models/video-range-type';
 
 import {formatClock} from '../components/ToolbarClock';
@@ -13,7 +15,12 @@ import type {
   DetailsInfoItem,
   InfoRowEntry,
 } from '../components/types';
-import {cardImageSize, imageUrl, placeholderColor} from './items';
+import {
+  cardImageSize,
+  episodeFullName,
+  imageUrl,
+  placeholderColor,
+} from './items';
 
 /** Jellyfin ticks are 100 ns: 10 000 per millisecond. */
 export const TICKS_PER_MS = 10000;
@@ -46,16 +53,77 @@ const MONTHS = [
 const mediumDate = (date: Date) =>
   `${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 
-/** androidtv's `InfoRowDate` for a movie: the premiere date, else the production year. */
-const infoRowDate = (item: BaseItemDto): string | undefined => {
-  if (item.PremiereDate) {
-    const date = new Date(item.PremiereDate);
-    if (!Number.isNaN(date.getTime())) {
-      return mediumDate(date);
+const parseDate = (value?: string | null): Date | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+/** Whole years from `from` to `to`, in local time. */
+const yearsBetween = (from: Date, to: Date) => {
+  const years = to.getFullYear() - from.getFullYear();
+  const beforeBirthday =
+    to.getMonth() < from.getMonth() ||
+    (to.getMonth() === from.getMonth() && to.getDate() < from.getDate());
+  return beforeBirthday ? years - 1 : years;
+};
+
+/**
+ * androidtv's `InfoRowDate`: a series shows its production year; a person
+ * `Born Mar 14, 1970 (54)`, with the age at death when there's an end date;
+ * anything else the premiere date, else the production year.
+ */
+const infoRowDate = (item: BaseItemDto, now: Date): string | undefined => {
+  const year =
+    item.ProductionYear != null ? `${item.ProductionYear}` : undefined;
+  switch (item.Type) {
+    case BaseItemKind.Series:
+      return year;
+    case BaseItemKind.Person: {
+      const born = parseDate(item.PremiereDate);
+      if (!born) {
+        return undefined;
+      }
+      const age = yearsBetween(born, parseDate(item.EndDate) ?? now);
+      return `Born ${mediumDate(born)} (${age})`;
+    }
+    default: {
+      const premiere = parseDate(item.PremiereDate);
+      return premiere ? mediumDate(premiere) : year;
     }
   }
-  return item.ProductionYear != null ? `${item.ProductionYear}` : undefined;
 };
+
+/** androidtv's `getSeasonEpisodeName`, e.g. `S1:E2`, `S1:E2–3` or `Special`. */
+const seasonEpisodeName = (item: BaseItemDto): string => {
+  const season = item.ParentIndexNumber;
+  const parts: string[] = [];
+  if (season != null && season !== 0) {
+    parts.push(`S${season}`);
+  }
+  if (season === 0) {
+    parts.push('Special');
+  } else if (item.IndexNumber != null) {
+    parts.push(
+      item.IndexNumberEnd != null
+        ? `E${item.IndexNumber}–${item.IndexNumberEnd}`
+        : `E${item.IndexNumber}`,
+    );
+  }
+  return parts.join(':');
+};
+
+const SERIES_STATUS_TEXT: Record<SeriesStatus, string> = {
+  [SeriesStatus.Continuing]: 'Continuing',
+  [SeriesStatus.Ended]: 'Ended',
+  [SeriesStatus.Unreleased]: 'Not yet released',
+};
+
+/** androidtv's `InfoRowSeriesStatus`; nothing for an unknown status. */
+const seriesStatusText = (status?: string | null): string | undefined =>
+  status ? SERIES_STATUS_TEXT[status as SeriesStatus] : undefined;
 
 /** androidtv's `getResolutionName`. */
 export function resolutionName(
@@ -189,21 +257,43 @@ export function mediaBadges(source: MediaSourceInfo): string[] {
 }
 
 /**
- * androidtv's `BaseItemInfoRow` for a movie on the details page (no runtime):
- * community rating, critic rating, date, age rating, then the default media
- * source's badges.
+ * androidtv's `BaseItemInfoRow` on the details page (no runtime): community
+ * rating and critic rating, then per type
+ * - episode: `S1:E2`, date, age rating, badges;
+ * - series: production year, status (Continuing / Ended / Not yet released),
+ *   age rating, badges;
+ * - person: `Born <date> (age)`, plus `Died <date>` and the birthplace (which
+ *   androidtv doesn't show);
+ * - anything else (movie, season): date, age rating, then the default media
+ *   source's badges.
  */
-export function infoRowEntries(item: BaseItemDto): InfoRowEntry[] {
+export function infoRowEntries(
+  item: BaseItemDto,
+  now: Date = new Date(),
+): InfoRowEntry[] {
   const entries: InfoRowEntry[] = [];
+  const addText = (value?: string) => {
+    if (value) {
+      entries.push({kind: 'text', text: value});
+    }
+  };
   if (item.CommunityRating != null) {
     entries.push({kind: 'communityRating', value: item.CommunityRating});
   }
   if (item.CriticRating != null) {
     entries.push({kind: 'criticRating', value: item.CriticRating});
   }
-  const date = infoRowDate(item);
-  if (date) {
-    entries.push({kind: 'text', text: date});
+  if (item.Type === BaseItemKind.Episode) {
+    addText(seasonEpisodeName(item));
+  }
+  addText(infoRowDate(item, now));
+  if (item.Type === BaseItemKind.Series) {
+    addText(seriesStatusText(item.Status));
+  }
+  if (item.Type === BaseItemKind.Person) {
+    const died = parseDate(item.EndDate);
+    addText(died && `Died ${mediumDate(died)}`);
+    addText(nonBlank(item.ProductionLocations?.[0]));
   }
   if (item.OfficialRating) {
     entries.push({kind: 'text', text: item.OfficialRating});
@@ -241,16 +331,24 @@ export function endTime(item: BaseItemDto, now: Date = new Date()): Date {
 
 export type DetailsInfoOptions = {now?: Date; use24Hour: boolean};
 
-/** androidtv's info items under the overview: Directed by, Runs and Ends. */
+/**
+ * androidtv's info items under the overview: Directed by (Seasons and their
+ * count for a series), Runs and Ends. None for a person.
+ */
 export function detailsInfoItems(
   item: BaseItemDto,
   {now = new Date(), use24Hour}: DetailsInfoOptions,
 ): DetailsInfoItem[] {
+  if (item.Type === BaseItemKind.Person) {
+    return [];
+  }
   const director = item.People?.find(
     (person) => person.Type === PersonKind.Director,
   );
   const items: DetailsInfoItem[] = [
-    {label: 'Directed by', value: director?.Name || 'Unknown'},
+    item.Type === BaseItemKind.Series
+      ? {label: 'Seasons', value: `${item.ChildCount ?? 0}`}
+      : {label: 'Directed by', value: director?.Name || 'Unknown'},
   ];
   const runTime = item.RunTimeTicks;
   if (runTime != null && runTime > 0) {
@@ -293,9 +391,17 @@ export const resumeLabel = (ms: number): string =>
 /**
  * Cast & crew cards, in the server's order: the name, then the role (or the
  * kind, e.g. Director, when there's no role) and the person's primary image.
+ * With `kinds`, only those people (an episode's guest stars).
  */
-export function peopleToCards(item: BaseItemDto, api: Api): CardItem[] {
-  return (item.People ?? []).map((person) => {
+export function peopleToCards(
+  item: BaseItemDto,
+  api: Api,
+  kinds?: readonly PersonKind[],
+): CardItem[] {
+  const people = (item.People ?? []).filter(
+    (person) => !kinds || (person.Type != null && kinds.includes(person.Type)),
+  );
+  return people.map((person) => {
     const id = person.Id ?? '';
     return {
       id,
@@ -316,4 +422,48 @@ export function peopleToCards(item: BaseItemDto, api: Api): CardItem[] {
       placeholderColor: placeholderColor(id),
     };
   });
+}
+
+/**
+ * The details header's title and subtitle: an episode's name over
+ * `Lost S1 E2`, a season's name over its series' name, else just the name.
+ */
+export function detailsTitles(item: BaseItemDto): {
+  title: string;
+  subtitle?: string;
+} {
+  const title = item.Name ?? '';
+  switch (item.Type) {
+    case BaseItemKind.Episode:
+      return {title, subtitle: episodeFullName(item) || undefined};
+    case BaseItemKind.Season:
+      return {title, subtitle: nonBlank(item.SeriesName)};
+    default:
+      return {title};
+  }
+}
+
+/**
+ * What a season's Play/Resume plays: its first unwatched episode, else (all
+ * watched) the first one. `resumePositionMs(target)` then picks Resume or Play.
+ */
+export const seasonPlayTarget = (
+  episodes: readonly BaseItemDto[],
+): BaseItemDto | undefined =>
+  episodes.find((episode) => episode.UserData?.Played !== true) ?? episodes[0];
+
+/**
+ * androidtv's `handleResumeButtonAndFocus` for a series: Resume shows when
+ * the series is started and not finished, where started means partly played
+ * or a next-up episode with a saved position.
+ */
+export function seriesShowsResume(
+  series: BaseItemDto,
+  nextUp?: BaseItemDto | null,
+): boolean {
+  const finished = series.UserData?.Played === true;
+  const started =
+    (series.UserData?.PlayedPercentage ?? 0) > 0 ||
+    (nextUp?.UserData?.PlaybackPositionTicks ?? 0) > 0;
+  return (started && !finished) || resumeTicks(series) !== undefined;
 }
