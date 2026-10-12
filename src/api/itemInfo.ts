@@ -15,6 +15,7 @@ import type {
   DetailsInfoItem,
   InfoRowEntry,
 } from '../components/types';
+import type {PlayerTitle} from '../playback/types';
 import {
   cardImageSize,
   episodeFullName,
@@ -441,6 +442,28 @@ export function detailsTitles(item: BaseItemDto): {
     default:
       return {title};
   }
+}
+
+/**
+ * The player overlay's heading, as androidtv's `updateDisplay`: an episode
+ * shows its series name over `S1:E2 · Episode name` (androidtv's
+ * `getDisplayName`, which joins with ` — `); anything else just its name.
+ * Without a series name the episode's name becomes the title, over `S1:E2`.
+ */
+export function playerTitle(item: BaseItemDto): PlayerTitle {
+  const name = item.Name ?? '';
+  if (item.Type !== BaseItemKind.Episode) {
+    return {title: name};
+  }
+  const seasonEpisode = seasonEpisodeName(item);
+  const series = nonBlank(item.SeriesName);
+  if (!series) {
+    return {title: name, subtitle: seasonEpisode || undefined};
+  }
+  const subtitle = [seasonEpisode, nonBlank(name)]
+    .filter((part) => !!part)
+    .join(' · ');
+  return {title: series, subtitle: subtitle || undefined};
 }
 
 /**

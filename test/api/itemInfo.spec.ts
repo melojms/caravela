@@ -15,6 +15,7 @@ import {
   mediaBadges,
   msToTicks,
   peopleToCards,
+  playerTitle,
   resolutionName,
   resumeLabel,
   resumePositionMs,
@@ -805,5 +806,78 @@ describe('seriesShowsResume', () => {
         nextUp(MINUTE_TICKS),
       ),
     ).toBe(false);
+  });
+});
+
+describe('playerTitle', () => {
+  const episode = (fields: Partial<BaseItemDto> = {}): BaseItemDto => ({
+    Type: 'Episode',
+    Name: 'Pilot',
+    SeriesName: 'Lost',
+    ParentIndexNumber: 1,
+    IndexNumber: 2,
+    ...fields,
+  });
+
+  it('shows an episode under its series', () => {
+    expect(playerTitle(episode())).toEqual({
+      title: 'Lost',
+      subtitle: 'S1:E2 · Pilot',
+    });
+  });
+
+  it('shows a multi-episode range', () => {
+    expect(playerTitle(episode({IndexNumberEnd: 3})).subtitle).toBe(
+      'S1:E2–3 · Pilot',
+    );
+  });
+
+  it('shows a special', () => {
+    expect(playerTitle(episode({ParentIndexNumber: 0})).subtitle).toBe(
+      'Special · Pilot',
+    );
+  });
+
+  it('leaves out a missing season or episode number', () => {
+    expect(playerTitle(episode({ParentIndexNumber: undefined})).subtitle).toBe(
+      'E2 · Pilot',
+    );
+    expect(playerTitle(episode({IndexNumber: undefined})).subtitle).toBe(
+      'S1 · Pilot',
+    );
+    expect(
+      playerTitle(episode({ParentIndexNumber: null, IndexNumber: null})),
+    ).toEqual({title: 'Lost', subtitle: 'Pilot'});
+  });
+
+  it('shows only the number for an unnamed episode', () => {
+    expect(playerTitle(episode({Name: undefined}))).toEqual({
+      title: 'Lost',
+      subtitle: 'S1:E2',
+    });
+    expect(
+      playerTitle(
+        episode({Name: ' ', ParentIndexNumber: null, IndexNumber: null}),
+      ),
+    ).toEqual({title: 'Lost', subtitle: undefined});
+  });
+
+  it('titles an episode without a series name by its own name', () => {
+    expect(playerTitle(episode({SeriesName: undefined}))).toEqual({
+      title: 'Pilot',
+      subtitle: 'S1:E2',
+    });
+    expect(
+      playerTitle(
+        episode({SeriesName: '', ParentIndexNumber: null, IndexNumber: null}),
+      ),
+    ).toEqual({title: 'Pilot', subtitle: undefined});
+  });
+
+  it('shows anything else by its name', () => {
+    expect(playerTitle({Type: 'Movie', Name: 'Heat', SeriesName: 'x'})).toEqual(
+      {title: 'Heat'},
+    );
+    expect(playerTitle({Type: 'Video'})).toEqual({title: ''});
   });
 });
