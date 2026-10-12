@@ -198,12 +198,13 @@ export const SeriesDetails = ({item, navigation}: SeriesDetailsProps) => {
 
   const actions: DetailsAction[] = [];
   // androidtv shows Resume when the series is started and not finished, and
-  // plays the next-up episode from its position (from 0 when it has none).
+  // plays the next-up episode from its position (from 0 when it has none,
+  // labelled "Play next up" as androidtv does, not "Resume from 0:00").
   if (nextEpisode && seriesShowsResume(item, nextEpisode)) {
     const resumeMs = resumePositionMs(nextEpisode) ?? 0;
     actions.push({
       key: 'resume',
-      label: resumeLabel(resumeMs),
+      label: resumeMs > 0 ? resumeLabel(resumeMs) : 'Play next up',
       icon: 'resume',
       onPress: () => playEpisode(navigation, nextEpisode, resumeMs),
     });

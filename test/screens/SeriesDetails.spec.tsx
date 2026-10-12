@@ -271,7 +271,7 @@ describe('SeriesDetails', () => {
     });
   });
 
-  it('shows Resume from 0 for a partly watched series whose next episode has no position', () => {
+  it('labels Resume "Play next up" (androidtv) for a partly watched series whose next episode has no position', () => {
     renderSeries(
       series({
         UserData: userData({Played: false, PlayedPercentage: 40}),
@@ -279,7 +279,8 @@ describe('SeriesDetails', () => {
     );
 
     expect(actionKeys()[0]).toBe('resume');
-    expect(screen.getByText('Resume from 0:00')).toBeTruthy();
+    expect(screen.getByText('Play next up')).toBeTruthy();
+    expect(screen.queryByText('Resume from 0:00')).toBeNull();
     fireEvent.press(screen.getByTestId('details-actions-resume'));
     expect(navigate).toHaveBeenCalledWith('Player', {
       itemId: 'e2',
