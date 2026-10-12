@@ -5,9 +5,21 @@ import {colors, px, radius, spacing, typography} from '../theme';
 import {StarIcon, TomatoIcon} from './detailsIcons';
 import {DetailsInfoItem, InfoRowEntry} from './types';
 
+export type DetailsPosterShape = 'poster' | 'wide' | 'square';
+
 export type DetailsHeaderProps = {
   title: string;
+  /**
+   * A muted line above the title that places it: the series and episode
+   * number for an episode ("Lost S1 E2"), the series name for a season.
+   */
+  subtitle?: string;
   posterUri?: string;
+  /**
+   * The image's aspect: 'poster' 2:3 (default), 'wide' 16:9 (episode
+   * thumbnails), 'square' 1:1. The width stays the same, like androidtv.
+   */
+  posterShape?: DetailsPosterShape;
   /** Background shown while there is no poster (or it is still loading). */
   placeholderColor?: string;
   infoRow: InfoRowEntry[];
@@ -24,6 +36,22 @@ const CRITIC_FRESH = 60;
 const MAX_INFO_ITEMS = 3;
 // androidtv's info row icons: 18 dp.
 const INFO_ICON_SIZE = px(36);
+
+// androidtv's details image keeps a fixed width and takes its height from the
+// image's aspect (adjustViewBounds), so a wide thumbnail is shorter than a
+// poster and the text column keeps its width.
+const POSTER_WIDTH = 300;
+const POSTER_ASPECT: Record<DetailsPosterShape, number> = {
+  poster: 2 / 3,
+  wide: 16 / 9,
+  square: 1,
+};
+const POSTER_SIZE = Object.fromEntries(
+  Object.entries(POSTER_ASPECT).map(([shape, aspect]) => [
+    shape,
+    {width: px(POSTER_WIDTH), height: px(Math.round(POSTER_WIDTH / aspect))},
+  ]),
+) as Record<DetailsPosterShape, {width: number; height: number}>;
 
 const InfoRowItem = ({
   entry,
@@ -88,7 +116,9 @@ const InfoRowItem = ({
 export const DetailsHeader = memo(
   ({
     title,
+    subtitle,
     posterUri,
+    posterShape = 'poster',
     placeholderColor = colors.surfaceRaised,
     infoRow,
     genres,
@@ -103,7 +133,11 @@ export const DetailsHeader = memo(
       <View testID={testID} style={styles.header}>
         <View
           testID={`${testID}-poster-frame`}
-          style={[styles.poster, {backgroundColor: placeholderColor}]}>
+          style={[
+            styles.poster,
+            POSTER_SIZE[posterShape],
+            {backgroundColor: placeholderColor},
+          ]}>
           {posterUri ? (
             <Image
               testID={`${testID}-poster`}
@@ -115,13 +149,22 @@ export const DetailsHeader = memo(
             <Text
               testID={`${testID}-poster-placeholder`}
               style={styles.placeholderText}
-              numberOfLines={3}>
+              numberOfLines={posterShape === 'wide' ? 2 : 3}>
               {title}
             </Text>
           )}
         </View>
 
         <View testID={`${testID}-main`} style={styles.main}>
+          {subtitle ? (
+            <Text
+              testID={`${testID}-subtitle`}
+              style={[styles.subtitle, styles.shadow]}
+              numberOfLines={1}
+              ellipsizeMode="tail">
+              {subtitle}
+            </Text>
+          ) : null}
           <Text
             testID={`${testID}-title`}
             style={[styles.title, styles.shadow]}
@@ -198,10 +241,8 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
     backgroundColor: colors.transparent,
   },
-  // 2:3, like the poster cards.
+  // Width and height come from POSTER_SIZE.
   poster: {
-    width: px(300),
-    height: px(450),
     borderRadius: radius.md,
     overflow: 'hidden',
     justifyContent: 'center',
@@ -220,6 +261,11 @@ const styles = StyleSheet.create({
   },
   // Keeps text readable over a bright backdrop.
   shadow: textShadow,
+  // Muted, so the title still reads first.
+  subtitle: {
+    ...typography.heading,
+    color: colors.textMuted,
+  },
   title: {
     ...typography.title,
     color: colors.text,

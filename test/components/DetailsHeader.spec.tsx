@@ -7,6 +7,7 @@ import {
   DetailsHeaderProps,
 } from '../../src/components/DetailsHeader';
 import {STAR_COLOR} from '../../src/components/detailsIcons';
+import {px} from '../../src/theme';
 
 // The Vega Jest preset's StyleSheet.flatten mock returns arrays untouched.
 const flatStyle = (style: unknown): Record<string, unknown> =>
@@ -153,6 +154,74 @@ describe('DetailsHeader', () => {
     const screen = setup({overview: '', genres: ['']});
     expect(screen.queryByTestId('details-header-overview')).toBeNull();
     expect(screen.queryByTestId('details-header-genres')).toBeNull();
+  });
+
+  it('shows the subtitle above the title on one line', () => {
+    const screen = setup({title: 'Pilot (2)', subtitle: 'Lost S1 E2'});
+    const subtitle = screen.getByTestId('details-header-subtitle');
+    expect(subtitle).toHaveTextContent('Lost S1 E2');
+    expect(subtitle.props.numberOfLines).toBe(1);
+    expect(subtitle.props.ellipsizeMode).toBe('tail');
+
+    // Queries return matches in tree order.
+    const texts = screen.getAllByTestId(/^details-header-(subtitle|title)$/);
+    expect(texts.map((node) => node.props.testID)).toEqual([
+      'details-header-subtitle',
+      'details-header-title',
+    ]);
+  });
+
+  it.each([undefined, ''])('leaves out a subtitle of %p', (subtitle) => {
+    const screen = setup({subtitle});
+    expect(screen.queryByTestId('details-header-subtitle')).toBeNull();
+  });
+
+  it('keeps the 2:3 poster size by default', () => {
+    const screen = setup();
+    const style = flatStyle(
+      screen.getByTestId('details-header-poster-frame').props.style,
+    );
+    expect(style.width).toBe(px(300));
+    expect(style.height).toBe(px(450));
+  });
+
+  it.each([
+    ['poster', 450],
+    ['wide', 169],
+    ['square', 300],
+  ] as const)('sizes a %s frame at the poster width', (posterShape, height) => {
+    const screen = setup({posterShape});
+    const style = flatStyle(
+      screen.getByTestId('details-header-poster-frame').props.style,
+    );
+    expect(style.width).toBe(px(300));
+    expect(style.height).toBe(px(height));
+  });
+
+  it.each(['poster', 'wide', 'square'] as const)(
+    'uses the placeholder in a %s frame with no poster',
+    (posterShape) => {
+      const screen = setup({
+        posterShape,
+        posterUri: undefined,
+        placeholderColor: '#123456',
+      });
+      expect(screen.queryByTestId('details-header-poster')).toBeNull();
+      expect(
+        screen.getByTestId('details-header-poster-placeholder'),
+      ).toHaveTextContent('Arrival');
+      expect(
+        flatStyle(screen.getByTestId('details-header-poster-frame').props.style)
+          .backgroundColor,
+      ).toBe('#123456');
+    },
+  );
+
+  it('shows the poster image in a wide frame', () => {
+    const screen = setup({posterShape: 'wide'});
+    expect(screen.getByTestId('details-header-poster').props.source).toEqual({
+      uri: 'https://example.test/poster.jpg',
+    });
   });
 
   it('uses the given testID', () => {
