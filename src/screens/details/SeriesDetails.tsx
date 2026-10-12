@@ -3,7 +3,6 @@ import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-i
 import {uses24HourClock} from '@amazon-devices/react-native-localize';
 import {useQueryClient} from '@tanstack/react-query';
 import React, {useCallback, useEffect, useMemo, useRef} from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
 
 import {
   useSimilarItems,
@@ -35,9 +34,8 @@ import {useSession} from '../../auth/SessionContext';
 import {ContentRow} from '../../components/ContentRow';
 import {CardItem, DetailsAction} from '../../components/types';
 import {RootStackScreenProps} from '../../navigation/types';
-import {colors, spacing, typography} from '../../theme';
-import {ScreenContainer} from '../ScreenContainer';
 import {DetailsLayout, primaryImageUri} from './DetailsLayout';
+import {DetailsLoading, playEpisode, useOpenDetails} from './shared';
 
 type DetailsNavigation = RootStackScreenProps<'Details'>['navigation'];
 
@@ -45,40 +43,6 @@ type SeriesDetailsProps = {
   item: BaseItemDto;
   navigation: DetailsNavigation;
 };
-
-/**
- * The spinner with the title that `DetailsScreen` shows while an item loads.
- * Pages keep it up until whatever decides their buttons has settled, so the
- * first button is right when focus lands.
- */
-export const DetailsLoading = ({title}: {title: string}) => (
-  <ScreenContainer testID="details-loading">
-    <View style={styles.center}>
-      <Text style={styles.loadingTitle}>{title}</Text>
-      <ActivityIndicator size="large" color={colors.cyan} />
-    </View>
-  </ScreenContainer>
-);
-
-/** Opens the episode in the player; `navigate`, so a double press opens one. */
-export const playEpisode = (
-  navigation: DetailsNavigation,
-  episode: BaseItemDto,
-  startMs: number,
-) =>
-  navigation.navigate('Player', {
-    itemId: episode.Id ?? '',
-    title: episode.Name ?? '',
-    startMs,
-  });
-
-/** Cards push another Details page (seasons, episodes, similar series, people). */
-export const useOpenDetails = (navigation: DetailsNavigation) =>
-  useCallback(
-    (card: CardItem) =>
-      navigation.push('Details', {itemId: card.id, title: card.title}),
-    [navigation],
-  );
 
 /**
  * The series' first episode: the first season that isn't specials (specials
@@ -316,16 +280,3 @@ export const SeriesDetails = ({item, navigation}: SeriesDetailsProps) => {
     </DetailsLayout>
   );
 };
-
-const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingTitle: {
-    ...typography.title,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-});

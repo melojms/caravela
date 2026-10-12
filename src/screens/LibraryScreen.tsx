@@ -3,7 +3,6 @@ import {
   TVFocusGuideView,
 } from '@amazon-devices/react-native-kepler';
 import {useFocusEffect} from '@amazon-devices/react-navigation__native';
-import {CollectionType} from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 import {ItemSortBy} from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import {useQueryClient} from '@tanstack/react-query';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -221,16 +220,9 @@ export const LibraryScreen = ({
   );
 
   const onItemPress = useCallback(
-    (item: CardItem) => {
-      const params = {itemId: item.id, title: item.title};
-      if (collectionType === CollectionType.Movies) {
-        navigation.navigate('Details', params);
-      } else {
-        // Series details come in a later task.
-        navigation.navigate('DetailsPlaceholder', params);
-      }
-    },
-    [navigation, collectionType],
+    (item: CardItem) =>
+      navigation.navigate('Details', {itemId: item.id, title: item.title}),
+    [navigation],
   );
 
   // The card to come back to: the last focused one if it's still in the grid.

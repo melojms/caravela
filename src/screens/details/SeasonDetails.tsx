@@ -24,7 +24,7 @@ import {ContentRow} from '../../components/ContentRow';
 import {DetailsAction} from '../../components/types';
 import {RootStackScreenProps} from '../../navigation/types';
 import {DetailsLayout, primaryImageUri} from './DetailsLayout';
-import {DetailsLoading, playEpisode, useOpenDetails} from './SeriesDetails';
+import {DetailsLoading, playEpisode, useOpenDetails} from './shared';
 
 type SeasonDetailsProps = {
   item: BaseItemDto;

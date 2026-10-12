@@ -514,10 +514,10 @@ describe('LibraryScreen', () => {
       });
     });
 
-    it('opens the placeholder for a series', () => {
+    it('opens Details for a series', () => {
       renderLibrary(CollectionType.Tvshows);
       fireEvent.press(screen.getByTestId('library-grid-item-0'));
-      expect(navigate).toHaveBeenCalledWith('DetailsPlaceholder', {
+      expect(navigate).toHaveBeenCalledWith('Details', {
         itemId: 'm0',
         title: 'Title m0',
       });

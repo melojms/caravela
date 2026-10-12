@@ -11,7 +11,6 @@ import {SessionQueryClientProvider} from '../api/queryClient';
 import type {AuthService} from '../auth/authService';
 import {SessionProvider, useSession} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
-import {DetailsPlaceholder} from '../screens/DetailsPlaceholder';
 import {DetailsScreen} from '../screens/DetailsScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {LibraryScreen} from '../screens/LibraryScreen';
@@ -74,10 +73,6 @@ const RootStack = () => {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="Library" component={LibraryScreen} />
           <Stack.Screen name="Details" component={DetailsScreen} />
-          <Stack.Screen
-            name="DetailsPlaceholder"
-            component={DetailsPlaceholder}
-          />
           {/* Full-screen video: cut straight to it rather than sliding in. */}
           <Stack.Screen
             name="Player"

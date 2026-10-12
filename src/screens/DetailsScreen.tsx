@@ -1,21 +1,44 @@
+import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
-import React from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import React, {ComponentType} from 'react';
+import {StyleSheet, Text, View} from 'react-native';
 
 import {useItemDetails} from '../api/details';
 import {isUnauthorized} from '../api/home';
 import {FocusableButton} from '../components/FocusableButton';
 import {RootStackScreenProps} from '../navigation/types';
 import {colors, spacing, typography} from '../theme';
-import {DetailsPlaceholder} from './DetailsPlaceholder';
+import {EpisodeDetails} from './details/EpisodeDetails';
+import {GenericDetails} from './details/GenericDetails';
 import {MovieDetails} from './details/MovieDetails';
+import {PersonDetails} from './details/PersonDetails';
+import {SeasonDetails} from './details/SeasonDetails';
+import {SeriesDetails} from './details/SeriesDetails';
+import {DetailsLoading} from './details/shared';
 import {ScreenContainer} from './ScreenContainer';
 
 type DetailsProps = RootStackScreenProps<'Details'>;
 
+type DetailsPage = ComponentType<{
+  item: BaseItemDto;
+  navigation: DetailsProps['navigation'];
+}>;
+
+/** Each item kind's page; anything not listed gets `GenericDetails`. */
+const PAGES: Partial<Record<BaseItemKind, DetailsPage>> = {
+  [BaseItemKind.Movie]: MovieDetails,
+  [BaseItemKind.Video]: MovieDetails,
+  [BaseItemKind.MusicVideo]: MovieDetails,
+  [BaseItemKind.Trailer]: MovieDetails,
+  [BaseItemKind.Series]: SeriesDetails,
+  [BaseItemKind.Season]: SeasonDetails,
+  [BaseItemKind.Episode]: EpisodeDetails,
+  [BaseItemKind.Person]: PersonDetails,
+};
+
 /**
- * Item details, after androidtv's FullDetailsFragment. Movies get the full
- * page; other kinds keep the placeholder until their own task.
+ * Item details, after androidtv's FullDetailsFragment: loads the item, then
+ * shows the page for its kind.
  */
 export const DetailsScreen = ({route, navigation}: DetailsProps) => {
   const {itemId, title} = route.params;
@@ -28,14 +51,7 @@ export const DetailsScreen = ({route, navigation}: DetailsProps) => {
   } = useItemDetails(itemId);
 
   if (isPending) {
-    return (
-      <ScreenContainer testID="details-loading">
-        <View style={styles.center}>
-          <Text style={styles.loadingTitle}>{title}</Text>
-          <ActivityIndicator size="large" color={colors.cyan} />
-        </View>
-      </ScreenContainer>
-    );
+    return <DetailsLoading title={title} />;
   }
   if (isError) {
     // A 401 sends the user to the picker; nothing to show meanwhile.
@@ -59,20 +75,8 @@ export const DetailsScreen = ({route, navigation}: DetailsProps) => {
       </ScreenContainer>
     );
   }
-  if (item.Type !== BaseItemKind.Movie) {
-    // Same params and only goBack is used, so the placeholder fits as is.
-    return (
-      <DetailsPlaceholder
-        route={
-          route as unknown as RootStackScreenProps<'DetailsPlaceholder'>['route']
-        }
-        navigation={
-          navigation as unknown as RootStackScreenProps<'DetailsPlaceholder'>['navigation']
-        }
-      />
-    );
-  }
-  return <MovieDetails item={item} navigation={navigation} />;
+  const Page = (item.Type && PAGES[item.Type]) || GenericDetails;
+  return <Page item={item} navigation={navigation} />;
 };
 
 const styles = StyleSheet.create({
