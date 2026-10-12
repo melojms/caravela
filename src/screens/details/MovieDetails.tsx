@@ -108,7 +108,7 @@ export const MovieDetails = ({item, navigation}: MovieDetailsProps) => {
     (card: CardItem) => {
       const index = castCards.indexOf(card);
       const person = people?.[index];
-      navigation.push('DetailsPlaceholder', {
+      navigation.push('Details', {
         itemId: person?.Id ?? card.id,
         title: card.title,
       });

@@ -28,7 +28,6 @@ export type RootStackParamList = AuthStackParamList & {
     displayPreferencesId: string;
   };
   Details: {itemId: string; title: string};
-  DetailsPlaceholder: {itemId: string; title: string};
   /** `startMs` is the Resume position, or 0 to play from the start. */
   Player: {itemId: string; title: string; startMs: number};
 };
