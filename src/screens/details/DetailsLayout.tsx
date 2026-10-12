@@ -2,8 +2,20 @@ import type {Api} from '@jellyfin/sdk';
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import {ImageType} from '@jellyfin/sdk/lib/generated-client/models/image-type';
 import {TVFocusGuideView} from '@amazon-devices/react-native-kepler';
-import React, {ReactNode, useCallback, useRef} from 'react';
-import {ScrollView, StyleSheet} from 'react-native';
+import {NavigationContext} from '@amazon-devices/react-navigation__native';
+import React, {
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+} from 'react';
+import {
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 
 import {ImageSize, imageUrl} from '../../api/items';
 import {Backdrop} from '../../components/Backdrop';
@@ -14,6 +26,7 @@ import {
 } from '../../components/DetailsHeader';
 import {DetailsAction} from '../../components/types';
 import {layout, spacing} from '../../theme';
+import {RESTORE_FOCUS_DELAY_MS} from '../HomeScreen';
 import {ScreenContainer} from '../ScreenContainer';
 
 /** The item's Primary image (the header poster), if it has one. */
@@ -62,6 +75,44 @@ export const DetailsLayout = ({
     [],
   );
 
+  // Back from a page a card opened: Vega focuses that card again, but the
+  // page comes back scrolled to the top, so the card is off screen. Scroll
+  // back to where the page was when it left, once focus has settled.
+  const scrollY = useRef(0);
+  const onScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollY.current = event.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
+  const navigation = useContext(NavigationContext);
+  useEffect(() => {
+    if (!navigation) {
+      return undefined;
+    }
+    let leftAt: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const offBlur = navigation.addListener('blur', () => {
+      leftAt = scrollY.current;
+    });
+    const offFocus = navigation.addListener('focus', () => {
+      if (leftAt === undefined) {
+        return;
+      }
+      const y = leftAt;
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => scrollRef.current?.scrollTo({y, animated: false}),
+        RESTORE_FOCUS_DELAY_MS,
+      );
+    });
+    return () => {
+      offBlur();
+      offFocus();
+      clearTimeout(timer);
+    };
+  }, [navigation]);
+
   return (
     <ScreenContainer
       background={<Backdrop uri={backdropUri} />}
@@ -69,6 +120,8 @@ export const DetailsLayout = ({
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={styles.content}>
         <DetailsHeader {...header} />
         {actions.length > 0 ? (
