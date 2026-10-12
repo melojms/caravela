@@ -67,10 +67,10 @@ What works today:
 - Details pages for movies, series, seasons, episodes and people: cast and crew, seasons and episodes, next up, similar titles, watched and favourite toggles.
 - Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin.
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
+- Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
 
 Coming next, roughly in this order:
 
-- Player controls with trickplay previews and chapters
 - Intro skip, autoplay of the next episode and Next up
 - Search
 - Settings
