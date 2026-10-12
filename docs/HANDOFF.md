@@ -3,7 +3,7 @@
 Read this file and docs/PLAN.md before starting. Last updated 2026-10-12 (after task 7.5).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status (task 11: player overlay) and the playback notes in docs/PLAN.md ("Playback design"). Then read what tasks 8–10 built (`docs/tasks/08*.md`–`10*.md`, `src/playback/`, `src/screens/PlayerScreen.tsx`) and androidtv's player overlay in the reference clone.
+1. Read the "Next" item under Status (task 11: player overlay) and the playback notes in docs/PLAN.md ("Playback design"). Then read what tasks 8–10 built (`docs/tasks/08*.md`–`10*.md`, `src/playback/`, `src/screens/PlayerScreen.tsx`) and androidtv's player overlay in the reference clone (`app/src/main/java/org/jellyfin/androidtv/ui/playback/`: `CustomPlaybackOverlayFragment.java`, `overlay/`, `VideoSpeedController.kt`, `PlaybackController.java`; trickplay and chapters under `overlay/` and `ui/player/video/`).
 2. Describe the approach and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
 4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
@@ -78,17 +78,20 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-12 (after 
     - 7.5b `DetailsHeader` `subtitle` (above the title) and `posterShape` (`poster` / `wide` 16:9 / `square`, fixed width); `DetailsLayout` (backdrop, header, actions, rows, scroll to top when the buttons regain focus, only the first action focused on open, `[]` → no action row) and `primaryImageUri`.
     - 7.5c/d pages. Series: Resume / "Play next up" / Play of the next-up episode, or the first episode (specials skipped) when nothing is next up; rows Next up, Seasons, Cast & crew, More like this. Season: Play/Resume of the first unwatched episode, Episodes row. Episode: Resume/Play/Watched/Favorite/Previous episode/Go to series; rows Next episodes, Guest stars. Person: Favorite (androidtv has it), rows Movies / TV series / Episodes. Pages that pick a Play target show the loading view until it's known, so focus lands on the right first button. Shared helpers in `src/screens/details/shared.tsx`.
     - 7.5f (Fire TV) fixes: a details page restores its scroll position after Back, so the refocused card is on screen; a started series whose next episode has no position says "Play next up" (androidtv's label), not "Resume from 0:00".
-- **Checks on `task/075-tv-details`:** lint 0 errors (44 warnings, system-library notices), Jest 1128 passing, `npm run build:release` OK. Simulator: every page, navigation and toggles. Fire TV (as `demo`): Grand Tour S3E13 direct play (4.4 s) and Resume at the saved position; Chernobyl S1E1 transcode (container only, 2.7 s), subtitle switch in the same session, Back ends the transcode; series Play → next-up episode; fully watched series → first episode (remux); season Play → first unwatched; Previous / Go to series / person pages / Back. **E-AC-3 is passed through** in that remux/transcode and has sound on this TV (the user confirmed), unlike the 10f-1 note that it's always converted; check what decides it before task 11 touches audio. `demo`'s Next up is empty after the check's cleanup (the user chose to leave it).
+- **Checks on `main` after task 7.5:** lint 0 errors (44 warnings, system-library notices), Jest 1128 passing, `npm run build:release` OK. Simulator: every page, navigation and toggles. Fire TV (as `demo`): Grand Tour S3E13 direct play (4.4 s) and Resume at the saved position; Chernobyl S1E1 transcode (container only, 2.7 s), subtitle switch in the same session, Back ends the transcode; series Play → next-up episode; fully watched series → first episode (remux); season Play → first unwatched; Previous / Go to series / person pages / Back. **E-AC-3 is passed through** in that remux/transcode and has sound on this TV (the user confirmed), unlike the 10f-1 note that it's always converted; check what decides it before task 11 touches audio. `demo`'s Next up is empty after the check's cleanup (the user chose to leave it).
 - **Next: task 11 (player overlay: trickplay, chapters, speed, zoom).** Start with the approach and wait for approval. Fold in from task 10:
   - Embedded subtitles take ~30 s to extract the first time (server side); show a "Loading subtitles" hint.
   - While a reloaded session loads after a switch the overlay is hidden, so Back leaves the player.
   - Subtitles are hidden under the overlay; Amazon's caption guidance is to move them above the controls instead. Decide with the new overlay.
   - The watchdog doesn't cover stalls after playback started; a user who pauses during a long load gets the error after 30 s.
+  - From 7.5: the overlay shows only the episode name (add the series and `S1 E2`); the remote's fast-forward does nothing yet.
+  - Before touching audio: E-AC-3 was passed through (with sound) in task 7.5's Fire TV check, but 10f-1 says it's always converted; find out what decides it.
 - **Follow-ups:**
   - Servers: there's no way to remove a saved server or user (the TV now also has Jellyfin's demo server and its `demo` user, added for the README screenshots).
   - Servers: "Change server" always opens Add server, even with several saved; getting back to a saved server means typing its address again.
   - Password screen: Down from the field lands on "Use Quick Connect" rather than "Sign in".
   - Jest: `UserPickerScreen › shows the server name and address` fails now and then on slow (cold-cache) runs.
+  - Jest: `RootNavigator › starts at UserPicker with the expired notice` fails in about half of full runs under load (the picker is still loading when it asserts); it passes alone.
   - Playback: Vega logs `missing wants declaration for service 'com.amazon.audio.system'` on every play; consider adding it to the manifest.
   - Playback: an HLS session can't recover if the surface is destroyed and re-created mid-play (`startHls` runs once).
   - Playback: `buildDeviceProfile` rebuilds the profile on every play now that a bitrate is always passed (probes stay cached).
@@ -108,7 +111,6 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-12 (after 
   - Details: a failed first-episode fetch (series Play with nothing next up) or previous/next episodes failing show nothing; no toast or retry yet.
   - Details: episodes with no director show "Directed by Unknown" (androidtv does the same). The season page shows Play for the first unwatched episode even when another episode in it has a position.
   - Details: `GenericDetails` (BoxSet etc.) is only covered by tests; open a BoxSet once.
-  - Player: the overlay shows only the episode name, not the series or `S1 E2`.
   - Details: tests for a missing item `Id`, Back while a toggle is saving, the cast list changing after a refetch, and "Ends" not updating while the page stays open. Opening a similar movie already in the stack adds another copy.
   - Details buttons don't return focus to the last focused button (androidtv does).
   - On the simulator, right after Quick Connect sign-in Caravela went to the background once; relaunching (no reinstall) kept the session.
