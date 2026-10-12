@@ -20,6 +20,14 @@ export type PlayerListeners = {
   onError?(message: string): void;
 };
 
+export type PlayerOptions = {
+  /**
+   * The rate to start at (1 = normal). The screen passes the speed it keeps
+   * for the app's lifetime, so a Retry or a track switch keeps it.
+   */
+  playbackRate?: number;
+};
+
 /** W3C `MediaError` codes. */
 const MEDIA_ERR_ABORTED = 1;
 const MEDIA_ERR_NETWORK = 2;
@@ -47,6 +55,23 @@ export const START_TIMEOUT_MESSAGE =
  * events; any progress event restarts the wait.
  */
 export const START_TIMEOUT_MS = 30000;
+
+export const STALL_TIMEOUT_MESSAGE =
+  'Playback stopped. Check the connection to the server.';
+/**
+ * The same rule after the first `playing`: a stall (waiting, seeking, or a
+ * play that doesn't resume) that goes this long without progress fails.
+ */
+export const STALL_TIMEOUT_MS = START_TIMEOUT_MS;
+
+/**
+ * A seek to or past the end lands this far before it (androidtv's
+ * `Utils.getSafeSeekPosition`), so it plays out instead of overshooting.
+ */
+export const SEEK_END_MARGIN_MS = 1000;
+
+const isRate = (rate: number | undefined): rate is number =>
+  rate !== undefined && Number.isFinite(rate) && rate > 0;
 
 /** A readable message for a `MediaError` (or nothing the player set). */
 export function mediaErrorMessage(error?: {code?: number} | null): string {
@@ -105,8 +130,14 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * `play()` once the load resolved and the surface is set. Shaka's start time
  * replaces the resume seek.
  *
- * Until the first `playing`, a start watchdog turns a load that stops
- * making progress into the error state (Retry makes a new controller).
+ * A watchdog turns a start that stops making progress, or a stall after
+ * it (waiting / seeking / a play that doesn't resume), into the error state
+ * (Retry makes a new controller). A pause suspends it; play re-arms it.
+ *
+ * The playback rate is set as both `defaultPlaybackRate` and `playbackRate`:
+ * Vega's `load()` (setting `src`, or Shaka attaching its MediaSource) resets
+ * the rate to the default. In HLS mode Shaka's own rate controller gets it
+ * too once loaded, since it pauses buffering with rate 0 and restores its own.
  *
  * `destroy()` destroys Shaka first (HLS), then pauses, clears the surface,
  * `deinitialize()`s and removes the listeners; a surface destroyed after
@@ -132,10 +163,19 @@ export class PlayerController {
    */
   private initialSeek: 'pending' | 'seeking' | 'done';
   private started = false;
-  /** The first `playing` came: the start watchdog is done. */
+  /** The first `playing` came: the watchdog now only watches stalls. */
   private hasPlayed = false;
-  /** Fails the start if nothing moves for {@link START_TIMEOUT_MS}. */
-  private startTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Fails playback if nothing moves for {@link START_TIMEOUT_MS} (before the
+   * first `playing`) or {@link STALL_TIMEOUT_MS} (a stall after it).
+   */
+  private watchdog?: ReturnType<typeof setTimeout>;
+  /** A `pause` came and no `play` since: the watchdog waits. */
+  private suspended = false;
+  private hasMetadata = false;
+  /** Where the last seek goes until its `seeked`; relative seeks add to it. */
+  private pendingSeekMs?: number;
+  private rate: number;
   private lastTimeupdate?: number;
   private state: PlayerState = 'loading';
   private failed = false;
@@ -149,7 +189,9 @@ export class PlayerController {
     api: Api,
     private readonly session: PlaybackSession,
     private readonly listeners: PlayerListeners = {},
+    options: PlayerOptions = {},
   ) {
+    this.rate = isRate(options.playbackRate) ? options.playbackRate : 1;
     this.initialSeek =
       session.mode === 'url' && session.startMs > 0 ? 'pending' : 'done';
     this.subtitleIndex = session.subtitleStreamIndex;
@@ -164,9 +206,9 @@ export class PlayerController {
       seeking: this.onWaiting,
       seeked: this.onSeeked,
       timeupdate: this.onTimeupdate,
-      progress: this.onStartProgress,
-      canplay: this.onStartProgress,
-      loadeddata: this.onStartProgress,
+      progress: this.onProgress,
+      canplay: this.onProgress,
+      loadeddata: this.onProgress,
       ended: this.onEnded,
       error: this.onError,
     };
@@ -192,6 +234,24 @@ export class PlayerController {
 
   get playerState(): PlayerState {
     return this.state;
+  }
+
+  /** The rate asked for (1 = normal), whatever Shaka does while buffering. */
+  get playbackRate(): number {
+    return this.rate;
+  }
+
+  /**
+   * The overlay can seek: the media loaded (and a resume seek finished), the
+   * duration is known, and playback hasn't failed or been destroyed.
+   */
+  get canSeek(): boolean {
+    return (
+      this.canControl() &&
+      this.hasMetadata &&
+      this.initialSeek === 'done' &&
+      this.durationMs > 0
+    );
   }
 
   /** From `KeplerVideoSurfaceView.onSurfaceViewCreated`. */
@@ -238,12 +298,36 @@ export class PlayerController {
     }
   }
 
+  /** Seeks to `ms`, kept within `0..durationMs - SEEK_END_MARGIN_MS`. */
   seekTo(ms: number) {
-    if (this.canControl()) {
-      attempt('seek', () => {
-        this.player.currentTime = Math.max(0, ms) / 1000;
-      });
+    if (!this.canControl() || !Number.isFinite(ms)) {
+      return;
     }
+    const target = this.clampSeek(ms);
+    this.pendingSeekMs = target;
+    attempt('seek', () => {
+      this.player.currentTime = target / 1000;
+    });
+  }
+
+  /**
+   * Seeks `deltaMs` from the position, or from where a seek still in flight
+   * goes (androidtv adds repeated skips up the same way). Needs `canSeek`.
+   */
+  seekBy(deltaMs: number) {
+    if (!this.canSeek || !Number.isFinite(deltaMs)) {
+      return;
+    }
+    this.seekTo((this.pendingSeekMs ?? this.positionMs) + deltaMs);
+  }
+
+  /** Sets the rate (e.g. 0.25–2). Ignored once destroyed or failed. */
+  setPlaybackRate(rate: number) {
+    if (!this.live() || !isRate(rate)) {
+      return;
+    }
+    this.rate = rate;
+    this.applyRate();
   }
 
   /**
@@ -269,7 +353,7 @@ export class PlayerController {
       return this.destroying;
     }
     this.destroyed = true;
-    this.clearStartTimer();
+    this.clearWatchdog();
     // The reporter reads the position now, before the player goes away.
     const stopped = this.reporter.stop();
     this.destroying = (async () => {
@@ -307,7 +391,8 @@ export class PlayerController {
     for (const type of MEDIA_EVENTS) {
       this.player.addEventListener(type, this.handlers[type]);
     }
-    this.armStartTimer();
+    this.applyRate();
+    this.armWatchdog();
     if (this.session.mode === 'hls') {
       this.loadShaka();
     }
@@ -335,6 +420,8 @@ export class PlayerController {
       () => {
         if (this.live()) {
           this.loaded = true;
+          // Shaka read the rate during the load; a change since needs it.
+          this.applyRate();
           this.startHls();
         }
       },
@@ -407,6 +494,34 @@ export class PlayerController {
     }
   }
 
+  /**
+   * Before Shaka loaded (and in URL mode) the element takes the rate; once
+   * Shaka loaded, Shaka sets it, so its buffering pause isn't undone.
+   */
+  private applyRate() {
+    if (!this.initialized || !this.live()) {
+      return;
+    }
+    const rate = this.rate;
+    const viaShaka = this.shaka !== undefined && this.loaded;
+    attempt('playbackRate', () => {
+      this.player.defaultPlaybackRate = rate;
+      if (!viaShaka) {
+        this.player.playbackRate = rate;
+      }
+    });
+    if (viaShaka) {
+      this.shaka?.setPlaybackRate(rate);
+    }
+  }
+
+  private clampSeek(ms: number) {
+    const duration = this.durationMs;
+    const end =
+      duration > 0 ? Math.max(0, duration - SEEK_END_MARGIN_MS) : Infinity;
+    return Math.min(Math.max(0, ms), end);
+  }
+
   private canControl() {
     return this.initialized && this.loaded && !this.destroyed && !this.failed;
   }
@@ -439,40 +554,49 @@ export class PlayerController {
     }
   }
 
-  /** (Re)starts the start watchdog; nothing once the first `playing` came. */
-  private armStartTimer() {
-    this.clearStartTimer();
-    if (this.hasPlayed || !this.live()) {
+  /** (Re)starts the watchdog; nothing while paused, ended or done. */
+  private armWatchdog() {
+    this.clearWatchdog();
+    if (!this.live() || this.suspended || this.state === 'ended') {
       return;
     }
-    this.startTimer = setTimeout(() => {
-      this.startTimer = undefined;
-      if (!this.hasPlayed && this.live()) {
-        this.fail(START_TIMEOUT_MESSAGE);
+    const [message, timeout] = this.hasPlayed
+      ? [STALL_TIMEOUT_MESSAGE, STALL_TIMEOUT_MS]
+      : [START_TIMEOUT_MESSAGE, START_TIMEOUT_MS];
+    this.watchdog = setTimeout(() => {
+      this.watchdog = undefined;
+      if (this.live()) {
+        this.fail(message);
       }
-    }, START_TIMEOUT_MS);
+    }, timeout);
   }
 
-  private clearStartTimer() {
-    if (this.startTimer !== undefined) {
-      clearTimeout(this.startTimer);
-      this.startTimer = undefined;
+  private clearWatchdog() {
+    if (this.watchdog !== undefined) {
+      clearTimeout(this.watchdog);
+      this.watchdog = undefined;
     }
   }
 
-  /** Data arrived or decoding moved: the start isn't stuck (yet). */
-  private onStartProgress = () => {
-    if (!this.hasPlayed) {
-      this.armStartTimer();
+  /** Data arrived or decoding moved: a running watchdog starts over. */
+  private onProgress = () => {
+    if (this.watchdog !== undefined) {
+      this.armWatchdog();
     }
   };
 
   private onTimeupdate = () => {
     this.emitPosition();
     const time = this.read(() => this.player.currentTime);
-    if (time !== this.lastTimeupdate) {
-      this.lastTimeupdate = time;
-      this.onStartProgress();
+    if (time === this.lastTimeupdate) {
+      return;
+    }
+    this.lastTimeupdate = time;
+    if (this.hasPlayed && this.state !== 'loading') {
+      // Playing along (e.g. after a `seeked` with no `playing`).
+      this.clearWatchdog();
+    } else {
+      this.onProgress();
     }
   };
 
@@ -486,8 +610,17 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
-    this.onStartProgress();
+    this.hasMetadata = true;
+    this.onProgress();
     this.emitPosition();
+    // URL mode: in case the native load reset the rate after the JS side
+    // restored it.
+    if (
+      this.session.mode === 'url' &&
+      this.read(() => this.player.playbackRate) !== this.rate
+    ) {
+      this.applyRate();
+    }
     if (this.initialSeek === 'pending') {
       this.initialSeek = 'seeking';
       attempt('initial seek', () => {
@@ -497,9 +630,16 @@ export class PlayerController {
   };
 
   private onPlay = () => {
-    if (this.live()) {
-      this.reporter.update();
+    if (!this.live()) {
+      return;
     }
+    this.suspended = false;
+    // A start already being watched keeps its timer; after a pause (or
+    // once started) this waits for `playing`.
+    if (this.watchdog === undefined) {
+      this.armWatchdog();
+    }
+    this.reporter.update();
   };
 
   private onPlaying = () => {
@@ -507,7 +647,8 @@ export class PlayerController {
       return;
     }
     this.hasPlayed = true;
-    this.clearStartTimer();
+    this.suspended = false;
+    this.clearWatchdog();
     this.setState('playing');
     if (!this.started && this.initialSeek === 'done') {
       this.started = true;
@@ -519,13 +660,20 @@ export class PlayerController {
     if (!this.live() || this.state === 'ended') {
       return;
     }
+    this.suspended = true;
+    this.clearWatchdog();
     this.setState('paused');
     this.reporter.update();
   };
 
   private onWaiting = () => {
-    if (this.live() && this.state !== 'ended') {
-      this.setState('loading');
+    if (!this.live() || this.state === 'ended') {
+      return;
+    }
+    this.setState('loading');
+    // A stall after the start; repeated events don't extend it.
+    if (this.hasPlayed && this.watchdog === undefined) {
+      this.armWatchdog();
     }
   };
 
@@ -533,6 +681,7 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
+    this.pendingSeekMs = undefined;
     this.emitPosition();
     if (this.initialSeek === 'seeking') {
       this.initialSeek = 'done';
@@ -551,6 +700,7 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
+    this.clearWatchdog();
     this.setState('ended');
     this.reporter.stop();
   };
@@ -564,7 +714,7 @@ export class PlayerController {
 
   private fail(message: string) {
     this.failed = true;
-    this.clearStartTimer();
+    this.clearWatchdog();
     this.reporter.stop();
     this.listeners.onError?.(message);
   }

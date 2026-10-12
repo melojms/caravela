@@ -16,7 +16,8 @@ type Listener = (event?: {type: string; target: unknown}) => void;
  * makes. Tests read `VideoPlayer.instances`, set `currentTime` / `duration` /
  * `paused` / `error` directly and call `fire(type)` to send media events.
  * `play()` / `pause()` / setting `currentTime` only record the call; the
- * test fires the events that would follow.
+ * test fires the events that would follow. Setting `src` resets
+ * `playbackRate` to `defaultPlaybackRate`, as Vega's `load()` does.
  */
 export class VideoPlayer {
   static instances: VideoPlayer[] = [];
@@ -33,6 +34,8 @@ export class VideoPlayer {
   duration = NaN;
   paused = true;
   ended = false;
+  defaultPlaybackRate = 1;
+  playbackRate = 1;
   error: {code: number; message: string} | null = null;
 
   private listeners = new Map<string, Set<Listener>>();
@@ -68,6 +71,7 @@ export class VideoPlayer {
       set: (value: string) => {
         src = value;
         this.srcSets.push(value);
+        this.playbackRate = this.defaultPlaybackRate;
       },
     });
     Object.defineProperty(this, 'currentTime', {

@@ -195,6 +195,54 @@ describe('load', () => {
   });
 });
 
+describe('playback rate', () => {
+  it("sets Shaka's rate once loaded, without the trick-play track", async () => {
+    const session = adapter.createShakaSession(media);
+    await session.load(URL, 0);
+    session.setPlaybackRate(1.5);
+    expect(lastPlayer().trickPlay).toHaveBeenCalledWith(1.5, false);
+  });
+
+  it('is ignored before the load resolves', async () => {
+    const session = adapter.createShakaSession(media);
+    const load = deferred();
+    lastPlayer().load.mockReturnValueOnce(load.promise);
+    const loading = session.load(URL, 0);
+    session.setPlaybackRate(2);
+    load.resolve();
+    await loading;
+    expect(lastPlayer().trickPlay).not.toHaveBeenCalled();
+  });
+
+  it('is ignored after a failed load and after destroy', async () => {
+    const session = adapter.createShakaSession(media);
+    lastPlayer().load.mockReturnValueOnce(Promise.reject(shakaError(1)));
+    await expect(session.load(URL, 0)).rejects.toBeDefined();
+    session.setPlaybackRate(2);
+
+    const other = adapter.createShakaSession(media);
+    await other.load(URL, 0);
+    await other.destroy();
+    other.setPlaybackRate(2);
+    for (const player of shaka.Player.instances) {
+      expect(player.trickPlay).not.toHaveBeenCalled();
+    }
+  });
+
+  it('logs a throwing trickPlay and never throws', async () => {
+    const session = adapter.createShakaSession(media);
+    await session.load(URL, 0);
+    lastPlayer().trickPlay.mockImplementationOnce(() => {
+      throw new Error('no rate controller');
+    });
+    expect(() => session.setPlaybackRate(2)).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      'Shaka trickPlay failed',
+      expect.any(Error),
+    );
+  });
+});
+
 describe('errors', () => {
   it('forwards a critical error with a readable message', () => {
     const onError = jest.fn();

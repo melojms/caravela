@@ -115,6 +115,14 @@ export type ShakaSessionOptions = {
 export type ShakaSession = {
   /** Attaches to the player and loads the HLS playlist at `startSeconds`. */
   load(url: string, startSeconds: number): Promise<void>;
+  /**
+   * Hands a playback rate to Shaka once loaded. Its `PlayRateController`
+   * keeps the rate it read at load and writes it back to the element after
+   * each buffering pause (rate 0), so a rate set only on the element would
+   * revert when Vega sends no `ratechange`. Ignored before the load, and
+   * after destroy.
+   */
+  setPlaybackRate(rate: number): void;
   /** Unloads, then destroys Shaka. Never rejects; safe to call again. */
   destroy(): Promise<void>;
 };
@@ -133,6 +141,7 @@ export function createShakaSession(
 
   const player = new shakaLib.Player();
   let destroying: Promise<void> | undefined;
+  let loaded = false;
 
   player.addEventListener('error', (event: Event) => {
     const error = (event as Event & {detail?: ShakaErrorLike}).detail;
@@ -174,6 +183,19 @@ export function createShakaSession(
         return;
       }
       await player.load(url, startSeconds);
+      loaded = true;
+    },
+
+    setPlaybackRate(rate) {
+      if (!loaded || destroying) {
+        return;
+      }
+      try {
+        // No trick-play track: that's for fast-forward scrubbing.
+        player.trickPlay(rate, false);
+      } catch (reason) {
+        log('trickPlay failed', reason);
+      }
     },
 
     destroy() {

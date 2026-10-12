@@ -26,6 +26,7 @@ class Player {
   configure = jest.fn((_config: unknown, _value?: unknown) => true);
   load = jest.fn((_url: string, _startTime?: number) => Player.loadResult());
   unload = jest.fn(() => Promise.resolve());
+  trickPlay = jest.fn((_rate: number, _useTrickPlayTrack?: boolean) => {});
   destroy = jest.fn(() => Promise.resolve());
 
   addEventListener = jest.fn((type: string, listener: Listener) => {

@@ -5,6 +5,10 @@ import {
   INIT_ERROR_MESSAGE,
   PlayerController,
   type PlayerListeners,
+  type PlayerOptions,
+  SEEK_END_MARGIN_MS,
+  STALL_TIMEOUT_MESSAGE,
+  STALL_TIMEOUT_MS,
   START_TIMEOUT_MESSAGE,
   START_TIMEOUT_MS,
   UNKNOWN_PLAYER_ERROR,
@@ -56,11 +60,15 @@ const deferred = () => {
 };
 
 /** A controller and its fake player, initialized and showing on `surface-1`. */
-const setup = async (session: Partial<PlaybackSession> = {}) => {
+const setup = async (
+  session: Partial<PlaybackSession> = {},
+  options?: PlayerOptions,
+) => {
   const controller = new PlayerController(
     api,
     {...SESSION, ...session},
     listeners,
+    options,
   );
   const player = Fake.instances.at(-1)!;
   controller.attachSurface('surface-1');
@@ -532,13 +540,46 @@ describe('start watchdog', () => {
     expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
   });
 
-  it('stops after the first playing, even when playback stalls later', async () => {
+  it('stops on the first playing, while playback goes on', async () => {
     const {player} = await setup();
     startPlaying(player);
-    player.fire('waiting');
+    expect(jest.getTimerCount()).toBe(0);
+    for (let second = 1; second <= 100; second++) {
+      player.setPosition(second);
+      player.fire('timeupdate');
+      advance(1000);
+    }
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('waits while paused before the first playing, and play re-arms it', async () => {
+    const {controller, player} = await setup();
+    advance(START_TIMEOUT_MS - 1000);
+    player.paused = true;
+    player.fire('pause');
+    expect(jest.getTimerCount()).toBe(0);
     advance(START_TIMEOUT_MS * 10);
     expect(listeners.onError).not.toHaveBeenCalled();
+    // Progress while paused doesn't start it either.
+    player.fire('progress');
     expect(jest.getTimerCount()).toBe(0);
+
+    player.paused = false;
+    player.fire('play');
+    advance(START_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+    expect(controller.playerState).toBe('paused');
+  });
+
+  it("isn't restarted by a play during the start", async () => {
+    const {player} = await setup();
+    advance(START_TIMEOUT_MS - 1000);
+    player.paused = false;
+    player.fire('play');
+    advance(1000);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
   });
 
   it('is cleared on destroy', async () => {
@@ -585,6 +626,413 @@ describe('start watchdog', () => {
     expect(listeners.onError).toHaveBeenCalledTimes(1);
     expect(retry.controller.playerState).toBe('playing');
     expect(reporter.start).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('stall watchdog', () => {
+  const advance = (ms: number) => jest.advanceTimersByTime(ms);
+
+  /** Playing at 10 s, past the start watchdog. */
+  const setupPlaying = async () => {
+    const result = await setup();
+    startPlaying(result.player);
+    result.player.setPosition(10);
+    result.player.fire('timeupdate');
+    return result;
+  };
+
+  it('fails after 30 s of waiting after the first playing', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('waiting');
+    expect(controller.playerState).toBe('loading');
+    advance(STALL_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    // The error path: controls do nothing.
+    controller.seekBy(30000);
+    expect(player.seeks).toEqual([]);
+  });
+
+  it("isn't extended by repeated waiting events", async () => {
+    const {player} = await setupPlaying();
+    player.fire('waiting');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.fire('waiting');
+    player.fire('seeking');
+    advance(1000);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it.each(['progress', 'canplay', 'loadeddata'])(
+    'starts over on %s',
+    async (type) => {
+      const {player} = await setupPlaying();
+      player.fire('waiting');
+      advance(STALL_TIMEOUT_MS - 1000);
+      player.fire(type);
+      advance(STALL_TIMEOUT_MS - 1000);
+      expect(listeners.onError).not.toHaveBeenCalled();
+      advance(1000);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    },
+  );
+
+  it('starts over on a timeupdate that moves, not on one that stays', async () => {
+    const {player} = await setupPlaying();
+    player.fire('waiting');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.setPosition(10.5);
+    player.fire('timeupdate');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.fire('timeupdate');
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1000);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('stops when playing resumes', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('waiting');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.fire('playing');
+    expect(controller.playerState).toBe('playing');
+    expect(jest.getTimerCount()).toBe(0);
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('watches a seek, and stops once the position moves after seeked', async () => {
+    const {controller, player} = await setupPlaying();
+    controller.seekTo(60000);
+    player.fire('seeking');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.setPosition(60);
+    player.fire('seeked');
+    expect(controller.playerState).toBe('playing');
+    // No `playing` after this seek: the first moving timeupdate ends it.
+    player.setPosition(60.25);
+    player.fire('timeupdate');
+    expect(jest.getTimerCount()).toBe(0);
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('fails a seeked that never moves on', async () => {
+    const {controller, player} = await setupPlaying();
+    controller.seekTo(60000);
+    player.fire('seeking');
+    player.setPosition(60);
+    player.fire('seeked');
+    advance(STALL_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('waits while paused, and play re-arms it until playing', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('waiting');
+    advance(STALL_TIMEOUT_MS - 1000);
+    player.paused = true;
+    player.fire('pause');
+    expect(jest.getTimerCount()).toBe(0);
+    // Seeking while paused doesn't count either.
+    controller.seekTo(120000);
+    player.fire('seeking');
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    player.paused = false;
+    player.fire('play');
+    advance(STALL_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it("doesn't fire after a pause and a play that resumes", async () => {
+    const {player} = await setupPlaying();
+    player.paused = true;
+    player.fire('pause');
+    advance(STALL_TIMEOUT_MS * 2);
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it("doesn't run once ended", async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('waiting');
+    player.fire('ended');
+    expect(controller.playerState).toBe('ended');
+    expect(jest.getTimerCount()).toBe(0);
+    player.fire('waiting');
+    player.fire('play');
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('is cleared on destroy', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('waiting');
+    await controller.destroy();
+    expect(jest.getTimerCount()).toBe(0);
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('is cleared by a player error, which is the only one reported', async () => {
+    const {player} = await setupPlaying();
+    player.fire('waiting');
+    player.error = {code: 2, message: 'network'};
+    player.fire('error');
+    advance(STALL_TIMEOUT_MS * 10);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(
+      mediaErrorMessage({code: 2}),
+    );
+  });
+});
+
+describe('seeking', () => {
+  /** Metadata loaded (2 h), playing at `seconds`. */
+  const setupAt = async (seconds: number) => {
+    const result = await setup();
+    startPlaying(result.player);
+    result.player.setPosition(seconds);
+    return result;
+  };
+
+  it('seeks by a delta from the position', async () => {
+    const {controller, player} = await setupAt(600);
+    controller.seekBy(30000);
+    controller.seekBy(-10000);
+    // The second adds to the first, which hasn't landed yet.
+    expect(player.seeks).toEqual([630, 620]);
+
+    player.fire('seeked');
+    player.setPosition(625);
+    controller.seekBy(-10000);
+    expect(player.seeks.at(-1)).toBe(615);
+  });
+
+  it('clamps seekBy and seekTo at the start', async () => {
+    const {controller, player} = await setupAt(5);
+    controller.seekBy(-10000);
+    controller.seekTo(-5000);
+    expect(player.seeks).toEqual([0, 0]);
+  });
+
+  it(`clamps seekBy and seekTo ${SEEK_END_MARGIN_MS} ms before the end`, async () => {
+    const {controller, player} = await setupAt(7190);
+    const end = (7200000 - SEEK_END_MARGIN_MS) / 1000;
+    controller.seekBy(30000);
+    controller.seekTo(7200000);
+    controller.seekTo(9000000);
+    expect(player.seeks).toEqual([end, end, end]);
+    controller.seekTo(7199500);
+    expect(player.seeks.at(-1)).toBe(end);
+    controller.seekTo(7198000);
+    expect(player.seeks.at(-1)).toBe(7198);
+    controller.seekTo(7000000);
+    expect(player.seeks.at(-1)).toBe(7000);
+  });
+
+  it('clamps at 0 for media shorter than the margin', async () => {
+    const {controller, player} = await setup({durationMs: undefined});
+    player.duration = 0.5;
+    player.fire('loadedmetadata');
+    controller.seekTo(400);
+    expect(player.seeks).toEqual([0]);
+  });
+
+  it("seekTo doesn't clamp the end when the duration is unknown", async () => {
+    const {controller, player} = await setup({durationMs: undefined});
+    expect(controller.durationMs).toBe(0);
+    controller.seekTo(90000);
+    expect(player.seeks).toEqual([90]);
+  });
+
+  it('ignores a delta or position that is not a number', async () => {
+    const {controller, player} = await setupAt(600);
+    controller.seekBy(NaN);
+    controller.seekTo(Infinity);
+    expect(player.seeks).toEqual([]);
+  });
+
+  describe('canSeek', () => {
+    it('is false until the metadata loads, then true', async () => {
+      const {controller, player} = await setup();
+      expect(controller.canSeek).toBe(false);
+      controller.seekBy(30000);
+      expect(player.seeks).toEqual([]);
+
+      player.duration = 7200;
+      player.fire('loadedmetadata');
+      expect(controller.canSeek).toBe(true);
+    });
+
+    it('is false until the resume seek lands', async () => {
+      const {controller, player} = await setup({startMs: 90000});
+      player.duration = 7200;
+      player.fire('loadedmetadata');
+      expect(controller.canSeek).toBe(false);
+      player.fire('seeking');
+      player.fire('seeked');
+      expect(controller.canSeek).toBe(true);
+    });
+
+    it('is false without a duration', async () => {
+      const {controller, player} = await setup({durationMs: undefined});
+      player.fire('loadedmetadata');
+      expect(controller.canSeek).toBe(false);
+      controller.seekBy(30000);
+      expect(player.seeks).toEqual([]);
+    });
+
+    it('is false before the surface is set', async () => {
+      const controller = new PlayerController(api, SESSION, listeners);
+      await controller.ready;
+      expect(controller.canSeek).toBe(false);
+    });
+
+    it('is false after an error', async () => {
+      const {controller, player} = await setupAt(600);
+      player.error = {code: 3, message: 'decode'};
+      player.fire('error');
+      expect(controller.canSeek).toBe(false);
+    });
+
+    it('is false after destroy', async () => {
+      const {controller} = await setupAt(600);
+      await controller.destroy();
+      expect(controller.canSeek).toBe(false);
+    });
+  });
+});
+
+describe('playback rate', () => {
+  it('starts at 1 by default', async () => {
+    const {controller, player} = await setup();
+    expect(controller.playbackRate).toBe(1);
+    expect(player.playbackRate).toBe(1);
+  });
+
+  it('starts at the rate from the options, kept through the load reset', async () => {
+    const init = deferred();
+    initializeResult.mockReturnValueOnce(init.promise);
+    const controller = new PlayerController(api, SESSION, listeners, {
+      playbackRate: 1.5,
+    });
+    const player = Fake.instances[0];
+    expect(controller.playbackRate).toBe(1.5);
+    controller.attachSurface('surface-1');
+    init.resolve();
+    await controller.ready;
+
+    // Setting src reset playbackRate to defaultPlaybackRate.
+    expect(player.srcSets).toEqual([SESSION.url]);
+    expect(player.defaultPlaybackRate).toBe(1.5);
+    expect(player.playbackRate).toBe(1.5);
+  });
+
+  it('ignores a starting rate that is not a positive number', async () => {
+    const {controller, player} = await setup({}, {playbackRate: 0});
+    expect(controller.playbackRate).toBe(1);
+    expect(player.playbackRate).toBe(1);
+  });
+
+  it('applies a rate set before the load once initialized, kept after the load', async () => {
+    const init = deferred();
+    initializeResult.mockReturnValueOnce(init.promise);
+    const controller = new PlayerController(api, SESSION, listeners);
+    const player = Fake.instances[0];
+    controller.setPlaybackRate(0.75);
+    expect(controller.playbackRate).toBe(0.75);
+    expect(player.playbackRate).toBe(1);
+
+    init.resolve();
+    await controller.ready;
+    expect(player.playbackRate).toBe(0.75);
+    controller.attachSurface('surface-1');
+    expect(player.srcSets).toEqual([SESSION.url]);
+    expect(player.playbackRate).toBe(0.75);
+  });
+
+  it('sets the rate while playing', async () => {
+    const {controller, player} = await setup();
+    startPlaying(player);
+    controller.setPlaybackRate(2);
+    expect(controller.playbackRate).toBe(2);
+    expect(player.playbackRate).toBe(2);
+    expect(player.defaultPlaybackRate).toBe(2);
+
+    controller.setPlaybackRate(1);
+    expect(player.playbackRate).toBe(1);
+  });
+
+  it('restores a rate the native load reset, on loadedmetadata', async () => {
+    const {player} = await setup({}, {playbackRate: 1.25});
+    player.playbackRate = 1;
+    player.fire('loadedmetadata');
+    expect(player.playbackRate).toBe(1.25);
+  });
+
+  it('ignores a rate that is not a positive number', async () => {
+    const {controller, player} = await setup({}, {playbackRate: 1.5});
+    controller.setPlaybackRate(0);
+    controller.setPlaybackRate(-1);
+    controller.setPlaybackRate(NaN);
+    expect(controller.playbackRate).toBe(1.5);
+    expect(player.playbackRate).toBe(1.5);
+  });
+
+  it('is ignored after destroy', async () => {
+    const {controller, player} = await setup({}, {playbackRate: 1.5});
+    await controller.destroy();
+    controller.setPlaybackRate(2);
+    expect(controller.playbackRate).toBe(1.5);
+    expect(player.playbackRate).toBe(1.5);
+  });
+
+  it('is ignored after an error', async () => {
+    const {controller, player} = await setup();
+    player.error = {code: 3, message: 'decode'};
+    player.fire('error');
+    controller.setPlaybackRate(2);
+    expect(controller.playbackRate).toBe(1);
+    expect(player.playbackRate).toBe(1);
+  });
+
+  it('logs a player that throws on the rate and goes on', async () => {
+    const controller = new PlayerController(api, SESSION, listeners);
+    const player = Fake.instances[0];
+    await controller.ready;
+    Object.defineProperty(player, 'playbackRate', {
+      get: () => 1,
+      set: () => {
+        throw new Error('no rate');
+      },
+    });
+    controller.setPlaybackRate(2);
+    expect(warn).toHaveBeenCalledWith(
+      'Player playbackRate failed',
+      expect.any(Error),
+    );
+    expect(controller.playbackRate).toBe(2);
+  });
+
+  it('gives a new controller (Retry, a track switch) the same rate', async () => {
+    const first = await setup();
+    first.controller.setPlaybackRate(1.75);
+    await first.controller.destroy();
+
+    const next = await setup({}, {playbackRate: first.controller.playbackRate});
+    expect(next.player.playbackRate).toBe(1.75);
   });
 });
 
@@ -756,6 +1204,84 @@ describe('HLS mode', () => {
     player.fire('seeked');
     player.fire('playing');
     expect(controller.playerState).toBe('playing');
+  });
+
+  describe('playback rate', () => {
+    it('sets the element rate (and default) before the load, for Shaka to read', async () => {
+      const {player, shakaPlayer, load} = await setupHls({}, {surface: true});
+      // Shaka's MSE attach resets the element's rate to the default.
+      expect(player.defaultPlaybackRate).toBe(1);
+      expect(shakaPlayer.trickPlay).not.toHaveBeenCalled();
+      load.resolve();
+      await flush();
+      expect(shakaPlayer.trickPlay).toHaveBeenCalledWith(1, false);
+    });
+
+    it('starts at the rate from the options', async () => {
+      const load = deferred();
+      shaka.Player.loadResult.mockReturnValueOnce(load.promise);
+      const controller = new PlayerController(
+        api,
+        {...SESSION, ...HLS},
+        listeners,
+        {playbackRate: 0.5},
+      );
+      const player = Fake.instances.at(-1)!;
+      controller.attachSurface('surface-1');
+      await controller.ready;
+      expect(player.defaultPlaybackRate).toBe(0.5);
+      expect(player.playbackRate).toBe(0.5);
+
+      load.resolve();
+      await flush();
+      expect(lastShaka().trickPlay).toHaveBeenLastCalledWith(0.5, false);
+    });
+
+    it('hands a rate set during the load to Shaka once loaded', async () => {
+      const {controller, player, load, shakaPlayer} = await setupHls();
+      await flush();
+      controller.setPlaybackRate(1.25);
+      expect(player.playbackRate).toBe(1.25);
+      expect(shakaPlayer.trickPlay).not.toHaveBeenCalled();
+
+      load.resolve();
+      await flush();
+      expect(shakaPlayer.trickPlay).toHaveBeenLastCalledWith(1.25, false);
+    });
+
+    it('goes through Shaka once loaded, so its buffering pause stays', async () => {
+      const {controller, player, load, shakaPlayer} = await setupHls();
+      load.resolve();
+      await flush();
+      // Shaka holds the element at rate 0 while it buffers.
+      player.playbackRate = 0;
+      controller.setPlaybackRate(2);
+      expect(shakaPlayer.trickPlay).toHaveBeenLastCalledWith(2, false);
+      expect(player.defaultPlaybackRate).toBe(2);
+      expect(player.playbackRate).toBe(0);
+      expect(controller.playbackRate).toBe(2);
+    });
+
+    it("doesn't touch the rate on loadedmetadata (Shaka owns it)", async () => {
+      const {controller, player, load, shakaPlayer} = await setupHls();
+      load.resolve();
+      await flush();
+      controller.setPlaybackRate(1.5);
+      player.playbackRate = 0;
+      player.fire('loadedmetadata');
+      expect(player.playbackRate).toBe(0);
+      expect(shakaPlayer.trickPlay).toHaveBeenCalledTimes(2);
+    });
+
+    it('is ignored after destroy', async () => {
+      const {controller, load, shakaPlayer} = await setupHls();
+      load.resolve();
+      await flush();
+      await controller.destroy();
+      controller.setPlaybackRate(2);
+      expect(shakaPlayer.trickPlay).toHaveBeenCalledTimes(1);
+      expect(controller.playbackRate).toBe(1);
+    });
   });
 
   it('reports a rejected load and never plays', async () => {
