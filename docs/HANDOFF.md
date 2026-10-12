@@ -6,7 +6,8 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-12 (after 
 1. Read the "Next" item under Status (task 11: player overlay) and the playback notes in docs/PLAN.md ("Playback design"). Then read what tasks 8–10 built (`docs/tasks/08*.md`–`10*.md`, `src/playback/`, `src/screens/PlayerScreen.tsx`) and androidtv's player overlay in the reference clone (`app/src/main/java/org/jellyfin/androidtv/ui/playback/`: `CustomPlaybackOverlayFragment.java`, `overlay/`, `VideoSpeedController.kt`, `PlaybackController.java`; trickplay and chapters under `overlay/` and `ui/player/video/`).
 2. Describe the approach and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
-4. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
+4. Before submitting to the Amazon Appstore, work through docs/PUBLISHING.md (requirements, Amazon's lifecycle tests and the gaps found so far).
+5. Playback checks run on the Fire TV (the user chose it in task 8; the simulator stalls playback). `vega device install-app` upgrades in place and keeps the sign-in. The simulator is still fine for non-playback UI checks.
 
 ## Status
 - **Done and merged to `main`:**
