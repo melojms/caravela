@@ -26,7 +26,15 @@ export type InfoRowEntry =
 /** A label/value pair under the overview, e.g. "Directed by" / "Jane Doe". */
 export type DetailsInfoItem = {label: string; value: string};
 
-export type DetailsActionIcon = 'resume' | 'play' | 'watched' | 'favorite';
+export type DetailsActionIcon =
+  | 'resume'
+  | 'play'
+  | 'watched'
+  | 'favorite'
+  /** Episode pages: the previous episode. */
+  | 'previous'
+  /** Episode pages: go to the series. */
+  | 'series';
 
 /** A button in the details action row: icon above its label. */
 export type DetailsAction = {
