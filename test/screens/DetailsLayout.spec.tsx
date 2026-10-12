@@ -1,7 +1,8 @@
 import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
-import {render, screen} from '@testing-library/react-native';
+import {NavigationContext} from '@amazon-devices/react-navigation__native';
+import {act, fireEvent, render, screen} from '@testing-library/react-native';
 import React from 'react';
-import {Text} from 'react-native';
+import {ScrollView, Text} from 'react-native';
 
 import {createJellyfin} from '../../src/api/client';
 import {useSession} from '../../src/auth/SessionContext';
@@ -11,6 +12,7 @@ import {
   DetailsLayoutProps,
   primaryImageUri,
 } from '../../src/screens/details/DetailsLayout';
+import {RESTORE_FOCUS_DELAY_MS} from '../../src/screens/HomeScreen';
 import {sessionFor} from '../auth/fakes';
 
 jest.mock('../../src/auth/SessionContext', () => ({
@@ -123,6 +125,82 @@ describe('DetailsLayout', () => {
     screen.rerender(layout({actions: [action('play')]}));
 
     expect(preferred('play')).toBe(false);
+  });
+});
+
+describe('DetailsLayout coming back to the page', () => {
+  // A stand-in for the screen's navigation: records the focus/blur listeners
+  // so a test can leave the page and come back.
+  const fakeNavigation = () => {
+    const listeners = new Map<string, Set<() => void>>();
+    return {
+      addListener: (event: string, listener: () => void) => {
+        if (!listeners.has(event)) {
+          listeners.set(event, new Set());
+        }
+        listeners.get(event)!.add(listener);
+        return () => listeners.get(event)!.delete(listener);
+      },
+      emit: (event: string) =>
+        act(() => listeners.get(event)?.forEach((listener) => listener())),
+    };
+  };
+
+  const renderWith = (navigation: ReturnType<typeof fakeNavigation>) => {
+    render(
+      <NavigationContext.Provider value={navigation as any}>
+        {layout()}
+      </NavigationContext.Provider>,
+    );
+    const scrollTo = jest.fn();
+    screen.UNSAFE_getByType(ScrollView).instance.scrollTo = scrollTo;
+    return scrollTo;
+  };
+
+  const scrollPageTo = (y: number) =>
+    fireEvent.scroll(screen.UNSAFE_getByType(ScrollView), {
+      nativeEvent: {contentOffset: {x: 0, y}},
+    });
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('scrolls back to where the page was when it left (Back from a card it opened)', () => {
+    const navigation = fakeNavigation();
+    const scrollTo = renderWith(navigation);
+
+    scrollPageTo(640);
+    navigation.emit('blur');
+    // Vega puts the page back at the top while it comes back.
+    scrollPageTo(0);
+    navigation.emit('focus');
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+    expect(scrollTo).toHaveBeenCalledWith({y: 640, animated: false});
+  });
+
+  it("doesn't move the page on its first focus", () => {
+    const navigation = fakeNavigation();
+    const scrollTo = renderWith(navigation);
+
+    navigation.emit('focus');
+    act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("doesn't scroll after the page has gone", () => {
+    const navigation = fakeNavigation();
+    const scrollTo = renderWith(navigation);
+
+    scrollPageTo(300);
+    navigation.emit('blur');
+    navigation.emit('focus');
+    screen.unmount();
+    act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });
 
