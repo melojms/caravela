@@ -50,7 +50,13 @@ type Phase =
   | {kind: 'error'; message: string}
   | {kind: 'ready'; session: PlaybackSession};
 
-type Position = {positionMs: number; durationMs: number; canSeek: boolean};
+type Position = {
+  positionMs: number;
+  durationMs: number;
+  canSeek: boolean;
+  /** The player is paused (it stays so through a seek's loading). */
+  paused: boolean;
+};
 
 /**
  * The tracks the viewer picked; the server's defaults apply until then. The
@@ -123,6 +129,7 @@ const readPosition = (controller: PlayerController): Position => ({
   positionMs: controller.positionMs,
   durationMs: controller.durationMs,
   canSeek: controller.canSeek,
+  paused: controller.paused,
 });
 
 /**
@@ -148,6 +155,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     positionMs: startMs,
     durationMs: 0,
     canSeek: false,
+    paused: true,
   });
 
   /** A client-side subtitle switch in `session`; a new session drops it. */
@@ -264,7 +272,12 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
           // overlay, so it skips these while playing with the overlay hidden.
           positions.emit(positionMs);
           if (state !== 'playing' || overlayShownRef.current) {
-            setPosition({positionMs, durationMs, canSeek: controller.canSeek});
+            setPosition({
+              positionMs,
+              durationMs,
+              canSeek: controller.canSeek,
+              paused: controller.paused,
+            });
           }
         },
         onError: (message) => {
@@ -585,7 +598,11 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
           title={overlayTitle}
           positionMs={position.positionMs}
           durationMs={position.durationMs}
-          paused={playerState === 'paused'}
+          // A seek while paused loads without playing: still Play.
+          paused={
+            playerState === 'paused' ||
+            (playerState === 'loading' && position.paused)
+          }
           canSeek={playing && position.canSeek}
           thumbnailAt={thumbnailAt}
           playbackSpeed={speed}

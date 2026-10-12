@@ -406,6 +406,26 @@ describe('PlayerScreen', () => {
     expect(screen.getByTestId('player-loading')).toBeTruthy();
   });
 
+  it('shows Play, not Pause, while a seek loads during a pause', async () => {
+    const {player} = await renderPlaying();
+    player.duration = 5400;
+    player.paused = false;
+    fire(player, 'loadedmetadata', 'playing');
+    fire(player, 'seeking');
+    expect(
+      screen.getByTestId('player-overlay-playpause').props.accessibilityLabel,
+    ).toBe('Pause');
+    fire(player, 'seeked', 'playing');
+
+    pressKey('pause');
+    player.paused = true;
+    fire(player, 'pause', 'seeking');
+    expect(screen.getByTestId('player-loading')).toBeTruthy();
+    expect(
+      screen.getByTestId('player-overlay-playpause').props.accessibilityLabel,
+    ).toBe('Play');
+  });
+
   it('shows a player error with Retry, which resolves a new session', async () => {
     const {player} = await renderPlaying();
     player.paused = false;
