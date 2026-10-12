@@ -15,6 +15,7 @@ import React, {
 import {
   findNodeHandle,
   Image,
+  type ImageLoadEvent,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -91,13 +92,33 @@ type ThumbnailProps = {tile: TrickplayTile; testID: string};
 
 /**
  * One trickplay cell: a fixed-size window onto the scaled sheet. The dark
- * placeholder covers it until the sheet has loaded.
+ * placeholder covers it until the sheet has loaded. The sheet is drawn at the
+ * size it loaded with: a last sheet holds only the rows it needs, so the full
+ * grid size would stretch it.
  */
 const Thumbnail = ({tile, testID}: ThumbnailProps) => {
-  const [loadedUrl, setLoadedUrl] = useState<string>();
+  const [loaded, setLoaded] = useState<{
+    url: string;
+    width: number;
+    height: number;
+  }>();
   const scale = THUMB_WIDTH / tile.width;
   const height = Math.round(tile.height * scale);
-  const handleLoad = useCallback(() => setLoadedUrl(tile.url), [tile.url]);
+  const handleLoad = useCallback(
+    (event: ImageLoadEvent) => {
+      const source = event?.nativeEvent?.source;
+      setLoaded({
+        url: tile.url,
+        width: source?.width > 0 ? source.width : tile.sheetWidth,
+        height: source?.height > 0 ? source.height : tile.sheetHeight,
+      });
+    },
+    [tile.url, tile.sheetWidth, tile.sheetHeight],
+  );
+  const sheet =
+    loaded?.url === tile.url
+      ? loaded
+      : {width: tile.sheetWidth, height: tile.sheetHeight};
 
   return (
     <View testID={testID} style={[styles.thumbnail, {height}]}>
@@ -108,14 +129,14 @@ const Thumbnail = ({tile, testID}: ThumbnailProps) => {
         style={[
           styles.sheet,
           {
-            width: tile.sheetWidth * scale,
-            height: tile.sheetHeight * scale,
+            width: sheet.width * scale,
+            height: sheet.height * scale,
             left: -tile.offsetX * scale,
             top: -tile.offsetY * scale,
           },
         ]}
       />
-      {loadedUrl !== tile.url && (
+      {loaded?.url !== tile.url && (
         <View
           testID={`${testID}-placeholder`}
           style={[StyleSheet.absoluteFill, styles.placeholder]}

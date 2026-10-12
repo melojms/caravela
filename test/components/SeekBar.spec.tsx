@@ -378,6 +378,22 @@ describe('SeekBar', () => {
       expect(view.queryByTestId('seek-bar-thumb-placeholder')).toBeNull();
     });
 
+    it('draws a short last sheet at the size it loaded with', () => {
+      const {view, bar} = renderBar({thumbnailAt: () => TILE});
+      focusBar(bar);
+      pressKey('right');
+      const image = () => view.getByTestId('seek-bar-thumb-image');
+      // A last sheet with 9 of its 10 rows.
+      act(() =>
+        fireEvent(image(), 'load', {
+          nativeEvent: {source: {width: 3200, height: 1620}},
+        }),
+      );
+      expect(flatStyle(image().props.style)).toEqual(
+        expect.objectContaining({width: 1600, height: 810}),
+      );
+    });
+
     it('shows the placeholder again for a new sheet', () => {
       let url = TILE.url;
       const {view, bar} = renderBar({thumbnailAt: () => ({...TILE, url})});
