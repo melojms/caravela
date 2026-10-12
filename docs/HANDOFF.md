@@ -146,6 +146,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - Commits have no Co-Authored-By or Claude-Session trailers.
   - Don't push or open PRs unless asked. `origin` is the public GitHub repo; push `main` only.
   - Prefer herdr panes over hidden subagents.
+  - Before a branch is merged to `main`, update README.md with anything relevant from it (Status, Features, screenshots, build steps).
 
 ## How we work
 - **One task, one worktree:** `git worktree add -b task/NN-name ../caravela-wt/task-NN main`. Write the brief at `docs/tasks/NN-*.md` inside that worktree.
@@ -173,6 +174,7 @@ Read this file and docs/PLAN.md before starting. Last updated 2026-10-11 (after 
   - Install and launch on the simulator: `vega run-app build/x86_64-release/caravela_x86_64.vpkg com.melojms.caravela.main -d VirtualDevice` (on the TV: `build/armv7-release/caravela_armv7.vpkg … -d 192.168.50.124:5555`).
   - `run-app` reinstalls the package, which **wipes the app's storage** (saved servers, users and tokens). To restart without losing them, e.g. to check auto-login: `vega device terminate-app -d <VirtualDevice or TV> -a com.melojms.caravela.main`, then `vega device launch-app` with the same options.
   - Take a screenshot (simulator: Gotchas; TV: below) and look at it yourself, even when the agent already did.
+  - Update README.md with anything relevant from the branch (Status / Features lists, screenshots, build or setup steps) and commit it on the branch.
   - Then `git merge --ff-only`.
 - **Screenshot (Fire TV):**
   - `vega exec vda -s 192.168.50.124:5555 shell gwsi-tool-screenshooter /tmp/x.png`, then `vega exec vda -s … pull /tmp/x.png <scratchpad>/x.png`.
