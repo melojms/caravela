@@ -1,24 +1,46 @@
-import {
-  type HWEvent,
-  useTVEventHandler,
-} from '@amazon-devices/react-native-kepler';
 import {KeplerVideoSurfaceView} from '@amazon-devices/react-native-w3cmedia';
 import {useQueryClient} from '@tanstack/react-query';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
 
-import {detailsKeys} from '../api/details';
+import {detailsKeys, useItemDetails} from '../api/details';
 import {homeKeys, isUnauthorized} from '../api/home';
-import {formatMillis} from '../api/itemInfo';
+import {playerTitle} from '../api/itemInfo';
 import {useSession} from '../auth/SessionContext';
+import {ChapterRow} from '../components/ChapterRow';
 import {FocusableButton} from '../components/FocusableButton';
+import {PlayerOverlay} from '../components/PlayerOverlay';
+import {SEEK_BACK_STEP_MS, SEEK_FORWARD_STEP_MS} from '../components/SeekBar';
 import {TRACK_OFF_INDEX, TrackPicker} from '../components/TrackPicker';
 import {RootStackScreenProps} from '../navigation/types';
+import {currentChapterIndex, itemChapters} from '../playback/chapters';
 import {PlayerController, type PlayerState} from '../playback/PlayerController';
 import {type PlaybackRequest, resolvePlayback} from '../playback/resolver';
-import type {PlaybackResolution, PlaybackSession} from '../playback/types';
-import {colors, layout, px, radius, spacing, typography} from '../theme';
-import {createPositionFeed, PlayerSubtitles} from './PlayerSubtitles';
+import {trickplayInfo, trickplayTile} from '../playback/trickplay';
+import {
+  type Chapter,
+  type MediaTrack,
+  PLAYBACK_SPEEDS,
+  type PlaybackResolution,
+  type PlaybackSession,
+  type PlaybackSpeed,
+  type PlayerTitle,
+  type ZoomMode,
+} from '../playback/types';
+import {colors, layout, spacing, typography} from '../theme';
+import {
+  createPositionFeed,
+  LOADING_SUBTITLES,
+  PlayerSubtitles,
+} from './PlayerSubtitles';
+import {usePlayerOverlay} from './usePlayerOverlay';
 
 type PlayerProps = RootStackScreenProps<'Player'>;
 
@@ -28,7 +50,7 @@ type Phase =
   | {kind: 'error'; message: string}
   | {kind: 'ready'; session: PlaybackSession};
 
-type Position = {positionMs: number; durationMs: number};
+type Position = {positionMs: number; durationMs: number; canSeek: boolean};
 
 /**
  * The tracks the viewer picked; the server's defaults apply until then. The
@@ -48,14 +70,60 @@ type Tracks = {
   subtitleIndex: number;
 };
 
-type PickerKind = 'audio' | 'subtitles';
-type OverlayButton = 'play' | PickerKind;
+type PickerKind = 'audio' | 'subtitles' | 'speed' | 'zoom';
+/** What sits over the overlay; each is also the button it opened from. */
+type Popup = PickerKind | 'chapters';
 
 export const RESOLVE_ERROR_MESSAGE =
   "Couldn't start playback. Check the connection to the server.";
 
-/** `eventKeyAction` for a key press (1 is the release). */
-const KEY_DOWN = 0;
+/** androidtv's `PlaybackSpeedAction` labels: `%.2fx`. */
+export const speedLabel = (speed: number) => `${speed.toFixed(2)}x`;
+
+const SPEED_TRACKS: MediaTrack[] = PLAYBACK_SPEEDS.map((speed, index) => ({
+  index,
+  label: speedLabel(speed),
+}));
+
+/**
+ * androidtv's Zoom menu (its Fit is labelled "Normal") and the
+ * `KeplerVideoSurfaceView` `scalingmode` for each (`strech` is Amazon's
+ * spelling).
+ */
+const ZOOM_MODES: {
+  mode: ZoomMode;
+  label: string;
+  scaling: 'fit' | 'fill' | 'strech';
+}[] = [
+  {mode: 'fit', label: 'Normal', scaling: 'fit'},
+  {mode: 'crop', label: 'Auto crop', scaling: 'fill'},
+  {mode: 'stretch', label: 'Stretch', scaling: 'strech'},
+];
+
+const ZOOM_TRACKS: MediaTrack[] = ZOOM_MODES.map(({label}, index) => ({
+  index,
+  label,
+}));
+
+/**
+ * The speed last picked, for the app's lifetime (androidtv's
+ * `VideoSpeedController.previousSpeedSelection`): every new controller starts
+ * at it.
+ */
+let speedSelection: PlaybackSpeed = 1;
+
+/** Back to 1× (tests: the choice outlives a screen on purpose). */
+export const resetPlaybackSpeed = () => {
+  speedSelection = 1;
+};
+
+const NO_CHAPTERS: Chapter[] = [];
+
+const readPosition = (controller: PlayerController): Position => ({
+  positionMs: controller.positionMs,
+  durationMs: controller.durationMs,
+  canSeek: controller.canSeek,
+});
 
 /**
  * Full-screen video for one item. Each visit (and each Retry) asks the server
@@ -69,6 +137,8 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const api = session?.api;
   const serverId = session?.server.id ?? '';
   const userId = session?.user.Id ?? '';
+  // Only the overlay uses it; a failed load just leaves the fallbacks.
+  const {data: item} = useItemDetails(itemId);
 
   const [phase, setPhase] = useState<Phase>({kind: 'resolving'});
   const [attempt, setAttempt] = useState(0);
@@ -77,6 +147,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const [position, setPosition] = useState<Position>({
     positionMs: startMs,
     durationMs: 0,
+    canSeek: false,
   });
 
   /** A client-side subtitle switch in `session`; a new session drops it. */
@@ -86,12 +157,16 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   }>();
   /** Set while a track switch re-resolves: the overlay keeps showing these. */
   const [switching, setSwitching] = useState<Tracks | null>(null);
-  const [picker, setPicker] = useState<PickerKind | null>(null);
-  /** The overlay button to focus; `key` remounts the row to move focus. */
-  const [overlayFocus, setOverlayFocus] = useState<{
-    button: OverlayButton;
-    key: number;
-  }>({button: 'play', key: 0});
+  const [popup, setPopup] = useState<Popup | null>(null);
+  /** The chapter the row opens on, read when it opens. */
+  const [chapterIndex, setChapterIndex] = useState(0);
+  const [speed, setSpeed] = useState<PlaybackSpeed>(speedSelection);
+  // Each visit starts at Fit (androidtv doesn't keep the zoom).
+  const [zoom, setZoom] = useState(0);
+  const [scrubbing, setScrubbing] = useState(false);
+  /** The top of the overlay's controls, for lifting subtitles above it. */
+  const [controlsTop, setControlsTop] = useState<number>();
+  const [subtitlesLoading, setSubtitlesLoading] = useState(false);
   const [positions] = useState(() => createPositionFeed(startMs));
 
   const controllerRef = useRef<PlayerController | null>(null);
@@ -102,6 +177,8 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const choiceRef = useRef<TrackChoice>({});
   /** Resolves when the last controller's stopped report is done. */
   const stoppedRef = useRef<Promise<void> | undefined>(undefined);
+  /** The overlay is up, so position updates render (they're skipped when not). */
+  const overlayShownRef = useRef(false);
 
   // Not a query: every visit needs its own PlaySessionId.
   useEffect(() => {
@@ -166,37 +243,40 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     setPlayerState('loading');
     setHasPlayed(false);
     let state: PlayerState = 'loading';
-    const controller = new PlayerController(api, phase.session, {
-      onStateChange: (next) => {
-        state = next;
-        setPlayerState(next);
-        positions.emit(controller.positionMs);
-        setPosition({
-          positionMs: controller.positionMs,
-          durationMs: controller.durationMs,
-        });
-        if (next === 'playing') {
-          setHasPlayed(true);
-        } else if (next === 'ended') {
-          // The controller already sent stopped; unmount destroys it.
-          goBack();
-        }
+    const controller = new PlayerController(
+      api,
+      phase.session,
+      {
+        onStateChange: (next) => {
+          state = next;
+          setPlayerState(next);
+          positions.emit(controller.positionMs);
+          setPosition(readPosition(controller));
+          if (next === 'playing') {
+            setHasPlayed(true);
+          } else if (next === 'ended') {
+            // The controller already sent stopped; unmount destroys it.
+            goBack();
+          }
+        },
+        onPositionChange: (positionMs, durationMs) => {
+          // Subtitles follow the feed; the screen only renders for the
+          // overlay, so it skips these while playing with the overlay hidden.
+          positions.emit(positionMs);
+          if (state !== 'playing' || overlayShownRef.current) {
+            setPosition({positionMs, durationMs, canSeek: controller.canSeek});
+          }
+        },
+        onError: (message) => {
+          if (controller.positionMs > 0) {
+            resumeFromRef.current = controller.positionMs;
+          }
+          setPhase({kind: 'error', message});
+        },
       },
-      onPositionChange: (positionMs, durationMs) => {
-        // Subtitles follow the feed; the overlay only shows while paused, so
-        // skip the screen's renders while playing.
-        positions.emit(positionMs);
-        if (state !== 'playing') {
-          setPosition({positionMs, durationMs});
-        }
-      },
-      onError: (message) => {
-        if (controller.positionMs > 0) {
-          resumeFromRef.current = controller.positionMs;
-        }
-        setPhase({kind: 'error', message});
-      },
-    });
+      // Retry and track switches keep the speed too.
+      {playbackRate: speedSelection},
+    );
     controllerRef.current = controller;
     if (surfaceRef.current) {
       controller.attachSurface(surfaceRef.current);
@@ -240,10 +320,6 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const playing = phase.kind === 'ready';
   const showSpinner =
     phase.kind === 'resolving' || (playing && playerState === 'loading');
-  const showOverlay =
-    switching !== null ||
-    (playing &&
-      (playerState === 'paused' || (playerState === 'loading' && hasPlayed)));
 
   const tracks: Tracks | null = playing
     ? {
@@ -260,76 +336,122 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         (track) => track.index === tracks?.subtitleIndex,
       )
     : undefined;
+  const externalSubtitle =
+    shownSubtitle?.delivery === 'external' ? shownSubtitle : undefined;
 
-  // The overlay buttons press on OK, so OK only toggles pause without them.
-  // A picker keeps playback paused until it closes.
-  const overlayRef = useRef(showOverlay);
-  overlayRef.current = showOverlay;
-  const pickerOpenRef = useRef(false);
-  pickerOpenRef.current = showOverlay && picker !== null;
+  const togglePause = useCallback(
+    () => controllerRef.current?.togglePause(),
+    [],
+  );
+  const pause = useCallback(() => controllerRef.current?.pause(), []);
+  const seekBy = useCallback(
+    (deltaMs: number) => controllerRef.current?.seekBy(deltaMs),
+    [],
+  );
 
-  // Closing the overlay drops its picker; it opens again on Play.
-  useEffect(() => {
-    if (!showOverlay) {
-      setPicker(null);
-      setOverlayFocus((current) =>
-        current.button === 'play' ? current : {button: 'play', key: 0},
-      );
-    }
-  }, [showOverlay]);
+  const overlay = usePlayerOverlay({
+    available: tracks !== null,
+    playing: playing && playerState === 'playing',
+    attention:
+      switching !== null ||
+      (playing &&
+        (playerState === 'paused' || (playerState === 'loading' && hasPlayed))),
+    popupOpen: popup !== null,
+    scrubbing,
+    onTogglePause: togglePause,
+    onPause: pause,
+    onSeekBy: seekBy,
+  });
+  const overlayShown = overlay.visible && tracks !== null;
+  overlayShownRef.current = overlayShown;
 
-  /** OK went down with no overlay, so its release toggles pause. */
-  const okDownRef = useRef(false);
-
-  // useTVEventHandler re-subscribes when its callback changes; keep it stable.
-  const onKey = useCallback((event: HWEvent) => {
+  // Position updates were skipped while it was hidden: catch up before it
+  // paints.
+  useLayoutEffect(() => {
     const controller = controllerRef.current;
-    if (!controller) {
-      return;
+    if (overlayShown && controller) {
+      setPosition(readPosition(controller));
     }
-    // The simulator's OK key (and a keyboard's Enter) arrives as `enter`.
-    if (event.eventType === 'select' || event.eventType === 'enter') {
-      // Pause on the release: pausing on the press shows the overlay, and
-      // the release would then press its focused Play button and resume.
-      if (event.eventKeyAction === KEY_DOWN) {
-        okDownRef.current = !overlayRef.current;
-      } else if (okDownRef.current) {
-        okDownRef.current = false;
-        if (!overlayRef.current) {
-          controller.togglePause();
-        }
-      }
-      return;
-    }
-    if (event.eventKeyAction !== KEY_DOWN) {
-      return;
-    }
-    switch (event.eventType) {
-      // The Fire TV remote's play/pause key arrives as `play`.
-      case 'playpause':
-      case 'play':
-        if (!pickerOpenRef.current) {
-          controller.togglePause();
-        }
-        break;
-      case 'pause':
-        controller.pause();
-        break;
-    }
-  }, []);
-  useTVEventHandler(onKey);
+  }, [overlayShown]);
 
-  const resume = useCallback(() => controllerRef.current?.play(), []);
-  const openAudio = useCallback(() => setPicker('audio'), []);
-  const openSubtitles = useCallback(() => setPicker('subtitles'), []);
-  // Focus goes back to the button the picker opened from.
-  const closePicker = () => {
-    if (picker) {
-      const opener = picker;
-      setOverlayFocus((current) => ({button: opener, key: current.key + 1}));
-      setPicker(null);
+  // Hiding the overlay drops its popup and any scrub.
+  useEffect(() => {
+    if (!overlayShown) {
+      setPopup(null);
+      setScrubbing(false);
     }
-  };
+  }, [overlayShown]);
+
+  const {focusOn} = overlay;
+  const popupRef = useRef(popup);
+  popupRef.current = popup;
+  // Focus goes back to the button the popup opened from.
+  const closePopup = useCallback(() => {
+    const opener = popupRef.current;
+    if (opener) {
+      popupRef.current = null;
+      focusOn(opener);
+      setPopup(null);
+    }
+  }, [focusOn]);
+
+  const openAudio = useCallback(() => setPopup('audio'), []);
+  const openSubtitles = useCallback(() => setPopup('subtitles'), []);
+  const openSpeed = useCallback(() => setPopup('speed'), []);
+  const openZoom = useCallback(() => setPopup('zoom'), []);
+
+  const chapters = useMemo(
+    () => (api && item ? itemChapters(api, item) : NO_CHAPTERS),
+    [api, item],
+  );
+  const openChapters = useCallback(() => {
+    const controller = controllerRef.current;
+    setChapterIndex(
+      currentChapterIndex(
+        chapters,
+        controller ? controller.positionMs : positions.current(),
+      ),
+    );
+    setPopup('chapters');
+  }, [chapters, positions]);
+
+  const seekTo = useCallback(
+    (ms: number) => {
+      const controller = controllerRef.current;
+      if (!controller) {
+        return;
+      }
+      controller.seekTo(ms);
+      // Show the target now; the bar would jump back until `seeked`.
+      positions.emit(ms);
+      setPosition((current) => ({...current, positionMs: ms}));
+    },
+    [positions],
+  );
+  const selectChapter = useCallback(
+    (chapter: Chapter) => {
+      seekTo(chapter.startMs);
+      closePopup();
+    },
+    [seekTo, closePopup],
+  );
+
+  const rewind = useCallback(() => seekBy(-SEEK_BACK_STEP_MS), [seekBy]);
+  const fastForward = useCallback(() => seekBy(SEEK_FORWARD_STEP_MS), [seekBy]);
+
+  const mediaSourceId = tracks?.session.mediaSourceId;
+  const thumbnailAt = useMemo(() => {
+    const info =
+      item && mediaSourceId ? trickplayInfo(item, mediaSourceId) : undefined;
+    return api && info
+      ? (ms: number) => trickplayTile(api, info, ms)
+      : undefined;
+  }, [api, item, mediaSourceId]);
+
+  const overlayTitle: PlayerTitle = useMemo(
+    () => (item ? playerTitle(item) : {title}),
+    [item, title],
+  );
 
   /**
    * Stops the controller, then resolves again at the current position with
@@ -351,8 +473,8 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     setAttempt((count) => count + 1);
   };
 
-  const pick = (kind: PickerKind, index: number) => {
-    closePicker();
+  const pickTrack = (kind: 'audio' | 'subtitles', index: number) => {
+    closePopup();
     if (!tracks) {
       return;
     }
@@ -389,21 +511,45 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     setSubtitlePick({session: phase.session, index});
   };
 
+  const pickSpeed = (index: number) => {
+    closePopup();
+    const next = PLAYBACK_SPEEDS[index];
+    if (next === undefined) {
+      return;
+    }
+    speedSelection = next;
+    setSpeed(next);
+    controllerRef.current?.setPlaybackRate(next);
+  };
+
+  const pickZoom = (index: number) => {
+    closePopup();
+    if (ZOOM_MODES[index]) {
+      setZoom(index);
+    }
+  };
+
+  const chaptersOpen = overlayShown && popup === 'chapters';
+
   return (
     <View style={styles.screen} testID="player-screen">
       <KeplerVideoSurfaceView
         testID="player-surface"
         style={StyleSheet.absoluteFill}
-        scalingmode="fit"
+        scalingmode={ZOOM_MODES[zoom].scaling}
         onSurfaceViewCreated={onSurfaceViewCreated}
         onSurfaceViewDestroyed={onSurfaceViewDestroyed}
       />
-      {/* Hidden while the overlay is up (androidtv's overlay covers them). */}
-      {playing && shownSubtitle?.delivery === 'external' && (
+      {/* Above the controls while the overlay is up; the thumbnail and the
+          chapter row cover where they'd be, so they hide then. */}
+      {playing && externalSubtitle && (
         <PlayerSubtitles
-          vttUrl={shownSubtitle.vttUrl}
+          vttUrl={externalSubtitle.vttUrl}
           positions={positions}
-          hidden={showOverlay}
+          hidden={scrubbing || chaptersOpen}
+          liftAboveY={overlayShown && !chaptersOpen ? controlsTop : undefined}
+          showLoading={!overlayShown}
+          onLoadingChange={setSubtitlesLoading}
         />
       )}
       {showSpinner && (
@@ -433,113 +579,88 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
           </View>
         </View>
       )}
-      {showOverlay && tracks && (
+      {/* The chapter row replaces it, so its controls don't show through. */}
+      {overlayShown && tracks && !chaptersOpen && (
         <PlayerOverlay
-          title={title}
+          title={overlayTitle}
           positionMs={position.positionMs}
           durationMs={position.durationMs}
-          focus={overlayFocus}
+          paused={playerState === 'paused'}
+          canSeek={playing && position.canSeek}
+          thumbnailAt={thumbnailAt}
+          playbackSpeed={speed}
+          hint={
+            externalSubtitle && subtitlesLoading ? LOADING_SUBTITLES : undefined
+          }
+          focus={overlay.focus}
           // androidtv: Audio with more than one track, Subtitles with any.
           hasAudio={(tracks.session.audioTracks?.length ?? 0) > 1}
           hasSubtitles={(tracks.session.subtitleTracks?.length ?? 0) > 0}
-          onPlay={resume}
-          onAudio={openAudio}
+          hasChapters={chapters.length > 0}
+          onPlayPause={togglePause}
+          onRewind={rewind}
+          onFastForward={fastForward}
+          onSeek={seekTo}
           onSubtitles={openSubtitles}
+          onAudio={openAudio}
+          onChapters={openChapters}
+          onSpeed={openSpeed}
+          onZoom={openZoom}
+          onScrubbingChange={setScrubbing}
+          onActivity={overlay.onActivity}
+          onControlsLayout={setControlsTop}
         />
       )}
-      {showOverlay && tracks && picker === 'audio' && (
+      {chaptersOpen && (
+        <ChapterRow
+          testID="player-chapters"
+          chapters={chapters}
+          currentIndex={chapterIndex}
+          onSelect={selectChapter}
+          onClose={closePopup}
+        />
+      )}
+      {overlayShown && tracks && popup === 'audio' && (
         <TrackPicker
           testID="player-audio-picker"
           title="Audio"
           tracks={tracks.session.audioTracks ?? []}
           selectedIndex={tracks.audioIndex}
-          onSelect={(index) => pick('audio', index)}
-          onClose={closePicker}
+          onSelect={(index) => pickTrack('audio', index)}
+          onClose={closePopup}
         />
       )}
-      {showOverlay && tracks && picker === 'subtitles' && (
+      {overlayShown && tracks && popup === 'subtitles' && (
         <TrackPicker
           testID="player-subtitle-picker"
           title="Subtitles"
           tracks={tracks.session.subtitleTracks ?? []}
           selectedIndex={tracks.subtitleIndex}
           offLabel="None"
-          onSelect={(index) => pick('subtitles', index)}
-          onClose={closePicker}
+          onSelect={(index) => pickTrack('subtitles', index)}
+          onClose={closePopup}
         />
       )}
-    </View>
-  );
-};
-
-type OverlayProps = {
-  title: string;
-  positionMs: number;
-  durationMs: number;
-  focus: {button: OverlayButton; key: number};
-  hasAudio: boolean;
-  hasSubtitles: boolean;
-  onPlay: () => void;
-  onAudio: () => void;
-  onSubtitles: () => void;
-};
-
-/**
- * The paused overlay: title, a thin progress bar, the times and androidtv's
- * Play / Subtitles / Audio actions (in its order). Task 11 redoes it.
- */
-const PlayerOverlay = ({
-  title,
-  positionMs,
-  durationMs,
-  focus,
-  hasAudio,
-  hasSubtitles,
-  onPlay,
-  onAudio,
-  onSubtitles,
-}: OverlayProps) => {
-  const progress =
-    durationMs > 0 ? Math.min(1, Math.max(0, positionMs / durationMs)) : 0;
-  return (
-    <View style={styles.overlay} testID="player-overlay">
-      <Text style={styles.overlayTitle} numberOfLines={1}>
-        {title}
-      </Text>
-      <View style={styles.track}>
-        <View
-          testID="player-progress"
-          style={[styles.fill, {width: `${progress * 100}%`}]}
+      {overlayShown && popup === 'speed' && (
+        <TrackPicker
+          testID="player-speed-picker"
+          title="Playback speed"
+          tracks={SPEED_TRACKS}
+          selectedIndex={PLAYBACK_SPEEDS.indexOf(speed)}
+          onSelect={pickSpeed}
+          onClose={closePopup}
         />
-      </View>
-      <Text style={styles.times} testID="player-times">
-        {`${formatMillis(positionMs)} / ${formatMillis(durationMs)}`}
-      </Text>
-      {/* Remounted to move focus back to the button a picker opened from. */}
-      <View style={styles.controls} key={focus.key}>
-        <FocusableButton
-          testID="player-play"
-          label="Play"
-          hasTVPreferredFocus={focus.button === 'play'}
-          onPress={onPlay}
+      )}
+      {overlayShown && popup === 'zoom' && (
+        <TrackPicker
+          testID="player-zoom-picker"
+          title="Zoom"
+          tracks={ZOOM_TRACKS}
+          selectedIndex={zoom}
+          onSelect={pickZoom}
+          onClose={closePopup}
         />
-        {hasSubtitles && (
-          <FocusableButton
-            testID="player-subtitles"
-            label="Subtitles"
-            hasTVPreferredFocus={focus.button === 'subtitles'}
-            onPress={onSubtitles}
-          />
-        )}
-        {hasAudio && (
-          <FocusableButton
-            testID="player-audio"
-            label="Audio"
-            hasTVPreferredFocus={focus.button === 'audio'}
-            onPress={onAudio}
-          />
-        )}
-      </View>
+      )}
     </View>
   );
 };
@@ -573,40 +694,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     marginTop: spacing.xl,
-  },
-  overlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: layout.screenPadding,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xl,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  overlayTitle: {
-    ...typography.heading,
-    color: colors.text,
-  },
-  track: {
-    height: px(6),
-    marginTop: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceRaised,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    backgroundColor: colors.violet,
-  },
-  times: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-  controls: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.md,
   },
 });
