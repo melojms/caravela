@@ -261,10 +261,17 @@ export const SeekBar = memo(
     );
     useTVEventHandler(onKey);
 
-    // No scrubbing once seeking isn't possible.
+    // No scrubbing once seeking isn't possible; a shorter duration pulls the
+    // cursor back inside it (the next step starts from there).
     useEffect(() => {
-      if ((!canSeek || durationMs <= 0) && cursorRef.current !== null) {
+      const cursor = cursorRef.current;
+      if (cursor === null) {
+        return;
+      }
+      if (!canSeek || durationMs <= 0) {
         setCursor(null);
+      } else if (cursor > durationMs) {
+        setCursor(durationMs);
       }
     }, [canSeek, durationMs, setCursor]);
 

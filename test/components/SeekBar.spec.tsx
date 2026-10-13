@@ -298,6 +298,41 @@ describe('SeekBar', () => {
       expect(onActivity).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps the cursor within a duration that shrinks mid-scrub', () => {
+      const {view, bar, onSeek, onScrubbingChange} = renderBar({
+        positionMs: 5_300_000,
+        durationMs: 5_400_000,
+      });
+      focusBar(bar);
+      for (let i = 0; i < 4; i++) {
+        pressKey('right');
+      }
+      expect(view.getByTestId('seek-bar-cursor-time')).toHaveTextContent(
+        '1:30:00',
+      );
+
+      view.rerender(
+        <SeekBar
+          positionMs={5_300_000}
+          durationMs={HOUR}
+          canSeek
+          onSeek={onSeek}
+          onScrubbingChange={onScrubbingChange}
+        />,
+      );
+      expect(view.getByTestId('seek-bar-cursor-time')).toHaveTextContent(
+        '1:00:00',
+      );
+      // Steps from the new end, not from where the cursor was.
+      pressKey('left');
+      expect(view.getByTestId('seek-bar-cursor-time')).toHaveTextContent(
+        '59:50',
+      );
+      tap('select');
+      expect(onSeek).toHaveBeenCalledWith(HOUR - 10_000);
+      expect(onScrubbingChange).toHaveBeenLastCalledWith(false);
+    });
+
     it('drops the scrub when canSeek turns false', () => {
       const {view, bar, onScrubbingChange} = renderBar();
       focusBar(bar);
