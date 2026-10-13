@@ -61,7 +61,7 @@ export function getUserImageUrl(
     url += `&tag=${encodeURIComponent(tag)}`;
   }
   if (accessToken) {
-    url += `&api_key=${encodeURIComponent(accessToken)}`;
+    url += `&ApiKey=${encodeURIComponent(accessToken)}`;
   }
   return url;
 }

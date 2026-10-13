@@ -83,7 +83,7 @@ describe('ScreenContainer', () => {
     expect(screen.getByTestId('toolbar-user-image').props.source).toEqual({
       uri:
         'https://srv1.example.com/Users/u1/Images/Primary' +
-        '?maxHeight=100&quality=90&api_key=token-1',
+        '?maxHeight=100&quality=90&ApiKey=token-1',
     });
   });
 

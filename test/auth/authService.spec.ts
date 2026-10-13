@@ -417,7 +417,7 @@ describe('getUserImageUrl', () => {
         maxHeight: 180,
       }),
     ).toBe(
-      'https://jellyfin.example.com/Users/u1/Images/Primary?maxHeight=180&quality=90&tag=tag-1&api_key=token-1',
+      'https://jellyfin.example.com/Users/u1/Images/Primary?maxHeight=180&quality=90&tag=tag-1&ApiKey=token-1',
     );
   });
 

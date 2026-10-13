@@ -304,7 +304,7 @@ describe('UserPickerScreen', () => {
 
     // Saved token, no tag: requested with the token.
     expect(screen.getByTestId('user-tile-u1-image').props.source.uri).toBe(
-      `${HOME.address}/Users/u1/Images/Primary?maxHeight=180&quality=90&api_key=token-1`,
+      `${HOME.address}/Users/u1/Images/Primary?maxHeight=180&quality=90&ApiKey=token-1`,
     );
     // Tag, no token: requested without one.
     expect(screen.getByTestId('user-tile-u2-image').props.source.uri).toBe(

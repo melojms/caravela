@@ -48,7 +48,8 @@ export const NEEDS_TRANSCODE_MESSAGE =
 
 /**
  * The direct play URL, built like androidtv's `getVideoStreamUrl(static =
- * true)`. URL mode can't send headers, so the token goes in `api_key`.
+ * true)`. URL mode can't send headers, so the token goes in `ApiKey`: Jellyfin
+ * 12 ignores `api_key`, so an endpoint that needs auth answers 401.
  */
 export function directPlayUrl(
   api: Api,
@@ -59,7 +60,7 @@ export function directPlayUrl(
     ['static', 'true'],
     ['mediaSourceId', source.Id],
     ['deviceId', api.deviceInfo.id],
-    ['api_key', api.accessToken],
+    ['ApiKey', api.accessToken],
     ['tag', source.ETag],
     ['liveStreamId', source.LiveStreamId],
   ];
@@ -74,7 +75,7 @@ export function directPlayUrl(
  * The HLS URL for direct stream and transcode: the server's `TranscodingUrl`
  * on `basePath`, as androidtv's `createUrl(…, ignorePathParameters = true)`
  * and jellyfin-web do. The server already adds `ApiKey` (`StreamInfo.ToUrl`);
- * `api_key` is only added when the URL has no token.
+ * `ApiKey` is only added when the URL has no token (in either spelling).
  */
 export function transcodingUrl(api: Api, path: string): string {
   const url = `${api.basePath}${path.startsWith('/') ? '' : '/'}${path}`;
@@ -82,7 +83,7 @@ export function transcodingUrl(api: Api, path: string): string {
     return url;
   }
   const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}api_key=${encodeURIComponent(api.accessToken)}`;
+  return `${url}${separator}ApiKey=${encodeURIComponent(api.accessToken)}`;
 }
 
 /**
@@ -90,7 +91,7 @@ export function transcodingUrl(api: Api, path: string): string {
  * `StreamInfo` builds for `DeliveryUrl`) with the format forced to `vtt`, so
  * SRT, TTML and embedded text all arrive in one format. Start ticks are 0, as
  * the server uses for direct play and HLS. The request has no headers, so the
- * token goes in `api_key`.
+ * token goes in `ApiKey`.
  */
 export function subtitleVttUrl(
   api: Api,

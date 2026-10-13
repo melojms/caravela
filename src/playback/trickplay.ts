@@ -58,7 +58,8 @@ export function trickplayInfo(
  * The tile sheet `/Videos/{id}/Trickplay/{width}/{index}.jpg`. SDK 1.0.0 has
  * no URL helper for it (only `getTrickPlayApi().getTrickplayTileImage`, which
  * fetches), so it's built like `directPlayUrl`. RN `Image` sends no auth
- * header, so the token goes in `api_key`.
+ * header, so the token goes in `ApiKey`; Jellyfin 12 ignores `api_key` and
+ * answers 401 here.
  */
 export function trickplaySheetUrl(
   api: Api,
@@ -67,7 +68,7 @@ export function trickplaySheetUrl(
 ): string {
   const params: [string, string | undefined][] = [
     ['mediaSourceId', info.mediaSourceId],
-    ['api_key', api.accessToken || undefined],
+    ['ApiKey', api.accessToken || undefined],
   ];
   const query = params
     .filter((param): param is [string, string] => !!param[1])

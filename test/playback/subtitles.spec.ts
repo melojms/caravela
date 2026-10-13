@@ -366,8 +366,8 @@ describe('activeCues', () => {
 describe('useSubtitleCues', () => {
   const FILE_A = vtt('WEBVTT', '', '00:01.000 --> 00:02.000', 'From A');
   const FILE_B = vtt('WEBVTT', '', '00:01.000 --> 00:02.000', 'From B');
-  const URL_A = 'https://jf.test/Videos/1/Subtitles/2/0/Stream.vtt?api_key=t';
-  const URL_B = 'https://jf.test/Videos/1/Subtitles/3/0/Stream.vtt?api_key=t';
+  const URL_A = 'https://jf.test/Videos/1/Subtitles/2/0/Stream.vtt?ApiKey=t';
+  const URL_B = 'https://jf.test/Videos/1/Subtitles/3/0/Stream.vtt?ApiKey=t';
 
   type FakeResponse = {
     ok: boolean;
@@ -493,7 +493,7 @@ describe('useSubtitleCues', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.cues).toEqual([]);
     expect(result.current.error?.message).toContain('404');
-    expect(result.current.error?.message).not.toContain('api_key');
+    expect(result.current.error?.message).not.toContain('ApiKey');
   });
 
   it('reports a network failure without the URL', async () => {
@@ -503,7 +503,7 @@ describe('useSubtitleCues', () => {
     });
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeInstanceOf(Error);
-    expect(result.current.error?.message).not.toContain('api_key');
+    expect(result.current.error?.message).not.toContain('ApiKey');
   });
 
   it('does not refetch when coming back to a loaded URL', async () => {

@@ -146,7 +146,7 @@ describe('resolvePlayback', () => {
         url:
           'https://jf.example/base/Videos/item-1/stream?static=true' +
           '&mediaSourceId=source-1&deviceId=device%201' +
-          '&api_key=tok%20en%2F%2B&tag=etag%261&liveStreamId=live%201',
+          '&ApiKey=tok%20en%2F%2B&tag=etag%261&liveStreamId=live%201',
         startMs: 90_000,
         audioStreamIndex: 1,
         subtitleStreamIndex: 3,
@@ -178,7 +178,7 @@ describe('resolvePlayback', () => {
         mode: 'url',
         url:
           'https://jf.example/base/Videos/item-1/stream?static=true' +
-          '&mediaSourceId=source-1&deviceId=device%201&api_key=tok%20en%2F%2B',
+          '&mediaSourceId=source-1&deviceId=device%201&ApiKey=tok%20en%2F%2B',
         startMs: 90_000,
         maxStreamingBitrate: DEFAULT_MAX_BITRATE,
         audioTracks: [],
@@ -384,7 +384,7 @@ describe('transcodingUrl', () => {
   it('adds a slash when the path has none', () => {
     expect(
       transcodingUrl(withBase('https://jf.example'), 'videos/1/master.m3u8'),
-    ).toBe('https://jf.example/videos/1/master.m3u8?api_key=tok%20en%2F%2B');
+    ).toBe('https://jf.example/videos/1/master.m3u8?ApiKey=tok%20en%2F%2B');
   });
 
   it.each([
@@ -399,24 +399,24 @@ describe('transcodingUrl', () => {
     );
   });
 
-  it('adds api_key once when the server left it out', () => {
+  it('adds ApiKey once when the server left it out', () => {
     expect(
       transcodingUrl(
         withBase('https://jf.example'),
         '/videos/1/master.m3u8?a=1',
       ),
     ).toBe(
-      'https://jf.example/videos/1/master.m3u8?a=1&api_key=tok%20en%2F%2B',
+      'https://jf.example/videos/1/master.m3u8?a=1&ApiKey=tok%20en%2F%2B',
     );
     expect(
       transcodingUrl(withBase('https://jf.example'), '/videos/1/master.m3u8'),
-    ).toBe('https://jf.example/videos/1/master.m3u8?api_key=tok%20en%2F%2B');
+    ).toBe('https://jf.example/videos/1/master.m3u8?ApiKey=tok%20en%2F%2B');
   });
 
   it('does not take another parameter ending in apikey for the token', () => {
     expect(
       transcodingUrl(withBase('https://jf.example'), '/v.m3u8?xApiKey=1'),
-    ).toBe('https://jf.example/v.m3u8?xApiKey=1&api_key=tok%20en%2F%2B');
+    ).toBe('https://jf.example/v.m3u8?xApiKey=1&ApiKey=tok%20en%2F%2B');
   });
 
   it('adds nothing without an access token', () => {
@@ -474,7 +474,7 @@ describe('resolvePlayback tracks', () => {
 
   const vtt = (index: number) =>
     'https://jf.example/base/Videos/item-1/source-1/Subtitles/' +
-    `${index}/0/Stream.vtt?api_key=tok%20en%2F%2B`;
+    `${index}/0/Stream.vtt?ApiKey=tok%20en%2F%2B`;
 
   const play = async (source: object, request = REQUEST) => {
     respond({MediaSources: [source], PlaySessionId: 'session-1'});
@@ -610,7 +610,7 @@ describe('resolvePlayback tracks', () => {
             delivery: 'external',
             vttUrl:
               'https://jf.example/base/Videos/item-1/source-2/Subtitles/' +
-              '2/0/Stream.vtt?api_key=tok%20en%2F%2B',
+              '2/0/Stream.vtt?ApiKey=tok%20en%2F%2B',
           },
         ],
       },
@@ -628,11 +628,11 @@ describe('subtitleVttUrl', () => {
   ])('builds the WebVTT endpoint on basePath %s', (_name, basePath) => {
     expect(subtitleVttUrl(withBase(basePath), 'item-1', 'source-1', 3)).toBe(
       `${basePath}/Videos/item-1/source-1/Subtitles/3/0/Stream.vtt` +
-        '?api_key=tok%20en%2F%2B',
+        '?ApiKey=tok%20en%2F%2B',
     );
   });
 
-  it('encodes the ids and adds api_key once', () => {
+  it('encodes the ids and adds ApiKey once', () => {
     const url = subtitleVttUrl(
       withBase('https://jf.example'),
       'item 1/?',
@@ -641,9 +641,10 @@ describe('subtitleVttUrl', () => {
     );
     expect(url).toBe(
       'https://jf.example/Videos/item%201%2F%3F/src%261%23/Subtitles/12/0/' +
-        'Stream.vtt?api_key=tok%20en%2F%2B',
+        'Stream.vtt?ApiKey=tok%20en%2F%2B',
     );
-    expect(url.match(/api_key=/g)).toHaveLength(1);
+    expect(url.match(/apikey=/gi)).toHaveLength(1);
+    expect(url).not.toContain('api_key');
   });
 
   it('adds nothing without an access token', () => {

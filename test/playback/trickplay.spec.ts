@@ -177,7 +177,9 @@ describe('trickplaySheetUrl', () => {
       'https://jf.example/base/Videos/item-1/Trickplay/320/2.jpg',
     );
     expect(url.searchParams.get('mediaSourceId')).toBe('source-1');
-    expect(url.searchParams.get('api_key')).toBe('tok en/+');
+    expect(url.searchParams.get('ApiKey')).toBe('tok en/+');
+    // The server answers `api_key` with 401.
+    expect(url.searchParams.has('api_key')).toBe(false);
   });
 
   it('leaves out the token when signed out', () => {
