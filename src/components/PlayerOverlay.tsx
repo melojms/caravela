@@ -1,5 +1,18 @@
 import {FocusManager} from '@amazon-devices/react-native-kepler';
-import React, {memo, type RefObject, useCallback, useRef, useState} from 'react';
+import {
+  Defs,
+  LinearGradient,
+  Rect,
+  Stop,
+  Svg,
+} from '@amazon-devices/react-native-svg';
+import React, {
+  memo,
+  type RefObject,
+  useCallback,
+  useRef,
+  useState,
+} from 'react';
 import {
   findNodeHandle,
   type LayoutChangeEvent,
@@ -75,11 +88,20 @@ const BUTTON_WIDTH = px(170);
 const LABEL_HEIGHT = px(38);
 const LABEL_WIDTH = px(280);
 
-// The scrims fade in over this many bands (there's no gradient view).
-const SCRIM_BANDS = [0.04, 0.1, 0.18, 0.27, 0.36, 0.45, 0.54, 0.62];
+// The scrims fade from transparent to SCRIM_SOLID over FADE_HEIGHT. The
+// stops trace the curve of the old stacked bands (their alphas, each at its
+// band's middle), which eases in rather than ramping linearly.
+const SCRIM_CURVE = [0.04, 0.1, 0.18, 0.27, 0.36, 0.45, 0.54, 0.62];
 const SCRIM_SOLID = 0.7;
-const BAND_HEIGHT = px(12);
-const FADE_HEIGHT = SCRIM_BANDS.length * BAND_HEIGHT;
+const SCRIM_STOPS: {offset: number; alpha: number}[] = [
+  {offset: 0, alpha: 0},
+  ...SCRIM_CURVE.map((alpha, i) => ({
+    offset: (i + 0.5) / SCRIM_CURVE.length,
+    alpha,
+  })),
+  {offset: 1, alpha: SCRIM_SOLID},
+];
+const FADE_HEIGHT = px(96);
 const CONTROLS_PADDING_TOP = px(16);
 
 type OverlayButtonProps = {
@@ -158,17 +180,43 @@ const tagOf = (ref: RefObject<View | null>): number | undefined => {
   return typeof tag === 'number' ? tag : undefined;
 };
 
-/** Bands of growing opacity: a stand-in for a gradient. */
-const Fade = ({reverse = false}: {reverse?: boolean}) => (
-  <View>
-    {(reverse ? [...SCRIM_BANDS].reverse() : SCRIM_BANDS).map((alpha) => (
-      <View
-        key={alpha}
-        style={[styles.band, {backgroundColor: `rgba(0, 0, 0, ${alpha})`}]}
-      />
-    ))}
-  </View>
-);
+/**
+ * A vertical gradient from transparent to the solid scrim, full width;
+ * `reverse` fades upwards (solid at the top). Never takes focus or touches.
+ */
+const Fade = ({
+  reverse = false,
+  testID,
+}: {
+  reverse?: boolean;
+  testID: string;
+}) => {
+  const id = reverse ? 'scrim-fade-up' : 'scrim-fade-down';
+  return (
+    <View testID={testID} style={styles.fade} pointerEvents="none">
+      <Svg width="100%" height="100%">
+        <Defs>
+          <LinearGradient
+            id={id}
+            x1="0"
+            y1={reverse ? '1' : '0'}
+            x2="0"
+            y2={reverse ? '0' : '1'}>
+            {SCRIM_STOPS.map(({offset, alpha}) => (
+              <Stop
+                key={offset}
+                offset={offset}
+                stopColor="#000000"
+                stopOpacity={alpha}
+              />
+            ))}
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${id})`} />
+      </Svg>
+    </View>
+  );
+};
 
 type ButtonSpec = {
   key: ButtonKey;
@@ -240,7 +288,12 @@ export const PlayerOverlay = ({
     });
   }
   if (hasAudio) {
-    primary.push({key: 'audio', icon: 'audio', label: 'Audio', onPress: onAudio});
+    primary.push({
+      key: 'audio',
+      icon: 'audio',
+      label: 'Audio',
+      onPress: onAudio,
+    });
   }
   const secondary: ButtonSpec[] = [];
   if (hasChapters) {
@@ -336,13 +389,13 @@ export const PlayerOverlay = ({
             </Text>
           )}
         </View>
-        <Fade reverse />
+        <Fade reverse testID={`${testID}-top-fade`} />
       </View>
       <View
         testID={`${testID}-controls`}
         style={styles.bottom}
         onLayout={handleControlsLayout}>
-        <Fade />
+        <Fade testID={`${testID}-bottom-fade`} />
         {/* Remounted on a new focus key, so preferred focus applies again. */}
         <View key={focusRequest.key} style={styles.controls}>
           <SeekBar
@@ -400,8 +453,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   bottom: {},
-  band: {
-    height: BAND_HEIGHT,
+  fade: {
+    height: FADE_HEIGHT,
   },
   controls: {
     paddingHorizontal: layout.screenPadding,

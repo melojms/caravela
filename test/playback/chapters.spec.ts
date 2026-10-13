@@ -117,4 +117,44 @@ describe('currentChapterIndex', () => {
   it('is -1 without chapters', () => {
     expect(currentChapterIndex([], 0)).toBe(-1);
   });
+
+  describe('with chapters out of start order', () => {
+    // Server order, as itemChapters keeps it: the row shows them like this.
+    const unsorted: Chapter[] = [
+      {index: 0, name: 'Opening', startMs: 5000},
+      {index: 1, name: 'Act 2', startMs: 600_000},
+      {index: 2, name: 'Act 1', startMs: 90_500},
+      {index: 3, name: 'Credits', startMs: 1_200_000},
+    ];
+
+    it('picks the chapter that started last, wherever it is in the list', () => {
+      expect(currentChapterIndex(unsorted, 5000)).toBe(0);
+      expect(currentChapterIndex(unsorted, 90_499)).toBe(0);
+      expect(currentChapterIndex(unsorted, 90_500)).toBe(2);
+      expect(currentChapterIndex(unsorted, 599_999)).toBe(2);
+      expect(currentChapterIndex(unsorted, 600_000)).toBe(1);
+      expect(currentChapterIndex(unsorted, 1_200_000)).toBe(3);
+      expect(currentChapterIndex(unsorted, 10_000_000)).toBe(3);
+    });
+
+    it('is the earliest chapter before every start', () => {
+      const lateFirst: Chapter[] = [
+        {index: 0, name: 'B', startMs: 60_000},
+        {index: 1, name: 'A', startMs: 5000},
+      ];
+      expect(currentChapterIndex(lateFirst, 0)).toBe(1);
+      expect(currentChapterIndex(lateFirst, 5000)).toBe(1);
+      expect(currentChapterIndex(lateFirst, 60_000)).toBe(0);
+    });
+
+    it('takes the last of chapters sharing a start', () => {
+      const shared: Chapter[] = [
+        {index: 0, name: 'A', startMs: 0},
+        {index: 1, name: 'B', startMs: 30_000},
+        {index: 2, name: 'B2', startMs: 30_000},
+      ];
+      expect(currentChapterIndex(shared, 30_000)).toBe(2);
+      expect(currentChapterIndex([...shared].reverse(), 30_000)).toBe(1);
+    });
+  });
 });

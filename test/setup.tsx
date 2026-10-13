@@ -23,13 +23,20 @@ jest.mock('@amazon-devices/vega-carousel', () => {
 });
 
 // react-native-svg draws natively. Stand in plain Views that keep their props,
-// so tests can find an icon and read its fill.
+// so tests can find an icon or a scrim and read its fill or gradient stops.
 jest.mock('@amazon-devices/react-native-svg', () => {
   const {View} = require('react-native');
   const element = ({children, ...props}: any) => (
     <View {...props}>{children}</View>
   );
-  return {Svg: element, Path: element};
+  return {
+    Svg: element,
+    Path: element,
+    Rect: element,
+    Defs: element,
+    LinearGradient: element,
+    Stop: element,
+  };
 });
 
 // The device's 12/24 h setting; 24 h unless a test says otherwise with

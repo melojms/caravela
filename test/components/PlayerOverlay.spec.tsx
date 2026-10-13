@@ -1,6 +1,7 @@
 import {useTVEventHandler} from '@amazon-devices/react-native-kepler';
 import {act, fireEvent, render} from '@testing-library/react-native';
 import * as React from 'react';
+import type {ReactTestInstance} from 'react-test-renderer';
 
 import {
   type OverlayFocus,
@@ -199,9 +200,9 @@ describe('PlayerOverlay', () => {
       expect(view.getByTestId(`${ID}-speed-label`)).toHaveTextContent(
         'Playback speed',
       );
-      expect(view.getByTestId(`${ID}-speed-icon`).props.children.props.fill).toBe(
-        colors.text,
-      );
+      expect(
+        view.getByTestId(`${ID}-speed-icon`).props.children.props.fill,
+      ).toBe(colors.text);
       expect(view.queryByTestId(`${ID}-zoom-label`)).toBeNull();
 
       act(() => fireEvent(view.getByTestId(`${ID}-speed`), 'blur'));
@@ -317,6 +318,85 @@ describe('PlayerOverlay', () => {
     });
   });
 
+  describe('scrims', () => {
+    // The outermost element with a prop: the SVG stand-ins pass their props
+    // on to the View they render.
+    const find = (node: ReactTestInstance, prop: string) =>
+      node.findAll(
+        (n) => typeof n.type !== 'string' && n.props[prop] !== undefined,
+        {deep: false},
+      );
+    const fade = (view: ReturnType<typeof render>, which: 'top' | 'bottom') => {
+      const node = view.getByTestId(`${ID}-${which}-fade`);
+      const [gradient] = find(node, 'x1');
+      const [rect] = find(node, 'fill');
+      const stops = find(node, 'stopOpacity').map((n) => ({
+        offset: n.props.offset as number,
+        alpha: n.props.stopOpacity as number,
+        color: n.props.stopColor as string,
+      }));
+      return {node, gradient, rect, stops};
+    };
+
+    it.each(['top', 'bottom'] as const)(
+      'fades the %s scrim from transparent to the solid 0.7 black',
+      (which) => {
+        const {view} = renderOverlay();
+        const {stops} = fade(view, which);
+        expect(stops[0]).toEqual({offset: 0, alpha: 0, color: '#000000'});
+        expect(stops[stops.length - 1]).toEqual({
+          offset: 1,
+          alpha: 0.7,
+          color: '#000000',
+        });
+        // More than two stops, rising together: the old bands' eased curve.
+        expect(stops.length).toBeGreaterThan(2);
+        stops.slice(1).forEach((stop, i) => {
+          expect(stop.offset).toBeGreaterThan(stops[i].offset);
+          expect(stop.alpha).toBeGreaterThan(stops[i].alpha);
+          expect(stop.color).toBe('#000000');
+        });
+      },
+    );
+
+    it('fades down into the bottom controls and up into the title', () => {
+      const {view} = renderOverlay();
+      const bottom = fade(view, 'bottom');
+      const top = fade(view, 'top');
+      // Solid where each meets the solid scrim: the bottom of the bottom
+      // fade, the top of the top one.
+      expect(bottom.gradient.props).toMatchObject({
+        x1: '0',
+        y1: '0',
+        x2: '0',
+        y2: '1',
+      });
+      expect(top.gradient.props).toMatchObject({
+        x1: '0',
+        y1: '1',
+        x2: '0',
+        y2: '0',
+      });
+      expect(top.gradient.props.id).not.toBe(bottom.gradient.props.id);
+      for (const {gradient, rect} of [top, bottom]) {
+        expect(rect.props).toMatchObject({
+          width: '100%',
+          height: '100%',
+          fill: `url(#${gradient.props.id})`,
+        });
+      }
+    });
+
+    it('fills the fade height and never takes touches', () => {
+      const {view} = renderOverlay();
+      for (const which of ['top', 'bottom'] as const) {
+        const {node} = fade(view, which);
+        expect(node.props.pointerEvents).toBe('none');
+        expect(node).toHaveStyle({height: 48});
+      }
+    });
+  });
+
   it('reports the top of the bottom controls', () => {
     const {view, fns} = renderOverlay();
     act(() =>
@@ -324,7 +404,7 @@ describe('PlayerOverlay', () => {
         nativeEvent: {layout: {x: 0, y: 300, width: 960, height: 240}},
       }),
     );
-    // Under the fade (8 bands of 6 dp) and the controls' 8 dp padding.
+    // Under the fade (48 dp) and the controls' 8 dp padding.
     expect(fns.onControlsLayout).toHaveBeenCalledWith(356);
   });
 });
