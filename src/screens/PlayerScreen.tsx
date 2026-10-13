@@ -181,6 +181,12 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const surfaceRef = useRef<string | undefined>(undefined);
   /** Where a Retry or a track switch starts: the last known position. */
   const resumeFromRef = useRef(startMs);
+  /**
+   * The last position a controller reported while healthy (or a switch read).
+   * After an error the player may have reset its own (it reads near 0), and
+   * it reads 0 before the media loads, so neither may replace this.
+   */
+  const reportedRef = useRef(startMs);
   /** Sent with every resolve, so Retry and later switches keep it. */
   const choiceRef = useRef<TrackChoice>({});
   /** Resolves when the last controller's stopped report is done. */
@@ -268,6 +274,9 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
           }
         },
         onPositionChange: (positionMs, durationMs) => {
+          if (positionMs > 0) {
+            reportedRef.current = positionMs;
+          }
           // Subtitles follow the feed; the screen only renders for the
           // overlay, so it skips these while playing with the overlay hidden.
           positions.emit(positionMs);
@@ -281,9 +290,8 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
           }
         },
         onError: (message) => {
-          if (controller.positionMs > 0) {
-            resumeFromRef.current = controller.positionMs;
-          }
+          // Not `controller.positionMs`: the failed player may have reset it.
+          resumeFromRef.current = reportedRef.current;
           setPhase({kind: 'error', message});
         },
       },
@@ -472,10 +480,14 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
    * cancels this one's resolve.
    */
   const reload = (next: Tracks) => {
-    const controller = controllerRef.current;
-    if (controller) {
-      resumeFromRef.current = controller.positionMs;
+    // The live position is the freshest (it includes a seek in flight); it
+    // reads 0 before the media loads, and there's no controller during
+    // another switch: the last known one covers those.
+    const live = controllerRef.current?.positionMs ?? 0;
+    if (live > 0) {
+      reportedRef.current = live;
     }
+    resumeFromRef.current = reportedRef.current;
     choiceRef.current = {
       mediaSourceId: next.session.mediaSourceId,
       ...(next.audioIndex !== undefined && {audioStreamIndex: next.audioIndex}),

@@ -431,6 +431,7 @@ describe('PlayerScreen', () => {
     player.paused = false;
     fire(player, 'playing');
     player.setPosition(30);
+    fire(player, 'timeupdate');
     player.error = {code: 2, message: 'socket'};
     fire(player, 'error');
 
@@ -452,6 +453,58 @@ describe('PlayerScreen', () => {
     const next = Fake.instances.at(-1)!;
     expect(next).not.toBe(player);
     expect(next.setSurfaceHandle).toHaveBeenCalledWith('surface-1');
+  });
+
+  it.each([
+    ['resets its position', [0.4]],
+    ['resets it to 0', [0]],
+    ['reports 0 first', [0, 'timeupdate', 0]],
+  ])(
+    'resumes a Retry at the last reported position when the failed player %s',
+    async (_name, steps) => {
+      const {player} = await renderPlaying();
+      player.duration = 5400;
+      player.paused = false;
+      fire(player, 'loadedmetadata', 'playing');
+      player.setPosition(754);
+      fire(player, 'timeupdate');
+      // What the Fire TV did on a decode error: the position went back.
+      for (const step of steps) {
+        if (typeof step === 'number') {
+          player.setPosition(step);
+        } else {
+          fire(player, step);
+        }
+      }
+      player.error = {code: 3, message: 'decode'};
+      fire(player, 'error');
+
+      fireEvent.press(screen.getByTestId('player-retry'));
+      await flush();
+      expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+        itemId: 'm1',
+        userId: 'u1',
+        startMs: 754000,
+      });
+    },
+  );
+
+  it('resumes a Retry at the start position when it fails before any report', async () => {
+    renderScreen(754000);
+    await flush();
+    act(() => Surface.create('surface-1'));
+    await flush();
+    const player = Fake.instances.at(-1)!;
+    player.error = {code: 3, message: 'decode'};
+    fire(player, 'error');
+
+    fireEvent.press(screen.getByTestId('player-retry'));
+    await flush();
+    expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+      itemId: 'm1',
+      userId: 'u1',
+      startMs: 754000,
+    });
   });
 
   it('goes back when playback ends', async () => {
@@ -562,6 +615,7 @@ describe('PlayerScreen tracks', () => {
     const result = await renderPlaying();
     play(result.player);
     result.player.setPosition(seconds);
+    fire(result.player, 'timeupdate');
     pressKey('pause');
     result.player.paused = true;
     fire(result.player, 'pause');
@@ -890,6 +944,96 @@ describe('PlayerScreen tracks', () => {
       await flush();
       expect(Fake.instances).toHaveLength(2);
       expect(Fake.instances[1].srcSets).toEqual(['http://second']);
+    });
+
+    it('resumes a switch made before the resume seek at the start position', async () => {
+      renderScreen(754000);
+      await flush();
+      act(() => Surface.create('surface-1'));
+      await flush();
+      // Loading: the player still reads 0, the resume seek hasn't happened.
+      pressKey('up');
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+        itemId: 'm1',
+        mediaSourceId: 'source-1',
+        userId: 'u1',
+        startMs: 754000,
+        audioStreamIndex: 2,
+        subtitleStreamIndex: 3,
+      });
+    });
+
+    it('resumes a switch at the target of a seek still in flight', async () => {
+      const {player} = await renderPaused(100);
+      pressKey('skip_forward');
+      expect(player.seeks).toEqual([130]);
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(
+        130000,
+      );
+    });
+
+    it('resumes a Retry after a switch at the new session\'s last position', async () => {
+      const {player} = await renderPaused(100);
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      const fresh = Fake.instances.at(-1)!;
+      expect(fresh).not.toBe(player);
+      play(fresh);
+      fresh.setPosition(250);
+      fire(fresh, 'timeupdate');
+      fresh.setPosition(0);
+      fresh.error = {code: 3, message: 'decode'};
+      fire(fresh, 'error');
+
+      fireEvent.press(screen.getByTestId('player-retry'));
+      await flush();
+      expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+        itemId: 'm1',
+        mediaSourceId: 'source-1',
+        userId: 'u1',
+        startMs: 250000,
+        audioStreamIndex: 2,
+        subtitleStreamIndex: 3,
+      });
+    });
+
+    // Dropped, not saved for later: the reload resumes where the switch was
+    // made, and a seek the viewer can't see land would be a surprise.
+    it('ignores fast-forward and rewind while a switch reloads', async () => {
+      const {player} = await renderPaused(100);
+      const next = deferred<PlaybackResolution>();
+      jest.mocked(resolvePlayback).mockReturnValueOnce(next.promise);
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(player.deinitialize).toHaveBeenCalled();
+
+      pressKey('skip_forward');
+      pressKey('rewind');
+      expect(player.seeks).toEqual([]);
+      // Nothing to seek in: no Rewind / Fast forward buttons meanwhile.
+      expect(screen.queryByTestId('player-overlay-fastforward')).toBeNull();
+      expect(screen.getByTestId('player-overlay')).toBeTruthy();
+
+      next.resolve({
+        kind: 'play',
+        session: {...TRACKED, audioStreamIndex: 2, startMs: 100000},
+      });
+      await flush();
+      // The new player loads; until it can seek, the keys do nothing either.
+      const fresh = Fake.instances.at(-1)!;
+      pressKey('skip_forward');
+      expect(fresh.seeks).toEqual([]);
+      expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(
+        100000,
+      );
     });
 
     it('starts nothing when the screen closes during a switch', async () => {
@@ -1248,6 +1392,62 @@ describe('PlayerScreen tracks', () => {
       expect(player.play).not.toHaveBeenCalled();
     });
 
+    it('drops a scrub on Back without seeking; Back again leaves', async () => {
+      const {player} = await renderHidden();
+      pressKey('right');
+      fireEvent(screen.getByTestId('player-overlay-seek-bar'), 'focus');
+      pressKey('right');
+      pressKey('right');
+      expect(screen.getByTestId('player-overlay-seek-cursor')).toBeTruthy();
+
+      expect(pressBack()).toBe(true);
+      expect(screen.queryByTestId('player-overlay')).toBeNull();
+      expect(player.seeks).toEqual([]);
+      expect(goBack).not.toHaveBeenCalled();
+
+      // The scrub is over: shown again, there's no cursor and it hides
+      // itself as usual.
+      pressKey('up');
+      expect(screen.queryByTestId('player-overlay-seek-cursor')).toBeNull();
+      advance(HIDE_AFTER_INPUT_MS);
+      expect(screen.queryByTestId('player-overlay')).toBeNull();
+      expect(pressBack()).toBe(false);
+      // OK went to nothing but the screen: no seek there either.
+      expect(player.seeks).toEqual([]);
+    });
+
+    it('keeps the scrub cursor within a duration that shrinks mid-scrub', async () => {
+      const {player} = await renderPaused(5300);
+      const bar = screen.getByTestId('player-overlay-seek-bar');
+      fireEvent(bar, 'focus');
+      pressKey('right');
+      pressKey('right');
+      pressKey('right');
+      pressKey('right');
+      expect(
+        screen.getByTestId('player-overlay-seek-cursor-time').props.children,
+      ).toBe('1:30:00');
+
+      // E.g. a remux whose real length turns out shorter.
+      player.duration = 3600;
+      fire(player, 'durationchange');
+      expect(
+        screen.getByTestId('player-overlay-seek-cursor-time').props.children,
+      ).toBe('1:00:00');
+      expect(
+        screen.getByTestId('player-overlay-seek-remaining').props.children,
+      ).toBe('-0:00');
+
+      pressOk('select');
+      // The controller keeps a second before the end; the bar shows the end
+      // until the next position report.
+      expect(player.seeks).toEqual([3599]);
+      expect(
+        screen.getByTestId('player-overlay-seek-elapsed').props.children,
+      ).toBe('1:00:00');
+      expect(screen.queryByTestId('player-overlay-seek-cursor')).toBeNull();
+    });
+
     it('stays up during a track-switch reload; Back then hides it instead of leaving', async () => {
       await renderPaused();
       jest
@@ -1463,6 +1663,71 @@ describe('PlayerScreen tracks', () => {
       expect(tile.url).toContain('/Videos/m1/Trickplay/320/1.jpg');
       expect(tile.url).toContain('mediaSourceId=source-1');
       expect(tile).toMatchObject({offsetX: 320, offsetY: 0});
+    });
+
+    it("uses the playing source's trickplay and streams when the item has several", async () => {
+      const sheet = (width: number) => ({
+        [String(width)]: {
+          Width: width,
+          Height: (width * 9) / 16,
+          TileWidth: 10,
+          TileHeight: 10,
+          ThumbnailCount: 500,
+          Interval: 10000,
+        },
+      });
+      jest.mocked(useItemDetails).mockReturnValue({
+        data: {
+          ...CHAPTERED,
+          // The item's first source isn't the one the server chose.
+          MediaSources: [{Id: 'source-1'}, {Id: 'source-2'}],
+          Trickplay: {'source-1': sheet(320), 'source-2': sheet(480)},
+        },
+      } as never);
+      const SECOND: PlaybackSession = {
+        ...TRACKED,
+        mediaSourceId: 'source-2',
+        audioTracks: [
+          {index: 7, label: 'Director - AC3'},
+          {index: 8, label: 'English - AC3'},
+        ],
+        audioStreamIndex: 8,
+        subtitleTracks: [],
+        subtitleStreamIndex: -1,
+      };
+      jest
+        .mocked(resolvePlayback)
+        .mockResolvedValue({kind: 'play', session: SECOND});
+      await renderPaused(754);
+
+      const tile = screen
+        .UNSAFE_getByType(PlayerOverlay)
+        .props.thumbnailAt(1_015_000);
+      expect(tile.url).toContain('/Videos/m1/Trickplay/480/1.jpg');
+      expect(tile.url).toContain('mediaSourceId=source-2');
+      expect(tile).toMatchObject({offsetX: 480});
+      // Chapters are the item's (Jellyfin keeps them per item).
+      fireEvent.press(screen.getByTestId('player-overlay-chapters'));
+      expect(screen.UNSAFE_getByType(ChapterRow).props.chapters).toHaveLength(
+        3,
+      );
+      expect(pressBack()).toBe(true);
+
+      expect(screen.queryByTestId('player-overlay-subtitles')).toBeNull();
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      expect(
+        screen.getByTestId('player-audio-picker-row-8-check'),
+      ).toBeTruthy();
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-7'));
+      await flush();
+      expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+        itemId: 'm1',
+        mediaSourceId: 'source-2',
+        userId: 'u1',
+        startMs: 754000,
+        audioStreamIndex: 7,
+        subtitleStreamIndex: -1,
+      });
     });
 
     it('has no thumbnails without trickplay for the source', async () => {
