@@ -342,11 +342,14 @@ describe('PlayerOverlay', () => {
       'fades the %s scrim from transparent to the solid 0.7 black',
       (which) => {
         const {view} = renderOverlay();
-        const {stops} = fade(view, which);
+        const {node, stops} = fade(view, which);
+        // Stops run 0 to 1 and the fade's opacity scales them to 0.7, so the
+        // end meets the solid scrim exactly.
+        expect(node).toHaveStyle({opacity: 0.7});
         expect(stops[0]).toEqual({offset: 0, alpha: 0, color: '#000000'});
         expect(stops[stops.length - 1]).toEqual({
           offset: 1,
-          alpha: 0.7,
+          alpha: 1,
           color: '#000000',
         });
         // More than two stops, rising together: the old bands' eased curve.
@@ -358,6 +361,18 @@ describe('PlayerOverlay', () => {
         });
       },
     );
+
+    it('follows the old bands once the renderer applies the opacity twice', () => {
+      const {view} = renderOverlay();
+      const {stops} = fade(view, 'bottom');
+      const shown = stops.map(({alpha}) => +(alpha * alpha * 0.7).toFixed(3));
+      expect(shown).toEqual([
+        0, 0.04, 0.1, 0.18, 0.27, 0.36, 0.45, 0.54, 0.62, 0.7,
+      ]);
+      expect(stops.map(({offset}) => offset)).toEqual([
+        0, 0.0625, 0.1875, 0.3125, 0.4375, 0.5625, 0.6875, 0.8125, 0.9375, 1,
+      ]);
+    });
 
     it('fades down into the bottom controls and up into the title', () => {
       const {view} = renderOverlay();

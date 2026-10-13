@@ -82,18 +82,22 @@ const BUTTON_WIDTH = px(170);
 const LABEL_HEIGHT = px(38);
 const LABEL_WIDTH = px(280);
 
-// The scrims fade from transparent to SCRIM_SOLID over FADE_HEIGHT. The
-// stops trace the curve of the old stacked bands (their alphas, each at its
-// band's middle), which eases in rather than ramping linearly.
+// The scrims fade from transparent to SCRIM_SOLID over FADE_HEIGHT, along
+// the curve of the old stacked bands (their alphas, each at its band's
+// middle), which eases in rather than ramping linearly. Vega's SVG renderer
+// applies a stop's opacity twice (0.7 shows as ~0.49; measured on the
+// simulator), so each stop is the square root of its share of SCRIM_SOLID and
+// the fade's View opacity scales it back. 0 and 1 come out exact either way,
+// so the fade meets the solid scrim without a seam.
 const SCRIM_CURVE = [0.04, 0.1, 0.18, 0.27, 0.36, 0.45, 0.54, 0.62];
 const SCRIM_SOLID = 0.7;
-const SCRIM_STOPS: {offset: number; alpha: number}[] = [
-  {offset: 0, alpha: 0},
+const SCRIM_STOPS: {offset: number; opacity: number}[] = [
+  {offset: 0, opacity: 0},
   ...SCRIM_CURVE.map((alpha, i) => ({
     offset: (i + 0.5) / SCRIM_CURVE.length,
-    alpha,
+    opacity: Math.sqrt(alpha / SCRIM_SOLID),
   })),
-  {offset: 1, alpha: SCRIM_SOLID},
+  {offset: 1, opacity: 1},
 ];
 const FADE_HEIGHT = px(96);
 const CONTROLS_PADDING_TOP = px(16);
@@ -196,12 +200,12 @@ const Fade = ({
             y1={reverse ? '1' : '0'}
             x2="0"
             y2={reverse ? '0' : '1'}>
-            {SCRIM_STOPS.map(({offset, alpha}) => (
+            {SCRIM_STOPS.map(({offset, opacity}) => (
               <Stop
                 key={offset}
                 offset={offset}
                 stopColor="#000000"
-                stopOpacity={alpha}
+                stopOpacity={opacity}
               />
             ))}
           </LinearGradient>
@@ -444,6 +448,7 @@ const styles = StyleSheet.create({
   bottom: {},
   fade: {
     height: FADE_HEIGHT,
+    opacity: SCRIM_SOLID,
   },
   controls: {
     paddingHorizontal: layout.screenPadding,
