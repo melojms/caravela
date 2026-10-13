@@ -1,0 +1,130 @@
+# Bumps the version, builds the armv7 vpkg for the Fire TV Stick 4K Select and
+# attaches it to a draft GitHub release.
+#
+# The release stays a draft on purpose: the vpkg bundles Amazon's proprietary
+# Shaka polyfills (see "Shaka Player (not included)" in README.md), so it must
+# not be published. Drafts are only visible to people with write access.
+#
+# Nothing is committed or tagged until the build passes.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  VEGA_SDK_VERSION: 0.24.12112
+  SHAKA_VERSION: 4.16.13
+  SHAKA_TARBALL: https://amzndevresources.com/vega/media-player/shaka-rel-v4.16.13-r1.2-devices_scope.tar.gz
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Configure git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898283+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump the version
+        id: version
+        run: |
+          current=$(sed -n 's/^version = "\(.*\)"$/\1/p' manifest.toml | head -1)
+          IFS=. read -r major minor patch <<< "$current"
+          case "${{ inputs.bump }}" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="$major.$((minor + 1)).0" ;;
+            patch) next="$major.$minor.$((patch + 1))" ;;
+          esac
+          if git ls-remote --exit-code --tags origin "refs/tags/v$next" > /dev/null; then
+            echo "::error::Tag v$next already exists"
+            exit 1
+          fi
+          # Only the [package] version, which is the first version line.
+          sed -i "0,/^version = \".*\"$/s//version = \"$next\"/" manifest.toml
+          npm version "$next" --no-git-tag-version --allow-same-version
+          echo "Releasing $current -> $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Install the Vega SDK
+        env:
+          NONINTERACTIVE: "true"
+          SKIP_VVD_INSTALL: "true"
+        run: |
+          curl -fsSL https://sdk-installer.vega.labcollab.net/get_vvm.sh | bash
+          echo "$HOME/vega/bin" >> "$GITHUB_PATH"
+
+      # Mirrors Amazon's shaka-rel/scripts/setup.sh, minus its all.py build,
+      # which fails at the UI's CSS step; scripts/setup-shaka.sh compiles the
+      # library without the UI instead. Not cached, so the proprietary
+      # polyfills never leave this runner.
+      - name: Build Shaka Player
+        run: |
+          mkdir -p "$RUNNER_TEMP/shaka-build"
+          cd "$RUNNER_TEMP/shaka-build"
+          curl -fsSL "$SHAKA_TARBALL" | tar -xz --warning=no-unknown-keyword
+          # The tarball was made on a Mac and carries AppleDouble ._* files.
+          find shaka-rel -name '._*' -delete
+          cd shaka-rel/scripts
+          git clone --depth 1 --branch "v$SHAKA_VERSION" https://github.com/shaka-project/shaka-player.git
+          cd shaka-player
+          git checkout -b "amz_$SHAKA_VERSION"
+          git am -3 ../../shaka-patch/*.patch
+          cd "$GITHUB_WORKSPACE"
+          scripts/setup-shaka.sh "$RUNNER_TEMP/shaka-build/shaka-rel"
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: Build the armv7 vpkg
+        run: |
+          vega -v
+          npx react-native build-vega --build-type Release --target armv7
+
+      - name: Commit and tag
+        run: |
+          version="${{ steps.version.outputs.next }}"
+          git add manifest.toml package.json package-lock.json
+          git commit -m "Release v$version"
+          git tag "v$version"
+          git push --atomic origin HEAD:main "refs/tags/v$version"
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.next }}"
+          vpkg="$RUNNER_TEMP/caravela-v$version-armv7.vpkg"
+          cp build/armv7-release/caravela_armv7.vpkg "$vpkg"
+          gh release create "v$version" \
+            --draft \
+            --title "v$version" \
+            --generate-notes \
+            "$vpkg"
