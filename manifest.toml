@@ -78,6 +78,9 @@ id = "com.amazon.mediatransform.service"
 id = "com.amazon.mediametrics.service"
 
 [[wants.service]]
+id = "com.amazon.media.playersession.service"
+
+[[wants.service]]
 id = "com.amazon.gipc.uuid.*"
 
 [[wants.service]]
@@ -85,6 +88,9 @@ id = "com.amazon.audio.stream"
 
 [[wants.service]]
 id = "com.amazon.audio.control"
+
+[[wants.service]]
+id = "com.amazon.audio.system"
 
 # On-screen keyboard for TextInput
 [[wants.service]]
