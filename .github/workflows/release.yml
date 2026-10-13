@@ -106,7 +106,22 @@ jobs:
       - name: Build the armv7 vpkg
         run: |
           vega -v
-          npx react-native build-vega --build-type Release --target armv7
+          npm run build:release -- --target armv7
+
+      - name: Check the vpkg version and build number
+        run: |
+          version="${{ steps.version.outputs.next }}"
+          IFS=. read -r major minor patch <<< "$version"
+          # Same formula as scripts/build-release.sh.
+          number=$((major * 1000000 + minor * 1000 + patch))
+          info=$(vega exec vpt info build/armv7-release/caravela_armv7.vpkg --json)
+          echo "$info"
+          actual_version=$(jq -r .version <<< "$info")
+          actual_number=$(jq -r .build_number <<< "$info")
+          if [ "$actual_version" != "$version" ] || [ "$actual_number" != "$number" ] || [ "$actual_number" -lt 1 ]; then
+            echo "::error::Expected version $version and build number $number, got $actual_version and $actual_number"
+            exit 1
+          fi
 
       - name: Commit and tag
         run: |
