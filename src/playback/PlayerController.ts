@@ -65,6 +65,24 @@ export const STALL_TIMEOUT_MESSAGE =
 export const STALL_TIMEOUT_MS = START_TIMEOUT_MS;
 
 /**
+ * While `playing`, how often the position is read. Vega can stop moving
+ * with no event at all (after a rate change mid-play the log says "No Time
+ * update even in Playing state"), so the stall watchdog never starts.
+ */
+export const FREEZE_POLL_MS = 2000;
+/**
+ * A `playing` position that doesn't move for this long fails with
+ * {@link STALL_TIMEOUT_MESSAGE}. 0.25× still moves 0.5 s per poll.
+ */
+export const FREEZE_TIMEOUT_MS = 10000;
+/**
+ * On leave, a `playing` position that hasn't moved for this long counts as a
+ * stuck pipeline: its synchronous native calls (`pause()`) would block the
+ * JS thread and Vega kills the app (`AppNotResponding`).
+ */
+export const STUCK_ON_RELEASE_MS = 3000;
+
+/**
  * A seek to or past the end lands this far before it (androidtv's
  * `Utils.getSafeSeekPosition`), so it plays out instead of overshooting.
  */
@@ -133,6 +151,12 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * A watchdog turns a start that stops making progress, or a stall after
  * it (waiting / seeking / a play that doesn't resume), into the error state
  * (Retry makes a new controller). A pause suspends it; play re-arms it.
+ * While `playing`, a poll of the position catches a pipeline that stops
+ * with no event; leaving such a player skips its blocking native calls.
+ *
+ * In URL mode a rate change while playing goes pause → rate → play: Vega
+ * applies it mid-play as a `seekWithRate`, which froze direct play on the
+ * TV. That pause and play aren't shown or reported.
  *
  * The playback rate is set as both `defaultPlaybackRate` and `playbackRate`:
  * Vega's `load()` (setting `src`, or Shaka attaching its MediaSource) resets
@@ -141,7 +165,7 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  *
  * `destroy()` destroys Shaka first (HLS), then pauses, clears the surface,
  * `deinitialize()`s and removes the listeners; a surface destroyed after
- * that is ignored.
+ * that is ignored. A stuck player skips the pause and the clear.
  */
 export class PlayerController {
   private readonly player = new VideoPlayer();
@@ -177,6 +201,16 @@ export class PlayerController {
   private pendingSeekMs?: number;
   private rate: number;
   private lastTimeupdate?: number;
+  /** While `playing`: reads the position every {@link FREEZE_POLL_MS}. */
+  private freezePoll?: ReturnType<typeof setInterval>;
+  /** The position the poll last read (s). */
+  private polledTime?: number;
+  /** When the position last moved (or `playing` began), from `Date.now()`. */
+  private movedAt = 0;
+  /** The freeze check fired: release() mustn't call into the pipeline. */
+  private stuck = false;
+  /** setPlaybackRate's own pause → play: its `pause` and `play` are hidden. */
+  private rateRestart = false;
   private state: PlayerState = 'loading';
   private failed = false;
   /** The subtitle showing now (-1 = off); the screen draws external ones. */
@@ -327,7 +361,14 @@ export class PlayerController {
       return;
     }
     this.rate = rate;
-    this.applyRate();
+    if (this.session.mode === 'url' && this.canControl() && !this.paused) {
+      this.rateRestart = true;
+      attempt('pause', () => this.player.pause());
+      this.applyRate();
+      attempt('play', () => this.player.play());
+    } else {
+      this.applyRate();
+    }
   }
 
   /**
@@ -352,13 +393,15 @@ export class PlayerController {
     if (this.destroying) {
       return this.destroying;
     }
+    const stuck = this.isStuck();
     this.destroyed = true;
     this.clearWatchdog();
+    this.stopFreezeCheck();
     // The reporter reads the position now, before the player goes away.
     const stopped = this.reporter.stop();
     this.destroying = (async () => {
       if (this.initialized) {
-        await this.release();
+        await this.release(stuck);
       } else {
         // Still initializing: initialize() deinitializes once it resolves.
         await this.ready;
@@ -469,12 +512,18 @@ export class PlayerController {
     });
   }
 
-  private async release() {
+  /**
+   * `stuck`: skip the synchronous `pause()` and `clearSurfaceHandle()`, which
+   * block on a stuck pipeline; `deinitialize()` is async, so it can't.
+   */
+  private async release(stuck: boolean) {
     // Shaka first (Vega sample: unload before deinitialize). Its destroy()
     // also interrupts a load that is still pending.
     await this.shaka?.destroy();
-    attempt('pause', () => this.player.pause());
-    if (this.surface && this.surfaceSet) {
+    if (!stuck) {
+      attempt('pause', () => this.player.pause());
+    }
+    if (!stuck && this.surface && this.surfaceSet) {
       const handle = this.surface;
       attempt('clearSurfaceHandle', () =>
         this.player.clearSurfaceHandle(handle),
@@ -550,9 +599,61 @@ export class PlayerController {
   private setState(state: PlayerState) {
     if (this.state !== state) {
       this.state = state;
+      if (state === 'playing') {
+        this.startFreezeCheck();
+      } else {
+        this.stopFreezeCheck();
+      }
       this.listeners.onStateChange?.(state);
     }
   }
+
+  /** The freeze check fired, or `playing` hasn't moved for a while. */
+  private isStuck() {
+    return (
+      this.stuck ||
+      (this.state === 'playing' &&
+        !this.failed &&
+        Date.now() - this.movedAt > STUCK_ON_RELEASE_MS)
+    );
+  }
+
+  private markMoved() {
+    this.movedAt = Date.now();
+  }
+
+  /** Starts the poll from the current position. */
+  private startFreezeCheck() {
+    this.stopFreezeCheck();
+    if (!this.live()) {
+      return;
+    }
+    this.polledTime = this.read(() => this.player.currentTime);
+    this.markMoved();
+    this.freezePoll = setInterval(this.pollPosition, FREEZE_POLL_MS);
+  }
+
+  private stopFreezeCheck() {
+    if (this.freezePoll !== undefined) {
+      clearInterval(this.freezePoll);
+      this.freezePoll = undefined;
+    }
+  }
+
+  private pollPosition = () => {
+    if (!this.live()) {
+      this.stopFreezeCheck();
+      return;
+    }
+    const time = this.read(() => this.player.currentTime);
+    if (Number.isFinite(time) && time !== this.polledTime) {
+      this.polledTime = time;
+      this.markMoved();
+    } else if (Date.now() - this.movedAt >= FREEZE_TIMEOUT_MS) {
+      this.stuck = true;
+      this.fail(STALL_TIMEOUT_MESSAGE);
+    }
+  };
 
   /** (Re)starts the watchdog; nothing while paused, ended or done. */
   private armWatchdog() {
@@ -592,6 +693,8 @@ export class PlayerController {
       return;
     }
     this.lastTimeupdate = time;
+    this.polledTime = time;
+    this.markMoved();
     if (this.hasPlayed && this.state !== 'loading') {
       // Playing along (e.g. after a `seeked` with no `playing`).
       this.clearWatchdog();
@@ -633,13 +736,17 @@ export class PlayerController {
     if (!this.live()) {
       return;
     }
+    const restart = this.rateRestart;
+    this.rateRestart = false;
     this.suspended = false;
     // A start already being watched keeps its timer; after a pause (or
     // once started) this waits for `playing`.
     if (this.watchdog === undefined) {
       this.armWatchdog();
     }
-    this.reporter.update();
+    if (!restart) {
+      this.reporter.update();
+    }
   };
 
   private onPlaying = () => {
@@ -648,6 +755,7 @@ export class PlayerController {
     }
     this.hasPlayed = true;
     this.suspended = false;
+    this.rateRestart = false;
     this.clearWatchdog();
     this.setState('playing');
     if (!this.started && this.initialSeek === 'done') {
@@ -657,7 +765,8 @@ export class PlayerController {
   };
 
   private onPause = () => {
-    if (!this.live() || this.state === 'ended') {
+    // setPlaybackRate's own pause: its `play` follows right away.
+    if (!this.live() || this.state === 'ended' || this.rateRestart) {
       return;
     }
     this.suspended = true;
@@ -715,6 +824,7 @@ export class PlayerController {
   private fail(message: string) {
     this.failed = true;
     this.clearWatchdog();
+    this.stopFreezeCheck();
     this.reporter.stop();
     this.listeners.onError?.(message);
   }

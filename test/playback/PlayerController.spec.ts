@@ -2,6 +2,8 @@ import type {Api} from '@jellyfin/sdk';
 import {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
 
 import {
+  FREEZE_POLL_MS,
+  FREEZE_TIMEOUT_MS,
   INIT_ERROR_MESSAGE,
   PlayerController,
   type PlayerListeners,
@@ -11,6 +13,7 @@ import {
   STALL_TIMEOUT_MS,
   START_TIMEOUT_MESSAGE,
   START_TIMEOUT_MS,
+  STUCK_ON_RELEASE_MS,
   UNKNOWN_PLAYER_ERROR,
   mediaErrorMessage,
 } from '../../src/playback/PlayerController';
@@ -83,6 +86,17 @@ const startPlaying = (player: FakePlayer) => {
   player.paused = false;
   player.fire('play');
   player.fire('playing');
+};
+
+/**
+ * Lets `ms` pass while the position moves 1 s per second, as a playing
+ * player's does (no `timeupdate`), so the freeze check stays quiet.
+ */
+const playOn = (player: FakePlayer, ms: number) => {
+  for (let elapsed = 0; elapsed < ms; elapsed += 1000) {
+    player.setPosition(player.currentTime + 1);
+    jest.advanceTimersByTime(Math.min(1000, ms - elapsed));
+  }
 };
 
 let warn: jest.SpyInstance;
@@ -452,6 +466,62 @@ describe('destroy', () => {
     expect(player.listenerCount()).toBe(0);
   });
 
+  describe('a stuck pipeline', () => {
+    /** Playing at 10 s; the position doesn't move unless a test moves it. */
+    const setupPlaying = async () => {
+      const result = await setup();
+      startPlaying(result.player);
+      result.player.setPosition(10);
+      result.player.fire('timeupdate');
+      return result;
+    };
+
+    const expectReleasedWithoutTouching = (player: FakePlayer) => {
+      expect(player.pause).not.toHaveBeenCalled();
+      expect(player.clearSurfaceHandle).not.toHaveBeenCalled();
+      expect(player.deinitialize).toHaveBeenCalledTimes(1);
+      expect(player.listenerCount()).toBe(0);
+    };
+
+    it("isn't paused or cleared once the freeze check fired", async () => {
+      const {controller, player} = await setupPlaying();
+      jest.advanceTimersByTime(FREEZE_TIMEOUT_MS);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+      await controller.destroy();
+      expectReleasedWithoutTouching(player);
+    });
+
+    it(`isn't paused or cleared when playing without moving for over ${STUCK_ON_RELEASE_MS} ms`, async () => {
+      const {controller, player} = await setupPlaying();
+      jest.advanceTimersByTime(STUCK_ON_RELEASE_MS + 1);
+      await controller.destroy();
+      expectReleasedWithoutTouching(player);
+      expect(listeners.onError).not.toHaveBeenCalled();
+    });
+
+    it('still pauses and clears a player that moved recently', async () => {
+      const {controller, player} = await setupPlaying();
+      jest.advanceTimersByTime(STUCK_ON_RELEASE_MS);
+      player.setPosition(12);
+      player.fire('timeupdate');
+      jest.advanceTimersByTime(STUCK_ON_RELEASE_MS);
+      await controller.destroy();
+      expect(player.pause).toHaveBeenCalledTimes(1);
+      expect(player.clearSurfaceHandle).toHaveBeenCalledWith('surface-1');
+      expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    });
+
+    it('still pauses and clears a player paused for a long time', async () => {
+      const {controller, player} = await setupPlaying();
+      player.paused = true;
+      player.fire('pause');
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS * 10);
+      await controller.destroy();
+      expect(player.pause).toHaveBeenCalledTimes(1);
+      expect(player.clearSurfaceHandle).toHaveBeenCalledWith('surface-1');
+    });
+  });
+
   it('clears the surface on detach before destroy', async () => {
     const {controller, player} = await setup();
     controller.detachSurface('surface-1');
@@ -526,7 +596,7 @@ describe('start watchdog', () => {
 
     player.paused = false;
     player.fire('playing');
-    advance(START_TIMEOUT_MS * 10);
+    playOn(player, START_TIMEOUT_MS * 10);
     expect(listeners.onError).not.toHaveBeenCalled();
   });
 
@@ -543,7 +613,8 @@ describe('start watchdog', () => {
   it('stops on the first playing, while playback goes on', async () => {
     const {player} = await setup();
     startPlaying(player);
-    expect(jest.getTimerCount()).toBe(0);
+    // Only the freeze check's poll.
+    expect(jest.getTimerCount()).toBe(1);
     for (let second = 1; second <= 100; second++) {
       player.setPosition(second);
       player.fire('timeupdate');
@@ -622,7 +693,7 @@ describe('start watchdog', () => {
     expect(retry.player.srcSets).toEqual([SESSION.url]);
     advance(START_TIMEOUT_MS - 1000);
     startPlaying(retry.player);
-    advance(START_TIMEOUT_MS * 2);
+    playOn(retry.player, START_TIMEOUT_MS * 2);
     expect(listeners.onError).toHaveBeenCalledTimes(1);
     expect(retry.controller.playerState).toBe('playing');
     expect(reporter.start).toHaveBeenCalledTimes(1);
@@ -700,8 +771,9 @@ describe('stall watchdog', () => {
     advance(STALL_TIMEOUT_MS - 1000);
     player.fire('playing');
     expect(controller.playerState).toBe('playing');
-    expect(jest.getTimerCount()).toBe(0);
-    advance(STALL_TIMEOUT_MS * 10);
+    // Only the freeze check's poll.
+    expect(jest.getTimerCount()).toBe(1);
+    playOn(player, STALL_TIMEOUT_MS * 10);
     expect(listeners.onError).not.toHaveBeenCalled();
   });
 
@@ -716,8 +788,9 @@ describe('stall watchdog', () => {
     // No `playing` after this seek: the first moving timeupdate ends it.
     player.setPosition(60.25);
     player.fire('timeupdate');
-    expect(jest.getTimerCount()).toBe(0);
-    advance(STALL_TIMEOUT_MS * 10);
+    // Only the freeze check's poll.
+    expect(jest.getTimerCount()).toBe(1);
+    playOn(player, STALL_TIMEOUT_MS * 10);
     expect(listeners.onError).not.toHaveBeenCalled();
   });
 
@@ -760,7 +833,7 @@ describe('stall watchdog', () => {
     player.paused = false;
     player.fire('play');
     player.fire('playing');
-    advance(STALL_TIMEOUT_MS * 10);
+    playOn(player, STALL_TIMEOUT_MS * 10);
     expect(listeners.onError).not.toHaveBeenCalled();
   });
 
@@ -795,6 +868,133 @@ describe('stall watchdog', () => {
     expect(listeners.onError).toHaveBeenCalledWith(
       mediaErrorMessage({code: 2}),
     );
+  });
+});
+
+describe('freeze check', () => {
+  const advance = (ms: number) => jest.advanceTimersByTime(ms);
+
+  /** Playing at 10 s, past the start watchdog. */
+  const setupPlaying = async () => {
+    const result = await setup();
+    startPlaying(result.player);
+    result.player.setPosition(10);
+    result.player.fire('timeupdate');
+    return result;
+  };
+
+  it(`fails when the position doesn't move for ${FREEZE_TIMEOUT_MS} ms while playing`, async () => {
+    const {controller, player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    controller.seekBy(30000);
+    expect(player.seeks).toEqual([]);
+    advance(FREEZE_TIMEOUT_MS * 10);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet while the position moves, even with no timeupdate (0.25×)', async () => {
+    const {player} = await setupPlaying();
+    for (let i = 1; i <= 30; i++) {
+      advance(FREEZE_POLL_MS);
+      player.setPosition(10 + i * 0.5);
+    }
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('starts over on a timeupdate that moves', async () => {
+    const {player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS - 1000);
+    player.setPosition(10.25);
+    player.fire('timeupdate');
+    advance(FREEZE_TIMEOUT_MS - 1000);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    // The next poll, within FREEZE_POLL_MS of the timeout.
+    advance(FREEZE_POLL_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('stops on pause, and playing restarts it from the current position', async () => {
+    const {player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS - 2000);
+    player.paused = true;
+    player.fire('pause');
+    advance(FREEZE_TIMEOUT_MS * 3);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    advance(FREEZE_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it.each(['waiting', 'seeking'])(
+    'stops on %s (the stall watchdog takes over)',
+    async (type) => {
+      const {player} = await setupPlaying();
+      advance(FREEZE_TIMEOUT_MS - 2000);
+      player.fire(type);
+      advance(STALL_TIMEOUT_MS - 1);
+      expect(listeners.onError).not.toHaveBeenCalled();
+
+      player.fire('playing');
+      advance(FREEZE_TIMEOUT_MS);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    },
+  );
+
+  it("doesn't run once ended", async () => {
+    const {player} = await setupPlaying();
+    player.fire('ended');
+    advance(FREEZE_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it("doesn't run after destroy", async () => {
+    const {controller} = await setupPlaying();
+    await controller.destroy();
+    expect(jest.getTimerCount()).toBe(0);
+    advance(FREEZE_TIMEOUT_MS * 10);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it("doesn't run after another error", async () => {
+    const {player} = await setupPlaying();
+    player.error = {code: 3, message: 'decode'};
+    player.fire('error');
+    advance(FREEZE_TIMEOUT_MS * 10);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(
+      mediaErrorMessage({code: 3}),
+    );
+  });
+
+  it("doesn't run before the first playing", async () => {
+    const {player} = await setup();
+    player.duration = 7200;
+    player.fire('loadedmetadata');
+    advance(START_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('catches a speed change that freezes the pipeline (The AI Doc at 4:17)', async () => {
+    const {controller, player} = await setupPlaying();
+    controller.setPlaybackRate(2);
+    player.paused = true;
+    player.fire('pause');
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    // No time updates and no `waiting` after this.
+    advance(FREEZE_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
   });
 });
 
@@ -973,6 +1173,115 @@ describe('playback rate', () => {
 
     controller.setPlaybackRate(1);
     expect(player.playbackRate).toBe(1);
+  });
+
+  describe('while playing (URL mode)', () => {
+    /** Playing at 10 s; reports and state changes so far cleared. */
+    const setupPlaying = async () => {
+      const result = await setup();
+      startPlaying(result.player);
+      result.player.setPosition(10);
+      result.player.fire('timeupdate');
+      reporter.update.mockClear();
+      listeners.onStateChange.mockClear();
+      result.player.play.mockClear();
+      return result;
+    };
+
+    /** The events Vega sends for the controller's own pause → play. */
+    const firePauseAndPlay = (player: FakePlayer) => {
+      player.paused = true;
+      player.fire('pause');
+      player.paused = false;
+      player.fire('play');
+      player.fire('playing');
+    };
+
+    it('pauses, sets the rate, then plays (not a rate change mid-play)', async () => {
+      const {controller, player} = await setupPlaying();
+      const order: string[] = [];
+      let rate = player.playbackRate;
+      Object.defineProperty(player, 'playbackRate', {
+        get: () => rate,
+        set: (value: number) => {
+          rate = value;
+          order.push(`rate ${value}`);
+        },
+      });
+      player.pause.mockImplementation(() => order.push('pause'));
+      player.play.mockImplementation(async () => {
+        order.push('play');
+      });
+
+      controller.setPlaybackRate(2);
+      expect(order).toEqual(['pause', 'rate 2', 'play']);
+      expect(player.defaultPlaybackRate).toBe(2);
+      expect(controller.playbackRate).toBe(2);
+    });
+
+    it("doesn't show or report its own pause and play", async () => {
+      const {controller, player} = await setupPlaying();
+      controller.setPlaybackRate(1.5);
+      firePauseAndPlay(player);
+      expect(listeners.onStateChange).not.toHaveBeenCalled();
+      expect(reporter.update).not.toHaveBeenCalled();
+      expect(controller.playerState).toBe('playing');
+    });
+
+    it("doesn't leave the stall watchdog suspended", async () => {
+      const {controller, player} = await setupPlaying();
+      controller.setPlaybackRate(1.5);
+      firePauseAndPlay(player);
+      player.fire('waiting');
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    });
+
+    it('watches a play that never resumes after it', async () => {
+      const {controller, player} = await setupPlaying();
+      player.fire('waiting');
+      controller.setPlaybackRate(1.5);
+      player.paused = true;
+      player.fire('pause');
+      player.paused = false;
+      player.fire('play');
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    });
+
+    it('shows and reports a pause the user makes after it', async () => {
+      const {controller, player} = await setupPlaying();
+      controller.setPlaybackRate(1.5);
+      firePauseAndPlay(player);
+      controller.pause();
+      player.paused = true;
+      player.fire('pause');
+      expect(controller.playerState).toBe('paused');
+      expect(listeners.onStateChange).toHaveBeenCalledWith('paused');
+      expect(reporter.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('only sets the rate while paused (Play applies it)', async () => {
+      const {controller, player} = await setupPlaying();
+      player.paused = true;
+      player.fire('pause');
+      player.pause.mockClear();
+      controller.setPlaybackRate(0.5);
+      expect(player.pause).not.toHaveBeenCalled();
+      expect(player.play).not.toHaveBeenCalled();
+      expect(player.playbackRate).toBe(0.5);
+    });
+
+    it('only sets the rate before the load', async () => {
+      const controller = new PlayerController(api, SESSION, listeners);
+      const player = Fake.instances[0];
+      await controller.ready;
+      player.paused = false;
+      controller.setPlaybackRate(0.5);
+      expect(player.pause).not.toHaveBeenCalled();
+      expect(player.play).not.toHaveBeenCalled();
+      expect(player.playbackRate).toBe(0.5);
+    });
   });
 
   it('restores a rate the native load reset, on loadedmetadata', async () => {
@@ -1262,6 +1571,30 @@ describe('HLS mode', () => {
       expect(controller.playbackRate).toBe(2);
     });
 
+    it('changes speed mid-session through Shaka, with no pause or play', async () => {
+      const {controller, player, load, shakaPlayer} = await setupHls();
+      load.resolve();
+      await flush();
+      player.paused = false;
+      player.fire('play');
+      player.fire('playing');
+      player.play.mockClear();
+      reporter.update.mockClear();
+      listeners.onStateChange.mockClear();
+
+      controller.setPlaybackRate(2);
+      expect(shakaPlayer.trickPlay).toHaveBeenLastCalledWith(2, false);
+      expect(player.pause).not.toHaveBeenCalled();
+      expect(player.play).not.toHaveBeenCalled();
+      expect(controller.playbackRate).toBe(2);
+      expect(controller.playerState).toBe('playing');
+      expect(listeners.onStateChange).not.toHaveBeenCalled();
+
+      controller.setPlaybackRate(0.75);
+      expect(shakaPlayer.trickPlay).toHaveBeenLastCalledWith(0.75, false);
+      expect(player.pause).not.toHaveBeenCalled();
+    });
+
     it("doesn't touch the rate on loadedmetadata (Shaka owns it)", async () => {
       const {controller, player, load, shakaPlayer} = await setupHls();
       load.resolve();
@@ -1322,6 +1655,26 @@ describe('HLS mode', () => {
       'deinit',
     ]);
     expect(order.slice(5).every((step) => step === 'remove')).toBe(true);
+  });
+
+  it("destroys Shaka first, then skips pausing and clearing a stuck player", async () => {
+    const {controller, player, load, shakaPlayer} = await setupHls();
+    load.resolve();
+    await flush();
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    player.setPosition(95);
+    player.fire('timeupdate');
+    jest.advanceTimersByTime(FREEZE_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+
+    await controller.destroy();
+    expect(shakaPlayer.destroy).toHaveBeenCalledTimes(1);
+    expect(player.pause).not.toHaveBeenCalled();
+    expect(player.clearSurfaceHandle).not.toHaveBeenCalled();
+    expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    expect(player.listenerCount()).toBe(0);
   });
 
   it('logs a failed Shaka teardown and still deinitializes', async () => {
