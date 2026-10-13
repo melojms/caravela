@@ -1218,7 +1218,21 @@ describe('PlayerScreen tracks', () => {
       return result;
     };
 
-    const advance = (ms: number) => act(() => jest.advanceTimersByTime(ms));
+    /**
+     * Lets `ms` pass. A playing player's position moves 1 s per second (no
+     * `timeupdate`, like the controller spec's `playOn`), so the controller's
+     * freeze check stays quiet; a paused one stays put.
+     */
+    const advance = (ms: number) =>
+      act(() => {
+        const player = Fake.instances.at(-1);
+        for (let elapsed = 0; elapsed < ms; elapsed += 1000) {
+          if (player && !player.paused) {
+            player.setPosition(player.currentTime + 1);
+          }
+          jest.advanceTimersByTime(Math.min(1000, ms - elapsed));
+        }
+      });
 
     it.each(['left', 'right'])(
       'shows on %s with the seek bar focused, without a scrub step',
