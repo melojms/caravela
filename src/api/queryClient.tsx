@@ -1,10 +1,12 @@
 import {
+  focusManager,
   MutationCache,
   QueryCache,
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
 import React, {ReactNode, useEffect, useMemo, useRef} from 'react';
+import {AppState} from 'react-native';
 
 import {useSession} from '../auth/SessionContext';
 import {isUnauthorized} from './home';
@@ -12,10 +14,30 @@ import {isUnauthorized} from './home';
 const STALE_TIME_MS = 30 * 1000;
 
 /**
+ * Tells TanStack Query the app is focused while it is in the foreground, so
+ * coming back from the background refetches the stale queries on screen (and
+ * on the screens under it). focusManager is global: call this once. Returns
+ * a function that stops listening.
+ */
+export const listenToAppState = () => {
+  focusManager.setEventListener((handleFocus) => {
+    const subscription = AppState.addEventListener('change', (state) =>
+      handleFocus(state === 'active'),
+    );
+    return () => subscription.remove();
+  });
+  return () => {
+    focusManager.setEventListener(() => undefined);
+    focusManager.setFocused(undefined);
+  };
+};
+
+/**
  * Retries a failed query once, except on a 401: the token is gone, so the
  * first 401 from any query or mutation calls `onUnauthorized` (once per
- * client) instead. There is no window to refocus on a TV; screens refetch
- * when they regain focus.
+ * client) instead. Stale queries refetch when the app returns to the
+ * foreground (see `listenToAppState`); screens also refetch when they regain
+ * focus.
  */
 export const createQueryClient = (onUnauthorized?: () => void) => {
   let expired = false;
@@ -33,7 +55,6 @@ export const createQueryClient = (onUnauthorized?: () => void) => {
         staleTime: STALE_TIME_MS,
         retry: (failureCount, error) =>
           !isUnauthorized(error) && failureCount < 1,
-        refetchOnWindowFocus: false,
       },
     },
   });
@@ -54,6 +75,8 @@ export const SessionQueryClientProvider = ({
   children,
 }: SessionQueryClientProviderProps) => {
   const {status, session, expireSession} = useSession();
+  // Once for the app's life; it outlives the per-scope clients below.
+  useEffect(listenToAppState, []);
   const scope =
     status === 'signedIn' && session
       ? `${session.server.id}:${session.user.Id}`

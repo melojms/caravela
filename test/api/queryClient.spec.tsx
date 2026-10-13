@@ -1,8 +1,13 @@
 import {getDisplayPreferenceApi} from '@jellyfin/sdk/lib/utils/api/display-preference-api';
 import {getLibraryApi} from '@jellyfin/sdk/lib/utils/api/library-api';
-import {QueryClient, useQueryClient} from '@tanstack/react-query';
+import {
+  focusManager,
+  QueryClient,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {act, renderHook, waitFor} from '@testing-library/react-native';
 import React, {ReactNode} from 'react';
+import {AppState, AppStateStatus} from 'react-native';
 
 import {
   homeKeys,
@@ -75,10 +80,11 @@ describe('createQueryClient', () => {
     expect(retry(0, httpError(401))).toBe(false);
   });
 
-  it('keeps data fresh for 30 s and ignores window focus', () => {
+  it('keeps data fresh for 30 s and refetches stale data on focus', () => {
     const {queries} = createQueryClient().getDefaultOptions();
     expect(queries?.staleTime).toBe(30 * 1000);
-    expect(queries?.refetchOnWindowFocus).toBe(false);
+    // Left to TanStack's default: refetch stale queries on focus.
+    expect(queries?.refetchOnWindowFocus).toBeUndefined();
   });
 });
 
@@ -115,6 +121,92 @@ describe('SessionQueryClientProvider', () => {
     const first = result.current.client;
     rerender({});
     expect(result.current.client).toBe(first);
+  });
+});
+
+describe('refetching on return to the foreground', () => {
+  type Listener = (state: AppStateStatus) => void;
+  let listeners: Set<Listener>;
+  const changeTo = (state: AppStateStatus) =>
+    act(() => listeners.forEach((listener) => listener(state)));
+  const realNow = Date.now;
+  let now: jest.SpyInstance | undefined;
+  const later = (ms: number) => {
+    now = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + ms);
+  };
+
+  beforeEach(() => {
+    listeners = new Set();
+    jest
+      .mocked(AppState.addEventListener)
+      .mockImplementation((_type, listener) => {
+        listeners.add(listener as Listener);
+        return {remove: () => listeners.delete(listener as Listener)};
+      });
+    libraryApi.getResumeItems.mockResolvedValue({data: {Items: []}});
+  });
+
+  afterEach(() => {
+    now?.mockRestore();
+    now = undefined;
+    // focusManager is global: back to its default "focused".
+    focusManager.setFocused(undefined);
+  });
+
+  const renderResume = async () => {
+    const view = renderHook(useResume, {wrapper});
+    await waitFor(() => expect(view.result.current.isSuccess).toBe(true));
+    expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
+    return view;
+  };
+
+  it('refetches a stale query when the app comes back', async () => {
+    await renderResume();
+    later(31 * 1000);
+
+    changeTo('background');
+    changeTo('active');
+
+    await waitFor(() =>
+      expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it('keeps a fresh query when the app comes back within 30 s', async () => {
+    await renderResume();
+    later(29 * 1000);
+
+    changeTo('background');
+    changeTo('active');
+
+    await act(() => new Promise<void>((done) => setTimeout(done, 0)));
+    expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refetch when the app goes to the background', async () => {
+    await renderResume();
+    later(31 * 1000);
+
+    changeTo('background');
+
+    await act(() => new Promise<void>((done) => setTimeout(done, 0)));
+    expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
+  });
+
+  it('listens once, across user switches, and stops on unmount', async () => {
+    const {result, unmount} = renderHook(
+      () => ({session: useSession(), client: useQueryClient()}),
+      {wrapper},
+    );
+    await signedIn(result);
+    expect(listeners.size).toBe(1);
+
+    act(() => result.current.session.switchUser());
+    act(() => result.current.session.signIn(sessionFor(HOME, 'u2')));
+    expect(listeners.size).toBe(1);
+
+    unmount();
+    expect(listeners.size).toBe(0);
   });
 });
 
