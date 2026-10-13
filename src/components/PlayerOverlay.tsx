@@ -6,13 +6,7 @@ import {
   Stop,
   Svg,
 } from '@amazon-devices/react-native-svg';
-import React, {
-  memo,
-  type RefObject,
-  useCallback,
-  useRef,
-  useState,
-} from 'react';
+import React, {memo, type RefObject, useCallback, useRef, useState} from 'react';
 import {
   findNodeHandle,
   type LayoutChangeEvent,
@@ -288,12 +282,7 @@ export const PlayerOverlay = ({
     });
   }
   if (hasAudio) {
-    primary.push({
-      key: 'audio',
-      icon: 'audio',
-      label: 'Audio',
-      onPress: onAudio,
-    });
+    primary.push({key: 'audio', icon: 'audio', label: 'Audio', onPress: onAudio});
   }
   const secondary: ButtonSpec[] = [];
   if (hasChapters) {

@@ -200,9 +200,9 @@ describe('PlayerOverlay', () => {
       expect(view.getByTestId(`${ID}-speed-label`)).toHaveTextContent(
         'Playback speed',
       );
-      expect(
-        view.getByTestId(`${ID}-speed-icon`).props.children.props.fill,
-      ).toBe(colors.text);
+      expect(view.getByTestId(`${ID}-speed-icon`).props.children.props.fill).toBe(
+        colors.text,
+      );
       expect(view.queryByTestId(`${ID}-zoom-label`)).toBeNull();
 
       act(() => fireEvent(view.getByTestId(`${ID}-speed`), 'blur'));
