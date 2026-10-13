@@ -9,16 +9,53 @@ Sources:
 - [Version Your App](https://developer.amazon.com/docs/vega/0.24/app-version.html)
 - [Submit Your App to the Amazon Appstore](https://developer.amazon.com/docs/app-submission/submitting-apps-to-amazon-appstore.html)
 
-## Gaps found on 2026-10-12
+## Plan to v1.0
 
-Fix these before submitting. Tick them off as they land.
+Written 2026-10-13. Work top to bottom: each phase unblocks the next. Code tasks follow "How we work" in `docs/HANDOFF.md` (approach first, ≤3 source files per subtask, briefs in `docs/tasks/`). Numbered `R1`… so they don't clash with the feature tasks in `docs/PLAN.md`.
 
-- [ ] **Release the player in the background (blocker).** Nothing in `src/` listens to `AppState`. On Home/background the app must release media resources (`shakaPlayer.detach()`, `unload()`, `destroy()`, `videoPlayer.deinitialize()`), go back to the details page for VOD, and keep the resume position so playback can pick up where it left off. Most lifecycle tests below depend on this.
-- [ ] **Build number.** `build/*-release/vpkg-info.json` shows `"build_number": 0`; it must be ≥ 1 and go up with every submission. Add `--build-version X.Y.Z --build-number N` to `build:release` in `package.json`.
-- [ ] **Manifest services.** Add to `[wants]` in `manifest.toml`: `com.amazon.media.playersession.service` and `com.amazon.audio.system`.
-- [ ] **Media Controls.** `manifest.toml` needs `kepler_media_controls_1`, but no code uses it. Not listed as mandatory, but Alexa voice commands ("pause", "skip forward") and system playback controls go through it, so expect it to matter for the Alexa test.
-- [ ] **Audio codec switching.** Choose AAC or Dolby from the HDMI/AVR capability, and switch codec when the output changes between HDMI and Bluetooth during playback.
-- [ ] **Feature completeness.** Player controls, Search and Settings are still "coming next" in the README. A store build should at least have Search and a Settings screen with sign-out and an about/licences page.
+### Phase 0: go / no-go (the user, no code)
+
+Settle these first; if R0-1 is a no, the rest of this plan changes.
+
+- [ ] **R0-1 Shaka polyfills.** Every VPKG bundles Amazon's proprietary Shaka polyfills and wrapper ("AMAZON PROPRIETARY/CONFIDENTIAL"); the release workflow keeps GitHub releases as drafts for that reason. Confirm Amazon allows them in an Appstore build (read the Vega SDK licence; if unclear, ask on the Amazon Developer forum). If not, the fallback is a direct-play-only build without Shaka, which loses remux/transcode and most of the library: not worth shipping.
+- [ ] **R0-2 GPL compliance.** Publishing a binary means offering its source: the GitHub repo at the released tag, plus `scripts/setup-shaka.sh` for the parts we can't commit. Check `LICENSE-EXCEPTION.md` covers linking the polyfills into a distributed build.
+- [ ] **R0-3 Accounts and hosting.** An Amazon Developer account, and somewhere to host a privacy policy (e.g. GitHub Pages on the repo).
+- [ ] **R0-4 v1 scope.** Decide what the first version has. Recommended: what works today + R1–R6. Task 12 (segments, next up, still watching), the rest of task 14 and the Follow-ups in `docs/HANDOFF.md` wait for 1.1.
+
+### Phase 1: store blockers (code)
+
+Without these the app fails review or can't be uploaded.
+
+- [ ] **R1 Background and foreground.** `PlayerScreen` listens to `AppState`. On `background`: note the position, `controller.destroy()` (already Shaka unload/destroy → pause → clear surface → `deinitialize()`, which matches Amazon's order), send stopped with that position so the server keeps the resume point, and go back to the details page. On `active` the details page refetches and its Resume shows the new position. Also check nothing else keeps running in the background (query refetch timers, the clock, progress reporting). Most lifecycle tests depend on this. Touches `PlayerScreen.tsx` and maybe a small `useAppBackground` hook, plus tests.
+- [ ] **R2 Manifest and versioning.** Add `com.amazon.media.playersession.service` and `com.amazon.audio.system` to `[wants]` (Amazon's media requirements list both; Vega already logs the missing `audio.system`). Give the build a build number ≥ 1 that goes up on every upload: `build:release` and the release workflow pass `--build-number` (confirm the flag in the Vega CLI reference; the workflow could use `github.run_number`). Check the result with `vega exec vpt info <vpkg> --json`. Set the v1 version (`1.0.0`) in `manifest.toml` and `package.json` at release time.
+- [ ] **R3 Search (task 13, minimal).** The toolbar opens a placeholder, and reviewers reject features that don't work. Minimal: a text field with the on-screen keyboard, `searchTerm` over movies, series and episodes, results as rows of cards that open Details. No search history or voice. If time matters more, the alternative is hiding the Search button for v1; building it is recommended, since it's basic for a library client.
+- [ ] **R4 About in Settings.** App version and build number, server version, "Unofficial client, not affiliated with the Jellyfin project", GPL-2.0-or-later with a link to the source, third-party licences (Jellyfin SDK, Shaka, React Native, TanStack Query…), privacy policy link. One new section, plus a generated licences list.
+
+### Phase 2: playback requirements (code, after R1)
+
+- [ ] **R5 Audio codec selection.** Amazon requires choosing AAC or Dolby from the HDMI/AVR's capability and switching when the output changes (HDMI ↔ Bluetooth) during playback. First find out what decides E-AC-3 today (passed through with sound in task 7.5, but 10f-1 says it's always converted to AAC). Then probe audio capability at each play, and on an output change reload at the current position the same way a track switch does. Find the Vega API for output changes in the docs during the task.
+- [ ] **R6 Media Controls.** Hook the player into Vega Media Controls (`kepler_media_controls_1`, already in `needs`) so Alexa ("pause", "resume", "skip forward") and the system controls work, and Alexa interruptions pause and resume cleanly. Do it before the Phase 3 run; if the Alexa test passes without it, it can move to 1.1, but voice control is something reviewers try.
+
+### Phase 3: certification run on the Fire TV (the user, with a Release build)
+
+- [ ] Install the Release VPKG from R2 (not Debug) on the Fire TV Stick 4K Select.
+- [ ] All nine lifecycle tests below, on direct play and on an HLS remux/transcode.
+- [ ] A smoke pass as a new user on the public demo server: add server, sign in, Home, Movies, Shows, Details, play, subtitles, audio switch, Search, Settings, sign out. This is what the reviewer will do.
+- [ ] Optional: Vega KPIs (time to first frame, UI fluidity on grids), see "Performance" in `docs/PLAN.md`.
+- [ ] Fix what fails (`R7…` tasks), then repeat the failing tests.
+
+### Phase 4: listing and submission (the user)
+
+- [ ] **Privacy policy** published (R0-3): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics.
+- [ ] **Store assets:** the console lists the sizes; expect the icon (512×512 exists), a 1920×1080 Fire TV background, and 3+ 1920×1080 screenshots (the README's set from the demo server works, retaken on a Release build).
+- [ ] **Description:** what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
+- [ ] **Reviewer notes:** the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.
+- [ ] Content rating questionnaire, then the "Developer Console" steps below.
+- [ ] Tag the release in git and keep the source available (R0-2).
+
+### After v1.0
+
+Task 12, Settings (task 14), Content Launcher, and the Follow-ups in `docs/HANDOFF.md`, e.g. removing a saved server or user.
 
 ## Binary
 
@@ -50,9 +87,3 @@ Run each with on-demand content. Expected: no crash, no blank screen, no audio l
 5. [ ] Content rating questionnaire.
 6. [ ] Privacy policy URL (the app stores server addresses, user names and access tokens, unencrypted; see README).
 7. [ ] **Review & Submit.**
-
-## Beyond Amazon's checklist
-
-- [ ] **Reviewer access.** Give reviewers a public Jellyfin 12.0+ server and a login in the testing notes; Caravela rejects older servers. Check whether the Jellyfin demo server is on 12.0+.
-- [ ] **Shaka polyfills.** A built VPKG contains Amazon's proprietary Shaka polyfills (see README, "Shaka Player (not included)"). Confirm Amazon's terms allow distributing them in a store build, and keep the GPL source available alongside it.
-- [ ] **Wording.** Keep "unofficial, not affiliated with the Jellyfin project" in the store description, and don't word it in a way that suggests pirated content (reviewers reject apps that seem to promote it).
