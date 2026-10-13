@@ -2,7 +2,7 @@ schema-version = 1
 
 [package]
 title = "Caravela"
-version = "0.1.0"
+version = "0.1.1"
 id = "com.melojms.caravela"
 icon = "@image/app_icon.png"
 
