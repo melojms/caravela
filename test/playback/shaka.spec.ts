@@ -288,6 +288,45 @@ describe('errors', () => {
   });
 });
 
+describe('buffering', () => {
+  it("forwards Shaka's buffering event", () => {
+    const onBuffering = jest.fn();
+    adapter.createShakaSession(media, {onBuffering});
+    lastPlayer().fire('buffering', undefined, {buffering: true});
+    lastPlayer().fire('buffering', undefined, {buffering: false});
+    expect(onBuffering.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('ignores buffering events after destroy()', async () => {
+    const onBuffering = jest.fn();
+    const session = adapter.createShakaSession(media, {onBuffering});
+    const player = lastPlayer();
+    await session.destroy();
+    player.fire('buffering', undefined, {buffering: true});
+    expect(onBuffering).not.toHaveBeenCalled();
+  });
+
+  it("reads Shaka's isBuffering() once loaded, and not after destroy", async () => {
+    const session = adapter.createShakaSession(media);
+    const player = lastPlayer();
+    player.isBuffering.mockReturnValue(true);
+    expect(session.isBuffering()).toBe(false);
+    await session.load('http://server/master.m3u8', 0);
+    expect(session.isBuffering()).toBe(true);
+    await session.destroy();
+    expect(session.isBuffering()).toBe(false);
+  });
+
+  it('answers false when isBuffering() throws', async () => {
+    const session = adapter.createShakaSession(media);
+    await session.load('http://server/master.m3u8', 0);
+    lastPlayer().isBuffering.mockImplementation(() => {
+      throw new Error('gone');
+    });
+    expect(session.isBuffering()).toBe(false);
+  });
+});
+
 describe('destroy', () => {
   it('unloads, then destroys, and clears the document polyfill', async () => {
     const session = adapter.createShakaSession(media);

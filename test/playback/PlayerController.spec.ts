@@ -1657,7 +1657,7 @@ describe('HLS mode', () => {
     expect(order.slice(5).every((step) => step === 'remove')).toBe(true);
   });
 
-  it("destroys Shaka first, then skips pausing and clearing a stuck player", async () => {
+  it('destroys Shaka first, then skips pausing and clearing a stuck player', async () => {
     const {controller, player, load, shakaPlayer} = await setupHls();
     load.resolve();
     await flush();
@@ -1675,6 +1675,71 @@ describe('HLS mode', () => {
     expect(player.clearSurfaceHandle).not.toHaveBeenCalled();
     expect(player.deinitialize).toHaveBeenCalledTimes(1);
     expect(player.listenerCount()).toBe(0);
+  });
+
+  describe("Shaka's buffering (rate 0)", () => {
+    /** HLS playing at 95 s, Shaka loaded. */
+    const setupHlsPlaying = async () => {
+      const result = await setupHls();
+      result.load.resolve();
+      await flush();
+      result.player.paused = false;
+      result.player.fire('play');
+      result.player.fire('playing');
+      result.player.setPosition(95);
+      result.player.fire('timeupdate');
+      return result;
+    };
+
+    const setBuffering = (shakaPlayer: FakeShakaPlayer, buffering: boolean) => {
+      shakaPlayer.isBuffering.mockReturnValue(buffering);
+      shakaPlayer.fire('buffering', undefined, {buffering});
+    };
+
+    it(`doesn't trip the freeze check, however long past ${FREEZE_TIMEOUT_MS} ms`, async () => {
+      const {controller, shakaPlayer} = await setupHlsPlaying();
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS - 1);
+      expect(listeners.onError).not.toHaveBeenCalled();
+      expect(controller.playerState).toBe('playing');
+    });
+
+    it('fails a buffer that lasts the stall timeout', async () => {
+      const {shakaPlayer} = await setupHlsPlaying();
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS);
+      expect(listeners.onError).toHaveBeenCalledTimes(1);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    });
+
+    it("doesn't trip the freeze check when only isBuffering() says so", async () => {
+      const {shakaPlayer} = await setupHlsPlaying();
+      shakaPlayer.isBuffering.mockReturnValue(true);
+      jest.advanceTimersByTime(FREEZE_TIMEOUT_MS * 2);
+      expect(listeners.onError).not.toHaveBeenCalled();
+    });
+
+    it('fails a freeze once buffering is over, counted from its end', async () => {
+      const {shakaPlayer} = await setupHlsPlaying();
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(FREEZE_TIMEOUT_MS * 2);
+      setBuffering(shakaPlayer, false);
+      jest.advanceTimersByTime(FREEZE_TIMEOUT_MS - 1);
+      expect(listeners.onError).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(FREEZE_POLL_MS);
+      expect(listeners.onError).toHaveBeenCalledTimes(1);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+    });
+
+    it('pauses and clears on leave while buffering (not stuck)', async () => {
+      const {controller, player, shakaPlayer} = await setupHlsPlaying();
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(STUCK_ON_RELEASE_MS * 3);
+      await controller.destroy();
+      expect(player.pause).toHaveBeenCalledTimes(1);
+      expect(player.clearSurfaceHandle).toHaveBeenCalledWith('surface-1');
+      expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('logs a failed Shaka teardown and still deinitializes', async () => {

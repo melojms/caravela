@@ -110,6 +110,11 @@ export type ShakaSessionOptions = {
   maxBandwidth?: number;
   /** A fatal Shaka `error` event, as a readable message. */
   onError?(message: string): void;
+  /**
+   * Shaka's `buffering` event: it starts or stops holding the element at
+   * rate 0 while too little is buffered (the position doesn't move).
+   */
+  onBuffering?(buffering: boolean): void;
 };
 
 export type ShakaSession = {
@@ -123,6 +128,11 @@ export type ShakaSession = {
    * after destroy.
    */
   setPlaybackRate(rate: number): void;
+  /**
+   * Shaka is holding playback until enough is buffered. False before the
+   * load and after destroy; never throws.
+   */
+  isBuffering(): boolean;
   /** Unloads, then destroys Shaka. Never rejects; safe to call again. */
   destroy(): Promise<void>;
 };
@@ -133,7 +143,11 @@ export type ShakaSession = {
  */
 export function createShakaSession(
   media: VideoPlayer,
-  {maxBandwidth = DEFAULT_MAX_BITRATE, onError}: ShakaSessionOptions = {},
+  {
+    maxBandwidth = DEFAULT_MAX_BITRATE,
+    onError,
+    onBuffering,
+  }: ShakaSessionOptions = {},
 ): ShakaSession {
   // Amazon's document polyfill answers `createElement('video')` with this.
   vegaGlobal.gmedia = media;
@@ -148,6 +162,14 @@ export function createShakaSession(
     log('error', error);
     if (!destroying && error?.severity === Severity.CRITICAL) {
       onError?.(shakaErrorMessage(error));
+    }
+  });
+
+  player.addEventListener('buffering', (event: Event) => {
+    if (!destroying) {
+      onBuffering?.(
+        Boolean((event as Event & {buffering?: boolean}).buffering),
+      );
     }
   });
 
@@ -195,6 +217,18 @@ export function createShakaSession(
         player.trickPlay(rate, false);
       } catch (reason) {
         log('trickPlay failed', reason);
+      }
+    },
+
+    isBuffering() {
+      if (!loaded || destroying) {
+        return false;
+      }
+      try {
+        return player.isBuffering();
+      } catch (reason) {
+        log('isBuffering failed', reason);
+        return false;
       }
     },
 

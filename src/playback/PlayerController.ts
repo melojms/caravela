@@ -153,6 +153,8 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * (Retry makes a new controller). A pause suspends it; play re-arms it.
  * While `playing`, a poll of the position catches a pipeline that stops
  * with no event; leaving such a player skips its blocking native calls.
+ * Shaka's buffering (rate 0, HLS) counts as a stall, not a freeze: the
+ * watchdog watches it and the poll waits it out.
  *
  * In URL mode a rate change while playing goes pause → rate → play: Vega
  * applies it mid-play as a `seekWithRate`, which froze direct play on the
@@ -453,6 +455,7 @@ export class PlayerController {
             this.fail(message);
           }
         },
+        onBuffering: this.onBuffering,
       });
     } catch (reason) {
       warn('Shaka setup', reason);
@@ -614,12 +617,18 @@ export class PlayerController {
       this.stuck ||
       (this.state === 'playing' &&
         !this.failed &&
+        !this.buffering() &&
         Date.now() - this.movedAt > STUCK_ON_RELEASE_MS)
     );
   }
 
   private markMoved() {
     this.movedAt = Date.now();
+  }
+
+  /** HLS: Shaka holds the element at rate 0 until enough is buffered. */
+  private buffering() {
+    return this.shaka?.isBuffering() ?? false;
   }
 
   /** Starts the poll from the current position. */
@@ -646,7 +655,11 @@ export class PlayerController {
       return;
     }
     const time = this.read(() => this.player.currentTime);
-    if (Number.isFinite(time) && time !== this.polledTime) {
+    if (
+      this.buffering() ||
+      (Number.isFinite(time) && time !== this.polledTime)
+    ) {
+      // Moved, or Shaka's buffering, which the watchdog watches: start over.
       this.polledTime = time;
       this.markMoved();
     } else if (Date.now() - this.movedAt >= FREEZE_TIMEOUT_MS) {
@@ -700,6 +713,28 @@ export class PlayerController {
       this.clearWatchdog();
     } else {
       this.onProgress();
+    }
+  };
+
+  /**
+   * Shaka's buffering: like `waiting`, the watchdog watches it (a start
+   * already watched keeps its timer); its end lets playback move again.
+   */
+  private onBuffering = (buffering: boolean) => {
+    if (!this.live() || this.state === 'ended') {
+      return;
+    }
+    if (buffering) {
+      if (this.hasPlayed && this.watchdog === undefined) {
+        this.armWatchdog();
+      }
+      return;
+    }
+    // The freeze check counts from here.
+    this.polledTime = this.read(() => this.player.currentTime);
+    this.markMoved();
+    if (this.hasPlayed && this.state === 'playing') {
+      this.clearWatchdog();
     }
   };
 

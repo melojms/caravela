@@ -3,7 +3,11 @@
 // gitignored src/vendor/shaka/. jest.config.json maps the import here, so the
 // tests run on a clean checkout.
 
-type Listener = (event: {type: string; detail?: unknown}) => void;
+type Listener = (event: {
+  type: string;
+  detail?: unknown;
+  [field: string]: unknown;
+}) => void;
 
 /**
  * A fake `shaka.Player`: spies for the calls the app makes, and `fire()` to
@@ -27,6 +31,7 @@ class Player {
   load = jest.fn((_url: string, _startTime?: number) => Player.loadResult());
   unload = jest.fn(() => Promise.resolve());
   trickPlay = jest.fn((_rate: number, _useTrickPlayTrack?: boolean) => {});
+  isBuffering = jest.fn((): boolean => false);
   destroy = jest.fn(() => Promise.resolve());
 
   addEventListener = jest.fn((type: string, listener: Listener) => {
@@ -42,10 +47,14 @@ class Player {
     Player.instances.push(this);
   }
 
-  /** Dispatches a Shaka event (e.g. `error` with a `shaka.util.Error`). */
-  fire(type: string, detail?: unknown) {
+  /**
+   * Dispatches a Shaka event (e.g. `error` with a `shaka.util.Error`).
+   * `fields` go on the event itself, as Shaka's `FakeEvent` puts them
+   * (e.g. `{buffering: true}`).
+   */
+  fire(type: string, detail?: unknown, fields: Record<string, unknown> = {}) {
     for (const listener of [...(this.listeners.get(type) ?? [])]) {
-      listener({type, detail});
+      listener({...fields, type, detail});
     }
   }
 }
