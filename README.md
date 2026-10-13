@@ -136,6 +136,25 @@ Amazon describes the package and its build in [Play adaptive content with Shaka 
 
 **If you distribute builds:** a built app contains Amazon's proprietary polyfills, which the GPL doesn't cover. Caravela's licence has a linking exception ([LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)) that allows this combination on the GPL side, but Amazon's terms still apply to Amazon's files, so check them before you share or publish a build.
 
+## Releases
+
+There are no public downloads. Every build contains Amazon's proprietary Shaka polyfills (see above), so to run Caravela, build it yourself.
+
+For maintainers, the **Release** workflow (`.github/workflows/release.yml`) builds a release package for the Fire TV Stick 4K Select (armv7):
+
+1. In **Actions → Release → Run workflow**, pick a version bump (`patch`, `minor` or `major`), or run `gh workflow run release.yml -f bump=patch`.
+2. The workflow bumps the version in `manifest.toml` and `package.json`, installs the Vega SDK, builds Shaka Player, then lints, tests and builds. Only if all of that passes does it commit `Release vX.Y.Z` to `main` and push the `vX.Y.Z` tag.
+3. It attaches `caravela-vX.Y.Z-armv7.vpkg` to a **draft** release, which only people with write access to the repository can see.
+
+Install a release on the device:
+
+```sh
+gh release download v0.1.1 --pattern '*.vpkg'
+vega device install-app --packagePath caravela-v0.1.1-armv7.vpkg
+```
+
+Leave releases as drafts. Publishing one would make the package, and Amazon's polyfills inside it, publicly downloadable.
+
 ## Jellyfin API and saved logins
 
 - **SDK:** `@jellyfin/sdk` 1.0.0, generated from the Jellyfin 12.0 OpenAPI spec. Caravela supports **Jellyfin 12.0 and newer** and rejects older servers when you add them. The SDK and its axios dependency bundle and run under Vega Metro/Hermes (axios uses its `react-native` build).
