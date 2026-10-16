@@ -27,6 +27,10 @@ export class VideoPlayer {
    * `VideoPlayer.initializeResult.mockReturnValueOnce(promise)`.
    */
   static initializeResult = jest.fn(() => Promise.resolve());
+  /** What every instance's `setMediaControlFocus()` returns (or throws). */
+  static mediaControlFocusResult = jest.fn(
+    (): Promise<void> => Promise.resolve(),
+  );
 
   src = '';
   autoplay = false;
@@ -51,6 +55,10 @@ export class VideoPlayer {
   play = jest.fn(() => Promise.resolve());
   pause = jest.fn((): void => undefined);
   load = jest.fn((): void => undefined);
+  setMediaControlFocus = jest.fn(
+    (_componentInstance: unknown, _handler?: unknown): Promise<void> =>
+      VideoPlayer.mediaControlFocusResult(),
+  );
 
   addEventListener = jest.fn((type: string, listener: Listener) => {
     const set = this.listeners.get(type) ?? new Set();
@@ -104,6 +112,34 @@ export class VideoPlayer {
     let count = 0;
     this.listeners.forEach((set) => (count += set.size));
     return count;
+  }
+}
+
+/**
+ * A plain stand-in for w3cmedia's default Media Controls handler. Its
+ * commands are prototype methods (so a subclass's overrides win) that do
+ * nothing; `handleGetMetadataInfo` rejects, like the real one.
+ */
+export class KeplerMediaControlHandler {
+  mediaPlayer?: unknown;
+  setMediaPlayer(player: unknown) {
+    this.mediaPlayer = player;
+  }
+  async handlePlay(): Promise<void> {}
+  async handlePause(): Promise<void> {}
+  async handleTogglePlayPause(): Promise<void> {}
+  async handleStop(): Promise<void> {}
+  async handleStartOver(): Promise<void> {}
+  async handleFastForward(): Promise<void> {}
+  async handleRewind(): Promise<void> {}
+  async handleSeek(): Promise<void> {}
+  async handleSkipForward(): Promise<void> {}
+  async handleSkipBackward(): Promise<void> {}
+  async handleGetMetadataInfo(): Promise<unknown> {
+    throw new Error('NOP');
+  }
+  async handleGetSessionState(): Promise<unknown[]> {
+    return [];
   }
 }
 

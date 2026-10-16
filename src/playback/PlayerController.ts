@@ -2,6 +2,7 @@ import type {Api} from '@jellyfin/sdk';
 import type {IComponentInstance} from '@amazon-devices/react-native-kepler';
 import {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
 
+import {MediaControlsHandler} from './mediaControls';
 import {createPlaybackReporter, type PlaybackReporter} from './reporting';
 import {
   createShakaSession,
@@ -32,6 +33,8 @@ export type PlayerOptions = {
    * Media Controls focus (Alexa and the remote's media keys) for it.
    */
   componentInstance?: IComponentInstance;
+  /** The item's name, for Vega's Media Controls metadata. */
+  title?: string;
 };
 
 /** W3C `MediaError` codes. */
@@ -176,6 +179,17 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * `audiofocuslost` means Vega won't resume: the player pauses as if the user
  * had, so Play resumes it.
  *
+ * With a `componentInstance`, the player takes the Vega Media Controls focus
+ * before `initialize()` (a failure only warns) and Alexa's and the remote's
+ * media commands come here through {@link MediaControlsHandler}. Every voice
+ * command arrives while Alexa holds the audio focus, and a `pause()` then gets
+ * no `pause` event: the controller pauses itself (state, report, checks off;
+ * `paused` reads true until a `play`), and the `pause` Vega may still send
+ * later changes nothing, even once playing again. Focus back leaves a paused
+ * player alone. `deinitialize()` drops w3cmedia's hold on the player; the
+ * handler stays registered with Vega until another player takes the focus,
+ * and the controller ignores its commands once destroyed.
+ *
  * In URL mode a rate change while playing goes pause → rate → play: Vega
  * applies it mid-play as a `seekWithRate`, which froze direct play on the
  * TV. That pause and play aren't shown or reported.
@@ -223,6 +237,15 @@ export class PlayerController {
    * hasn't given it back: neither the watchdog nor the poll runs.
    */
   private held = false;
+  /**
+   * `pause()` while held: the controller paused itself with no `pause` event,
+   * and `player.paused` may not say so. Cleared by `play` / `playing`.
+   */
+  private pausedWhileHeld = false;
+  /** The `pause` event Vega may still send for that pause is due. */
+  private latePauseDue = false;
+  private readonly componentInstance?: IComponentInstance;
+  readonly title?: string;
   private hasMetadata = false;
   /** Where the last seek goes until its `seeked`; relative seeks add to it. */
   private pendingSeekMs?: number;
@@ -253,6 +276,8 @@ export class PlayerController {
     options: PlayerOptions = {},
   ) {
     this.rate = isRate(options.playbackRate) ? options.playbackRate : 1;
+    this.componentInstance = options.componentInstance;
+    this.title = options.title;
     this.initialSeek =
       session.mode === 'url' && session.startMs > 0 ? 'pending' : 'done';
     this.subtitleIndex = session.subtitleStreamIndex;
@@ -293,7 +318,7 @@ export class PlayerController {
   }
 
   get paused(): boolean {
-    return this.read(() => this.player.paused) ?? true;
+    return this.pausedWhileHeld || (this.read(() => this.player.paused) ?? true);
   }
 
   get playerState(): PlayerState {
@@ -357,8 +382,16 @@ export class PlayerController {
   }
 
   pause() {
-    if (this.canControl()) {
-      attempt('pause', () => this.player.pause());
+    if (!this.canControl()) {
+      return;
+    }
+    attempt('pause', () => this.player.pause());
+    if (this.held && this.state !== 'paused') {
+      // Vega sends no `pause` for this one (Alexa's "pause"). The report
+      // onPause() sends reads `paused`, so that goes first.
+      this.pausedWhileHeld = true;
+      this.onPause();
+      this.latePauseDue = true;
     }
   }
 
@@ -442,6 +475,9 @@ export class PlayerController {
   }
 
   private async initialize() {
+    if (this.componentInstance) {
+      await this.takeMediaControlFocus(this.componentInstance);
+    }
     try {
       await this.player.initialize();
     } catch (reason) {
@@ -470,6 +506,18 @@ export class PlayerController {
       this.loadShaka();
     }
     this.setSurface();
+  }
+
+  /** Before `initialize()`, as Amazon's guide does. Playback goes on without. */
+  private async takeMediaControlFocus(component: IComponentInstance) {
+    try {
+      await this.player.setMediaControlFocus(
+        component,
+        new MediaControlsHandler(this),
+      );
+    } catch (reason) {
+      warn('setMediaControlFocus', reason);
+    }
   }
 
   /** HLS: loads the playlist through Shaka before the surface is set. */
@@ -807,6 +855,7 @@ export class PlayerController {
     const restart = this.rateRestart;
     this.rateRestart = false;
     this.suspended = false;
+    this.pausedWhileHeld = false;
     // A start already being watched keeps its timer; after a pause (or
     // once started) this waits for `playing`.
     if (this.watchdog === undefined) {
@@ -823,6 +872,7 @@ export class PlayerController {
     }
     this.hasPlayed = true;
     this.suspended = false;
+    this.pausedWhileHeld = false;
     this.rateRestart = false;
     this.clearWatchdog();
     this.setState('playing');
@@ -836,6 +886,17 @@ export class PlayerController {
     // setPlaybackRate's own pause: its `play` follows right away.
     if (!this.live() || this.state === 'ended' || this.rateRestart) {
       return;
+    }
+    if (this.latePauseDue) {
+      this.latePauseDue = false;
+      // The `pause` for a pause made while held: already shown and reported,
+      // or played since (the player says it isn't paused).
+      if (
+        this.state === 'paused' ||
+        this.read(() => this.player.paused) === false
+      ) {
+        return;
+      }
     }
     this.suspended = true;
     this.clearWatchdog();
