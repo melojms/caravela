@@ -3,7 +3,12 @@
 Read this file, docs/PLAN.md and docs/PUBLISHING.md before starting. Last updated 2026-10-16 (after R3).
 
 ## Starting a fresh session
-1. Read the "Next" item under Status: the work is now the Appstore release, "Plan to v1.0" in docs/PUBLISHING.md (phases 0–4, tasks R0-1…R6). Phase 0 is the user's decisions (Shaka polyfill licensing, GPL source, accounts, v1 scope); check which are settled before starting code. The first code task is R1 (release the player in the background): read `src/screens/PlayerScreen.tsx`, `src/playback/PlayerController.ts` (`destroy()` order) and `src/playback/reporting.ts`, and Amazon's "General requirements for media apps" and "Transition App State between Background and Foreground" (Vega 0.24 docs).
+1. Read the "Next" item under Status: the work is the Appstore release, "Plan to v1.0" in docs/PUBLISHING.md (phases 0–4). Done so far: R1-c (refetch on foreground), R2 (manifest and versioning), R3 (minimal Search). Phase 0 (R0-1…R0-4) is the user's decisions; ask which are settled, but code tasks don't wait on them. Remaining code tasks, and where to start reading:
+   - **R1-0** (needs the user at the TV): log which events background the app (Home, another app, Alexa card, screensaver, HDMI unplug, TV input/power). `../caravela-wt/probe-r1-0` has an unmerged probe branch for it; look at it before starting.
+   - **R1-a**: `PlayerScreen` leaves to the details page on `background`. Read `src/screens/PlayerScreen.tsx`, `src/playback/PlayerController.ts` (`destroy()` order), `src/playback/reporting.ts`, and Amazon's "General requirements for media apps" and "Transition App State between Background and Foreground" (Vega 0.24). R1-b only if R1-0 finds cases that don't change `AppState`; R1-d is the Fire TV lifecycle run.
+   - **R4** About in Settings (no playback, simulator is enough): `src/screens/SettingsScreen.tsx`, `manifest.toml` / `scripts/build-release.sh` for the version and build number.
+   - **R5** audio codec selection and **R6** Media Controls: see docs/PUBLISHING.md Phase 2.
+   If the user doesn't pick, suggest R1-a (most lifecycle tests depend on it), or R4 if the user isn't at the TV.
 2. Describe the approach and **wait for the user's approval** before writing code or briefs.
 3. After approval: split into subtasks of ≤3 source files, write the briefs, and run them as described in "How we work".
 4. Tick tasks off in docs/PUBLISHING.md as they land; run the lifecycle tests there on a Release build on the Fire TV (Phase 3).
@@ -201,6 +206,7 @@ Read this file, docs/PLAN.md and docs/PUBLISHING.md before starting. Last update
   - Never start a long-running process (e.g. `loggingctl log -f`) inside the lock: it inherits the lock and holds it forever. Start log capture outside `flock`, detached, and stop it by pid.
   - When agents run in parallel, hold the lock for a whole flow (install → navigate → screenshot), not per step. Otherwise agents interleave on the TV.
   - **Typing:** focus the TextInput (the keyboard opens), wait about 3 s, then `inputd-cli send_text <text>`. Check with a screenshot: a stray key press can add a letter in front. Press Back to close the keyboard.
+  - **Search field** (since R3 the field has `showSoftInputOnFocus={false}`): focus it, press KEY_ENTER to open the keyboard, wait ~3 s, `send_text`. The keyboard opens on the `a` key: Down ×4 then Right reaches its **Search** key (submits and closes it); Down ×3 then Right ×5 reaches **Clear**. Screenshot before pressing Enter on a key.
 - **Before merging to `main`:**
   - Rebase onto `main` and resolve `package.json`, `manifest.toml` and `jest.config.json` by taking both sides.
   - If `package-lock.json` conflicts, regenerate it with a clean `rm -rf node_modules package-lock.json && npm install`; otherwise keep it and run `npm ci`.
