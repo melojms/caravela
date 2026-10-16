@@ -1496,6 +1496,82 @@ describe('Media Controls (Alexa, the remote media keys)', () => {
       expect(controller.playerState).toBe('paused');
     });
   });
+
+  describe("the state Vega reads (w3cmedia's says playing on focus back)", () => {
+    const spyReport = (player: FakePlayer) =>
+      jest.spyOn(handlerOf(player), 'reportPaused');
+
+    it('says paused after a pause while held, once the controller is', async () => {
+      const {controller, player} = await setupPlaying();
+      const report = spyReport(player);
+      const states: string[] = [];
+      report.mockImplementation(() => states.push(controller.playerState));
+      player.fire('audiofocuspaused');
+      await handlerOf(player).handlePause();
+      expect(states).toEqual(['paused']);
+    });
+
+    it('says paused again on audiofocusgranted', async () => {
+      const {player} = await setupPlaying();
+      player.fire('audiofocuspaused');
+      await handlerOf(player).handlePause();
+      const report = spyReport(player);
+      player.fire('audiofocusgranted');
+      expect(report).toHaveBeenCalledTimes(1);
+    });
+
+    it('says paused on audiofocusgranted after a pause outside the hold', async () => {
+      const {controller, player} = await setupPlaying();
+      const report = spyReport(player);
+      controller.pause();
+      player.paused = true;
+      player.fire('pause');
+      // The `pause` event tells w3cmedia's state itself.
+      expect(report).not.toHaveBeenCalled();
+      player.fire('audiofocuspaused');
+      player.fire('audiofocusgranted');
+      expect(report).toHaveBeenCalledTimes(1);
+    });
+
+    it('is left to w3cmedia while playing', async () => {
+      const {player} = await setupPlaying();
+      const report = spyReport(player);
+      player.fire('audiofocuspaused');
+      advance(2000);
+      player.fire('audiofocusgranted');
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it('is left to w3cmedia once playing again after a pause while held', async () => {
+      const {controller, player} = await setupPlaying();
+      player.fire('audiofocuspaused');
+      await handlerOf(player).handlePause();
+      const report = spyReport(player);
+      controller.play();
+      player.fire('play');
+      player.fire('playing');
+      player.fire('audiofocusgranted');
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['without a component', {}],
+      ['when the focus failed', {componentInstance: COMPONENT}],
+    ])('is left alone %s', async (name, options: PlayerOptions) => {
+      const report = jest.spyOn(MediaControlsHandler.prototype, 'reportPaused');
+      if (name === 'when the focus failed') {
+        Fake.mediaControlFocusResult.mockRejectedValueOnce(new Error('no KMC'));
+      }
+      const {controller, player} = await setup({}, options);
+      startPlaying(player);
+      player.fire('audiofocuspaused');
+      controller.pause();
+      player.fire('audiofocusgranted');
+      expect(controller.playerState).toBe('paused');
+      expect(report).not.toHaveBeenCalled();
+      report.mockRestore();
+    });
+  });
 });
 
 describe('seeking', () => {

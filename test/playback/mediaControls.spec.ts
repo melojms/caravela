@@ -1,3 +1,7 @@
+import type {
+  MediaSessionState,
+  PlaybackStatus,
+} from '@amazon-devices/kepler-media-controls';
 import {KeplerMediaControlHandler} from '@amazon-devices/react-native-w3cmedia';
 
 import {
@@ -17,15 +21,30 @@ const makeTarget = (title?: string): jest.Mocked<MediaControlsTarget> => ({
   seekTo: jest.fn(),
   seekBy: jest.fn(),
   title,
+  paused: false,
 });
 
 let target: jest.Mocked<MediaControlsTarget>;
 let handler: MediaControlsHandler;
+let warn: jest.SpyInstance;
 
 beforeEach(() => {
   target = makeTarget('Big Buck Bunny');
   handler = new MediaControlsHandler(target);
+  warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+// The package's index loads a native module, so no runtime import here.
+const PLAYING = 'PLAYING' as PlaybackStatus.PLAYING;
+const PAUSED = 'PAUSED' as PlaybackStatus.PAUSED;
+
+const setPaused = (paused: boolean) => {
+  (target as unknown as {paused: boolean}).paused = paused;
+};
 
 /** Every target call, so a test can check nothing else happened. */
 const calls = () =>
@@ -173,14 +192,146 @@ describe('handleGetMetadataInfo', () => {
   });
 });
 
-it("leaves the session state to w3cmedia's default", async () => {
-  const spy = jest.spyOn(
-    KeplerMediaControlHandler.prototype,
-    'handleGetSessionState',
-  );
-  await handler.handleGetSessionState();
-  expect(spy).toHaveBeenCalledTimes(1);
-  spy.mockRestore();
+describe('reportPaused', () => {
+  /** w3cmedia's state object, reached through the player it gives the handler. */
+  const withStateUtil = () => {
+    const util = {
+      playbackStatus: PLAYING as PlaybackStatus,
+      updateState: jest.fn(),
+    };
+    handler.setMediaPlayer({mediaControlStateUtil: util} as never);
+    return util;
+  };
+
+  it("sets w3cmedia's state to paused, then sends it to Vega", () => {
+    const util = withStateUtil();
+    const sent: PlaybackStatus[] = [];
+    util.updateState.mockImplementation(() => sent.push(util.playbackStatus));
+    handler.reportPaused();
+    expect(util.playbackStatus).toBe(PAUSED);
+    expect(sent).toEqual([PAUSED]);
+    expect(util.updateState).toHaveBeenCalledWith();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('sends it every time', () => {
+    const util = withStateUtil();
+    handler.reportPaused();
+    util.playbackStatus = PLAYING;
+    handler.reportPaused();
+    expect(util.updateState).toHaveBeenCalledTimes(2);
+    expect(util.playbackStatus).toBe(PAUSED);
+  });
+
+  it.each([
+    ['no player', undefined],
+    ['a null player', null],
+    ['no state object', {}],
+    ['a null state object', {mediaControlStateUtil: null}],
+    ['no updateState', {mediaControlStateUtil: {playbackStatus: 'PLAYING'}}],
+    [
+      'an updateState that throws',
+      {
+        mediaControlStateUtil: {
+          updateState: () => {
+            throw new Error('no server');
+          },
+        },
+      },
+    ],
+    [
+      'a state object that throws when read',
+      Object.defineProperty({}, 'mediaControlStateUtil', {
+        get: () => {
+          throw new Error('gone');
+        },
+      }),
+    ],
+  ])("doesn't throw with %s, and warns once", (_, player) => {
+    (handler as {mediaPlayer: unknown}).mediaPlayer = player;
+    expect(() => {
+      handler.reportPaused();
+      handler.reportPaused();
+    }).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('handleGetSessionState', () => {
+  const state = (id: number): MediaSessionState => ({
+    id: {id},
+    playbackState: {
+      playbackStatus: PLAYING,
+      playbackSpeed: 1,
+      position: {
+        updatedAtTime: {seconds: 1702965600, nanoseconds: 0},
+        position: {seconds: 10, nanoseconds: 999999999},
+      },
+    },
+    capabilities: {actions: [], speeds: [1], ratings: []} as never,
+    controls: [{name: 'X-ray', state: 'off'}],
+  });
+
+  /** What w3cmedia's default answers. */
+  const fromW3cmedia = (states: MediaSessionState[]) =>
+    jest
+      .spyOn(KeplerMediaControlHandler.prototype, 'handleGetSessionState')
+      .mockResolvedValue(states as never);
+
+  it("asks w3cmedia's default, for the session asked about", async () => {
+    const spy = fromW3cmedia([state(1)]);
+    await handler.handleGetSessionState({id: 1});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith({id: 1});
+  });
+
+  it("returns w3cmedia's state as is while playing", async () => {
+    const states = [state(1)];
+    fromW3cmedia(states);
+    await expect(handler.handleGetSessionState()).resolves.toBe(states);
+  });
+
+  it('says paused while the controller is, and changes nothing else', async () => {
+    setPaused(true);
+    fromW3cmedia([state(1), state(2)]);
+    const result = await handler.handleGetSessionState();
+    expect(result).toEqual(
+      [state(1), state(2)].map((s) => ({
+        ...s,
+        playbackState: {
+          ...s.playbackState,
+          playbackStatus: PAUSED,
+        },
+      })),
+    );
+  });
+
+  it("leaves w3cmedia's own objects alone", async () => {
+    setPaused(true);
+    const original = state(1);
+    fromW3cmedia([original]);
+    await handler.handleGetSessionState();
+    expect(original).toEqual(state(1));
+  });
+
+  it('reads paused when asked, not when made', async () => {
+    fromW3cmedia([state(1)]);
+    const [before] = await handler.handleGetSessionState();
+    setPaused(true);
+    const [after] = await handler.handleGetSessionState();
+    expect(before.playbackState.playbackStatus).toBe(PLAYING);
+    expect(after.playbackState.playbackStatus).toBe(PAUSED);
+  });
+
+  it("passes on w3cmedia's error", async () => {
+    setPaused(true);
+    jest
+      .spyOn(KeplerMediaControlHandler.prototype, 'handleGetSessionState')
+      .mockRejectedValue(new Error('Unable to get session state'));
+    await expect(handler.handleGetSessionState()).rejects.toThrow(
+      'Unable to get session state',
+    );
+  });
 });
 
 describe('timeValueMs', () => {

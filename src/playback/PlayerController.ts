@@ -186,9 +186,14 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * no `pause` event: the controller pauses itself (state, report, checks off;
  * `paused` reads true until a `play`), and the `pause` Vega may still send
  * later changes nothing, even once playing again. Focus back leaves a paused
- * player alone. `deinitialize()` drops w3cmedia's hold on the player; the
- * handler stays registered with Vega until another player takes the focus,
- * and the controller ignores its commands once destroyed.
+ * player alone. w3cmedia's session state (what Vega and Alexa read) follows
+ * the events: with no `pause` it stays PLAYING, and every `audiofocusgranted`
+ * sets PLAYING. So the handler is told to report paused after a pause while
+ * held and on focus back while paused, and answers Vega's state requests
+ * with PAUSED while the controller is paused. `deinitialize()` drops
+ * w3cmedia's hold on the player; the handler stays registered with Vega
+ * until another player takes the focus, and the controller ignores its
+ * commands once destroyed.
  *
  * In URL mode a rate change while playing goes pause → rate → play: Vega
  * applies it mid-play as a `seekWithRate`, which froze direct play on the
@@ -245,6 +250,8 @@ export class PlayerController {
   /** The `pause` event Vega may still send for that pause is due. */
   private latePauseDue = false;
   private readonly componentInstance?: IComponentInstance;
+  /** The handler Vega took with the focus; none without it. */
+  private mediaControls?: MediaControlsHandler;
   readonly title?: string;
   private hasMetadata = false;
   /** Where the last seek goes until its `seeked`; relative seeks add to it. */
@@ -392,6 +399,7 @@ export class PlayerController {
       this.pausedWhileHeld = true;
       this.onPause();
       this.latePauseDue = true;
+      this.mediaControls?.reportPaused();
     }
   }
 
@@ -511,10 +519,9 @@ export class PlayerController {
   /** Before `initialize()`, as Amazon's guide does. Playback goes on without. */
   private async takeMediaControlFocus(component: IComponentInstance) {
     try {
-      await this.player.setMediaControlFocus(
-        component,
-        new MediaControlsHandler(this),
-      );
+      const handler = new MediaControlsHandler(this);
+      await this.player.setMediaControlFocus(component, handler);
+      this.mediaControls = handler;
     } catch (reason) {
       warn('setMediaControlFocus', reason);
     }
@@ -955,7 +962,14 @@ export class PlayerController {
 
   /** Vega resumes by itself: the checks start over from here. */
   private onAudioFocusGranted = () => {
-    if (!this.live() || !this.held) {
+    if (!this.live()) {
+      return;
+    }
+    // w3cmedia's own listener (added first) has just told Vega "playing".
+    if (this.pausedWhileHeld || this.state === 'paused') {
+      this.mediaControls?.reportPaused();
+    }
+    if (!this.held) {
       return;
     }
     this.held = false;
