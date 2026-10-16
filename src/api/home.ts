@@ -50,7 +50,7 @@ const SUPPORTED_SECTIONS: Record<string, HomeSection> = {
 };
 
 // androidtv's ItemRepository.browseFields.
-const BROWSE_FIELDS = [
+export const BROWSE_FIELDS = [
   ItemFields.CanDelete,
   ItemFields.ChildCount,
   ItemFields.DateCreated,
