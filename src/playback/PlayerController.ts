@@ -1,4 +1,5 @@
 import type {Api} from '@jellyfin/sdk';
+import type {IComponentInstance} from '@amazon-devices/react-native-kepler';
 import {VideoPlayer} from '@amazon-devices/react-native-w3cmedia';
 
 import {createPlaybackReporter, type PlaybackReporter} from './reporting';
@@ -26,6 +27,11 @@ export type PlayerOptions = {
    * for the app's lifetime, so a Retry or a track switch keeps it.
    */
   playbackRate?: number;
+  /**
+   * The app's interactive component. When set, the player takes the Vega
+   * Media Controls focus (Alexa and the remote's media keys) for it.
+   */
+  componentInstance?: IComponentInstance;
 };
 
 /** W3C `MediaError` codes. */
