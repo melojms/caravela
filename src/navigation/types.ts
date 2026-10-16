@@ -20,6 +20,12 @@ export type RootStackParamList = AuthStackParamList & {
   Home: undefined;
   Search: undefined;
   Settings: undefined;
+  /** App and server versions, licence, source and privacy links. */
+  About: undefined;
+  /** The third-party packages, from `src/about/licenses.json`. */
+  Licenses: undefined;
+  /** One package's full licence text. */
+  LicenseText: {name: string; version: string};
   /** A movies or TV shows library's grid. */
   Library: {
     libraryId: string;
