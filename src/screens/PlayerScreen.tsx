@@ -388,7 +388,6 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     () => controllerRef.current?.togglePause(),
     [],
   );
-  const pause = useCallback(() => controllerRef.current?.pause(), []);
   const seekBy = useCallback(
     (deltaMs: number) => controllerRef.current?.seekBy(deltaMs),
     [],
@@ -404,8 +403,6 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     popupOpen: popup !== null,
     scrubbing,
     onTogglePause: togglePause,
-    onPause: pause,
-    onSeekBy: seekBy,
   });
   const overlayShown = overlay.visible && tracks !== null;
   overlayShownRef.current = overlayShown;

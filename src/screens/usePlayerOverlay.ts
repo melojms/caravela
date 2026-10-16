@@ -6,7 +6,6 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {BackHandler} from 'react-native';
 
 import type {OverlayFocus} from '../components/PlayerOverlay';
-import {SEEK_BACK_STEP_MS, SEEK_FORWARD_STEP_MS} from '../components/SeekBar';
 
 /**
  * Leanback's `PlaybackSupportFragment` hides the controls this long after
@@ -32,9 +31,20 @@ const DPAD_TARGETS: Partial<Record<string, OverlayFocus>> = {
   down: 'playpause',
 };
 
-// Vega OS 2.0+ sends the normalised names; 1.x sends the raw key values.
-const FORWARD_KEYS = new Set(['skip_forward', 'fastforward', 'forward']);
-const BACKWARD_KEYS = new Set(['skip_backward', 'rewind']);
+/**
+ * The remote's media keys. Vega's player session (w3cmedia's legacy media
+ * controls, on while the manifest declares no Kepler Media Controls) already
+ * plays, pauses and seeks ±10 s on them, so acting here too ran each press
+ * twice: Play/Pause resumed and paused again at once. They only bring the
+ * overlay up. Vega OS 2.0+ sends the normalised names; 1.x the raw values.
+ */
+const SKIP_KEYS = new Set([
+  'skip_forward',
+  'fastforward',
+  'forward',
+  'skip_backward',
+  'rewind',
+]);
 
 /** The simulator's OK key (and a keyboard's Enter) arrives as `enter`. */
 const isOk = (eventType: string) =>
@@ -54,11 +64,8 @@ export type PlayerOverlayOptions = {
   popupOpen: boolean;
   /** The seek bar is scrubbing: no auto-hide. */
   scrubbing: boolean;
-  /** OK released with the overlay hidden, or the remote's play/pause key. */
+  /** OK released with the overlay hidden. */
   onTogglePause(): void;
-  onPause(): void;
-  /** The remote's fast-forward / rewind keys. */
-  onSeekBy(deltaMs: number): void;
 };
 
 export type PlayerOverlayState = {
@@ -85,7 +92,8 @@ export type PlayerOverlayState = {
  *   the navigator, which leaves the player;
  * - OK released with it hidden toggles pause (on the release: the press
  *   would otherwise show the overlay and the release press its button);
- * - fast-forward / rewind seek right away and bring it up.
+ * - the remote's media keys are Vega's player session's (see `SKIP_KEYS`);
+ *   fast-forward / rewind bring it up.
  */
 export const usePlayerOverlay = (
   options: PlayerOverlayOptions,
@@ -224,29 +232,9 @@ export const usePlayerOverlay = (
         }
         return;
       }
-      if (FORWARD_KEYS.has(eventType) || BACKWARD_KEYS.has(eventType)) {
-        if (!current.popupOpen) {
-          current.onSeekBy(
-            FORWARD_KEYS.has(eventType)
-              ? SEEK_FORWARD_STEP_MS
-              : -SEEK_BACK_STEP_MS,
-          );
-          show('playpause');
-        }
-        return;
-      }
-      switch (eventType) {
-        // The Fire TV remote's play/pause key arrives as `play`.
-        case 'playpause':
-        case 'play':
-          // A popup keeps playback as it is until it closes.
-          if (!current.popupOpen) {
-            current.onTogglePause();
-          }
-          break;
-        case 'pause':
-          current.onPause();
-          break;
+      // The player session seeks; the overlay shows where it lands.
+      if (SKIP_KEYS.has(eventType) && !current.popupOpen) {
+        show('playpause');
       }
     },
     [restart, show],

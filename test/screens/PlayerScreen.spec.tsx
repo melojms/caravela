@@ -359,16 +359,28 @@ describe('PlayerScreen', () => {
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 
-  it('handles the play/pause key and ignores key releases', async () => {
-    const {player} = await renderPlaying();
-    player.paused = false;
-    fire(player, 'playing');
+  // Vega's player session plays and pauses on them; acting too undid it.
+  it.each(['playpause', 'play', 'pause'])(
+    "leaves the remote's %s key to Vega's player session",
+    async (key) => {
+      const {player} = await renderPlaying();
+      player.paused = false;
+      fire(player, 'playing');
 
-    pressKey('playpause', 1);
-    expect(player.pause).not.toHaveBeenCalled();
-    pressKey('playpause');
-    expect(player.pause).toHaveBeenCalledTimes(1);
-  });
+      pressKey(key);
+      pressKey(key, 1);
+      expect(player.pause).not.toHaveBeenCalled();
+      expect(player.play).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('player-overlay')).toBeNull();
+
+      // The session's pause shows the overlay; the next press resumes there.
+      player.paused = true;
+      fire(player, 'pause');
+      expect(screen.getByTestId('player-overlay')).toBeTruthy();
+      pressKey(key);
+      expect(player.play).not.toHaveBeenCalled();
+    },
+  );
 
   it('toggles pause on Enter, which the simulator sends for OK', async () => {
     const {player} = await renderPlaying();
@@ -383,20 +395,6 @@ describe('PlayerScreen', () => {
 
     pressOk('enter');
     expect(player.play).not.toHaveBeenCalled();
-  });
-
-  it("toggles pause on `play`, the Fire TV remote's play/pause key", async () => {
-    const {player} = await renderPlaying();
-    player.paused = false;
-    fire(player, 'playing');
-
-    pressKey('play');
-    expect(player.pause).toHaveBeenCalledTimes(1);
-    player.paused = true;
-    fire(player, 'pause');
-
-    pressKey('play');
-    expect(player.play).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the overlay while loading after a seek', async () => {
@@ -419,7 +417,6 @@ describe('PlayerScreen', () => {
     ).toBe('Pause');
     fire(player, 'seeked', 'playing');
 
-    pressKey('pause');
     player.paused = true;
     fire(player, 'pause', 'seeking');
     expect(screen.getByTestId('player-loading')).toBeTruthy();
@@ -618,15 +615,15 @@ describe('PlayerScreen tracks', () => {
     play(result.player);
     result.player.setPosition(seconds);
     fire(result.player, 'timeupdate');
-    pressKey('pause');
+    // The remote's pause key: Vega's player session pauses the player.
     result.player.paused = true;
     fire(result.player, 'pause');
     await flush();
     return result;
   };
 
+  /** The remote's pause key: Vega's player session pauses the player. */
   const pause = (player: FakePlayer) => {
-    pressKey('pause');
     player.paused = true;
     fire(player, 'pause');
   };
@@ -673,13 +670,11 @@ describe('PlayerScreen tracks', () => {
       expect(screen.queryByTestId('player-overlay-subtitles')).toBeNull();
     });
 
-    it('lets the play key resume from the overlay, but not Select', async () => {
+    it("doesn't resume on Select or Enter with the overlay up", async () => {
       const {player} = await renderPaused();
       pressOk('select');
       pressOk('enter');
       expect(player.play).not.toHaveBeenCalled();
-      pressKey('play');
-      expect(player.play).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -970,7 +965,7 @@ describe('PlayerScreen tracks', () => {
 
     it('resumes a switch at the target of a seek still in flight', async () => {
       const {player} = await renderPaused(100);
-      pressKey('skip_forward');
+      fireEvent.press(screen.getByTestId('player-overlay-fastforward'));
       expect(player.seeks).toEqual([130]);
       fireEvent.press(screen.getByTestId('player-overlay-audio'));
       fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
@@ -1501,31 +1496,18 @@ describe('PlayerScreen tracks', () => {
       expect(player.pause).toHaveBeenCalledTimes(1);
     });
 
-    it.each([
-      ['skip_forward', 130],
-      ['fastforward', 130],
-      ['skip_backward', 90],
-      ['rewind', 90],
-    ])(
-      'seeks on the remote %s key with the overlay hidden and shows it',
-      async (key, seconds) => {
+    // Vega's player session seeks on them; seeking too doubled each press.
+    it.each(['skip_forward', 'fastforward', 'skip_backward', 'rewind'])(
+      'leaves the remote %s key to the player session and shows the overlay',
+      async (key) => {
         const {player} = await renderHidden();
         pressKey(key);
-        expect(player.seeks).toEqual([seconds]);
+        expect(player.seeks).toEqual([]);
         expect(screen.getByTestId('player-overlay')).toBeTruthy();
         advance(HIDE_AFTER_INPUT_MS);
         expect(screen.queryByTestId('player-overlay')).toBeNull();
       },
     );
-
-    it('adds up held fast-forward / rewind presses', async () => {
-      const {player} = await renderHidden();
-      pressKey('skip_forward');
-      pressKey('skip_forward');
-      pressKey('skip_forward', 1);
-      pressKey('skip_backward');
-      expect(player.seeks).toEqual([130, 160, 150]);
-    });
 
     it('ignores the fast-forward and rewind keys while a picker is open', async () => {
       const {player} = await renderPaused(100);
@@ -1540,6 +1522,14 @@ describe('PlayerScreen tracks', () => {
       fireEvent.press(screen.getByTestId('player-overlay-fastforward'));
       fireEvent.press(screen.getByTestId('player-overlay-rewind'));
       expect(player.seeks).toEqual([130, 120]);
+    });
+
+    it('adds up quick Rewind / Fast forward presses', async () => {
+      const {player} = await renderPaused(100);
+      fireEvent.press(screen.getByTestId('player-overlay-fastforward'));
+      fireEvent.press(screen.getByTestId('player-overlay-fastforward'));
+      fireEvent.press(screen.getByTestId('player-overlay-rewind'));
+      expect(player.seeks).toEqual([130, 160, 150]);
     });
 
     it('seeks from the seek bar and shows the target right away', async () => {
@@ -1733,7 +1723,7 @@ describe('PlayerScreen tracks', () => {
       pressKey('skip_forward');
       pressKey('play');
       expect(player.play).not.toHaveBeenCalled();
-      expect(player.pause).toHaveBeenCalledTimes(1);
+      expect(player.pause).not.toHaveBeenCalled();
       expect(player.seeks).toEqual([]);
 
       fireEvent.press(screen.getByTestId('player-chapters-item-2'));
