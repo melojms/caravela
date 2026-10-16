@@ -69,6 +69,7 @@ What works today:
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
 - Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
 - Search for movies, shows and episodes (no voice search or search history yet).
+- An About page in Settings: the app version and build, the server and its Jellyfin version, the licence, source and privacy policy.
 
 Coming next, roughly in this order:
 
@@ -82,6 +83,7 @@ Coming next, roughly in this order:
 - Search across your libraries for movies, shows and episodes, with results as you type.
 - Quick Connect sign-in by default, so you don't type a password with the remote.
 - Several servers and users, with auto-login off, for the last user or for a specific one.
+- About in Settings shows the app's version and build number and the server's name and Jellyfin version, handy for bug reports.
 - Plays what the Fire TV can handle directly and asks the server to remux or transcode the rest.
 - Free software under GPL-2.0-or-later.
 

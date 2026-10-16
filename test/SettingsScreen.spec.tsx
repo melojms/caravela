@@ -17,6 +17,11 @@ jest.mock('../src/auth/SessionContext', () => ({
   useSession: jest.fn(),
 }));
 
+const mockNavigate = jest.fn();
+jest.mock('@amazon-devices/react-navigation__native', () => ({
+  useNavigation: () => ({navigate: mockNavigate}),
+}));
+
 let session: jest.Mocked<
   Pick<SessionContextValue, 'session' | 'switchUser' | 'signOut'>
 >;
@@ -55,6 +60,7 @@ const press = async (testID: string) => {
 };
 
 beforeEach(() => {
+  mockNavigate.mockClear();
   session = {
     session: sessionFor(),
     switchUser: jest.fn(),
@@ -145,6 +151,19 @@ describe('SettingsScreen', () => {
     expect(screen.getByTestId('settings-sign-out')).toHaveTextContent(
       'Sign out',
     );
+  });
+
+  it('opens About', async () => {
+    await renderSettings();
+    expect(screen.getAllByText('About')).toHaveLength(2);
+    await press('settings-about');
+    expect(mockNavigate).toHaveBeenCalledWith('About');
+  });
+
+  it('puts the About button after the auto-login row', async () => {
+    await renderSettings();
+    const ids = screen.getAllByRole('button').map((b) => b.props.testID);
+    expect(ids[ids.length - 1]).toBe('settings-about');
   });
 
   it.each([

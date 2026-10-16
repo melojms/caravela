@@ -1,3 +1,5 @@
+import {useNavigation} from '@amazon-devices/react-navigation__native';
+import type {NativeStackNavigationProp} from '@amazon-devices/react-navigation__native-stack';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
@@ -5,6 +7,7 @@ import {useSession} from '../auth/SessionContext';
 import {getAuthStore} from '../auth/store';
 import type {AuthStore, AutoLogin} from '../auth/store';
 import {FocusableButton} from '../components/FocusableButton';
+import type {RootStackParamList} from '../navigation/types';
 import {colors, spacing, typography} from '../theme';
 import {ScreenContainer} from './ScreenContainer';
 
@@ -28,6 +31,8 @@ type SettingsScreenProps = {
 
 export const SettingsScreen = ({authStore}: SettingsScreenProps) => {
   const {session, switchUser, signOut} = useSession();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [store] = useState(() => authStore ?? getAuthStore());
 
   const [selected, setSelected] = useState<AutoLogin>();
@@ -208,6 +213,15 @@ export const SettingsScreen = ({authStore}: SettingsScreenProps) => {
           {error}
         </Text>
       ) : null}
+
+      <Text style={styles.heading}>About</Text>
+      <View style={styles.row}>
+        <FocusableButton
+          testID="settings-about"
+          label="About"
+          onPress={() => navigation.navigate('About')}
+        />
+      </View>
     </ScreenContainer>
   );
 };
