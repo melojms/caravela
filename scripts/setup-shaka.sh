@@ -47,4 +47,6 @@ for name in shaka-player.compiled shaka-player.compiled.debug; do
   cp "$DIST/$name.js" "$DIST/$name.d.ts" "$VENDOR/dist/"
 done
 cp -R "$POLYFILLS" "$VENDOR/polyfills"
+# Shaka's Apache-2.0 licence, for the app's Licences screen (npm run licenses).
+cp "$CLONE/LICENSE" "$VENDOR/LICENSE"
 echo "Copied the Shaka build and Amazon's polyfills to $VENDOR"

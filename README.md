@@ -113,6 +113,15 @@ Debug builds load JavaScript from the Metro dev server, so run `npm start` and f
 
 Use `npm run build:release` and `-b Release` for a release build. With more than one device connected, pass `--device <serial>` to the `vega device` commands.
 
+The Licences screen in Settings reads `src/about/licenses.json`, the third-party packages in the Release bundle with their licence texts. After changing dependencies, and before a release, regenerate it and commit the result:
+
+```sh
+npm run build:release   # the generator reads the bundle's source map from build/
+npm run licenses
+```
+
+`npm test` fails when a runtime dependency is missing from the file.
+
 ## Shaka Player (not included)
 
 Caravela plays transcoded and remuxed streams (HLS) with Amazon's Vega port of [Shaka Player](https://github.com/shaka-project/shaka-player). **This repository does not include it**, and the app won't build without it:

@@ -13,6 +13,7 @@
     "lint": "eslint src test package.json --ext .ts,.tsx",
     "lint:fix": "eslint src test package.json --ext .ts,.tsx --fix",
     "build:release": "scripts/build-release.sh",
+    "licenses": "node scripts/generate-licenses.mjs",
     "build:debug": "react-native build-vega --build-type Debug",
     "build:app": "npm-run-all build:release",
     "build": "npm-run-all build:release",
