@@ -65,7 +65,7 @@ What works today:
 - Home rows from your server (My media, Continue watching, Next up, Recently added).
 - Library grids for Movies and Shows, with sorting, filters and a letter picker shared with the official Android TV app.
 - Details pages for movies, series, seasons, episodes and people: cast and crew, seasons and episodes, next up, similar titles, watched and favourite toggles.
-- Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin. Sending the app to the background (Home, another app, the screensaver) leaves the player, which stops playback and saves the position.
+- Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin. Sending the app to the background (Home, another app, the screensaver) leaves the player, which stops playback and saves the position. An Alexa question during playback pauses the video until Alexa is done, then it carries on.
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
 - Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
 - Search for movies, shows and episodes (no voice search or search history yet).
