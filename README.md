@@ -68,17 +68,18 @@ What works today:
 - Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin.
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
 - Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
+- Search for movies, shows and episodes (no voice search or search history yet).
 
 Coming next, roughly in this order:
 
 - Intro skip, autoplay of the next episode and Next up
-- Search
 - Settings
 
 ## Features
 
 - Made for the remote: D-pad focus, a top toolbar and Back that behaves like the official Android TV app.
 - Looks and feels like Jellyfin's Android TV client, with the focused item's backdrop behind Home.
+- Search across your libraries for movies, shows and episodes, with results as you type.
 - Quick Connect sign-in by default, so you don't type a password with the remote.
 - Several servers and users, with auto-login off, for the last user or for a specific one.
 - Plays what the Fire TV can handle directly and asks the server to remux or transcode the rest.
