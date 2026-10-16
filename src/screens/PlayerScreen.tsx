@@ -8,7 +8,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import {detailsKeys, useItemDetails} from '../api/details';
 import {homeKeys, isUnauthorized} from '../api/home';
@@ -135,7 +141,9 @@ const readPosition = (controller: PlayerController): Position => ({
 /**
  * Full-screen video for one item. Each visit (and each Retry) asks the server
  * for a new play session; the controller reports it and is destroyed on
- * unmount, which sends stopped.
+ * unmount, which sends stopped. The screen leaves (Back, the end of playback,
+ * or the app going to the background) by going back, so unmount does that
+ * teardown.
  */
 export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const {itemId, title, startMs} = route.params;
@@ -250,6 +258,22 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   }, [api, userId, itemId, attempt, expireSession]);
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
+  // In the background the player must be released (Amazon's lifecycle tests:
+  // no audio on the launcher), and JS is suspended ~4 s later: leave at once,
+  // in any phase. Details refetches the stopped position on return. Only
+  // `background`: `inactive` and blur/focus (an Alexa question) keep playing.
+  const leftRef = useRef(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      // Not focused: going back would pop whatever is on top instead.
+      if (next !== 'background' || leftRef.current || !navigation.isFocused()) {
+        return;
+      }
+      leftRef.current = true;
+      goBack();
+    });
+    return () => subscription.remove();
+  }, [goBack, navigation]);
   useEffect(() => {
     if (phase.kind !== 'ready' || !api) {
       return;
