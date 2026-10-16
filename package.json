@@ -20,6 +20,8 @@
     "release": "npm-run-all lint test build:app"
   },
   "dependencies": {
+    "@amazon-devices/kepler-media-controls": "~1.0.25",
+    "@amazon-devices/kepler-media-types": "~1.0.0",
     "@amazon-devices/react-native-kepler": "~4.0.0",
     "@amazon-devices/react-native-localize": "~2.1.9000000000-rn-83",
     "@amazon-devices/react-native-safe-area-context": "~8.0.0",

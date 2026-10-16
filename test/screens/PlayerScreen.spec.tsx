@@ -1,4 +1,7 @@
-import {useTVEventHandler} from '@amazon-devices/react-native-kepler';
+import {
+  useKeplerAppStateManager,
+  useTVEventHandler,
+} from '@amazon-devices/react-native-kepler';
 import {
   KeplerVideoSurfaceView,
   VideoPlayer,
@@ -14,6 +17,7 @@ import {homeKeys} from '../../src/api/home';
 import {useSession} from '../../src/auth/SessionContext';
 import {ChapterRow} from '../../src/components/ChapterRow';
 import {PlayerOverlay} from '../../src/components/PlayerOverlay';
+import {PlayerController} from '../../src/playback/PlayerController';
 import {createPlaybackReporter} from '../../src/playback/reporting';
 import {clearSubtitleCache} from '../../src/playback/subtitles';
 import {
@@ -54,6 +58,30 @@ jest.mock('../../src/playback/resolver', () => ({
 jest.mock('../../src/playback/reporting', () => ({
   createPlaybackReporter: jest.fn(),
 }));
+
+// The app state manager is one per root tag, like Vega's; each
+// getComponentInstance() answers a new object, as a turbo module call can.
+jest.mock('@amazon-devices/react-native-kepler', () => {
+  const manager = {getComponentInstance: jest.fn(() => ({id: 'main'}))};
+  return Object.create(
+    jest.requireActual('@amazon-devices/react-native-kepler'),
+    {useKeplerAppStateManager: {value: () => manager}},
+  );
+});
+
+// The real controller, with its options on record.
+jest.mock('../../src/playback/PlayerController', () => {
+  const actual = jest.requireActual<
+    typeof import('../../src/playback/PlayerController')
+  >('../../src/playback/PlayerController');
+  return {
+    ...actual,
+    PlayerController: jest.fn(
+      (...args: ConstructorParameters<typeof actual.PlayerController>) =>
+        new actual.PlayerController(...args),
+    ),
+  };
+});
 
 type FakePlayer = FakeVideoPlayer;
 const Fake = VideoPlayer as unknown as typeof FakeVideoPlayer;
@@ -359,9 +387,29 @@ describe('PlayerScreen', () => {
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 
-  // Vega's player session plays and pauses on them; acting too undid it.
+  it('gives the controller the component Vega Media Controls sends to', async () => {
+    const {player} = await renderPlaying();
+    const {getComponentInstance} = jest.mocked(useKeplerAppStateManager());
+    const instance = getComponentInstance.mock.results[0].value;
+    expect(instance).toBeTruthy();
+    expect(jest.mocked(PlayerController).mock.calls[0][3]).toEqual({
+      playbackRate: 1,
+      componentInstance: instance,
+    });
+
+    // Asked once; re-renders keep the controller.
+    player.paused = false;
+    fire(player, 'playing');
+    player.paused = true;
+    fire(player, 'pause');
+    expect(screen.getByTestId('player-overlay')).toBeTruthy();
+    expect(getComponentInstance).toHaveBeenCalledTimes(1);
+    expect(PlayerController).toHaveBeenCalledTimes(1);
+  });
+
+  // Media Controls sends them to the controller; acting too would undo it.
   it.each(['playpause', 'play', 'pause'])(
-    "leaves the remote's %s key to Vega's player session",
+    "leaves the remote's %s key to Vega Media Controls",
     async (key) => {
       const {player} = await renderPlaying();
       player.paused = false;
@@ -373,7 +421,7 @@ describe('PlayerScreen', () => {
       expect(player.play).not.toHaveBeenCalled();
       expect(screen.queryByTestId('player-overlay')).toBeNull();
 
-      // The session's pause shows the overlay; the next press resumes there.
+      // The controller's pause shows the overlay; the next press resumes there.
       player.paused = true;
       fire(player, 'pause');
       expect(screen.getByTestId('player-overlay')).toBeTruthy();
@@ -615,14 +663,14 @@ describe('PlayerScreen tracks', () => {
     play(result.player);
     result.player.setPosition(seconds);
     fire(result.player, 'timeupdate');
-    // The remote's pause key: Vega's player session pauses the player.
+    // The remote's pause key: Media Controls pauses the player.
     result.player.paused = true;
     fire(result.player, 'pause');
     await flush();
     return result;
   };
 
-  /** The remote's pause key: Vega's player session pauses the player. */
+  /** The remote's pause key: Media Controls pauses the player. */
   const pause = (player: FakePlayer) => {
     player.paused = true;
     fire(player, 'pause');
@@ -1496,9 +1544,9 @@ describe('PlayerScreen tracks', () => {
       expect(player.pause).toHaveBeenCalledTimes(1);
     });
 
-    // Vega's player session seeks on them; seeking too doubled each press.
+    // Media Controls seeks on them; seeking too would double each press.
     it.each(['skip_forward', 'fastforward', 'skip_backward', 'rewind'])(
-      'leaves the remote %s key to the player session and shows the overlay',
+      'leaves the remote %s key to Vega Media Controls and shows the overlay',
       async (key) => {
         const {player} = await renderHidden();
         pressKey(key);

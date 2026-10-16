@@ -1,3 +1,4 @@
+import {useKeplerAppStateManager} from '@amazon-devices/react-native-kepler';
 import {KeplerVideoSurfaceView} from '@amazon-devices/react-native-w3cmedia';
 import {useQueryClient} from '@tanstack/react-query';
 import React, {
@@ -150,6 +151,14 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const {session, expireSession} = useSession();
   const queryClient = useQueryClient();
   const api = session?.api;
+  // Vega Media Controls sends Alexa's and the remote's playback commands to
+  // this component. The manager is per root tag, so this is the same one for
+  // the app's lifetime and never recreates the controller.
+  const appStateManager = useKeplerAppStateManager();
+  const componentInstance = useMemo(
+    () => appStateManager.getComponentInstance(),
+    [appStateManager],
+  );
   const serverId = session?.server.id ?? '';
   const userId = session?.user.Id ?? '';
   // Only the overlay uses it; a failed load just leaves the fallbacks.
@@ -320,7 +329,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         },
       },
       // Retry and track switches keep the speed too.
-      {playbackRate: speedSelection},
+      {playbackRate: speedSelection, componentInstance},
     );
     controllerRef.current = controller;
     if (surfaceRef.current) {
@@ -330,7 +339,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       controllerRef.current = null;
       stoppedRef.current = controller.destroy();
     };
-  }, [phase, api, goBack, positions]);
+  }, [phase, api, goBack, positions, componentInstance]);
 
   // Declared after the controller effect, so its cleanup runs after destroy():
   // refetch once the server has the stopped position.

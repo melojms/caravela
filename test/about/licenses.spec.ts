@@ -9,11 +9,14 @@ import {LICENSES} from '../../src/about/thirdPartyLicenses';
  * comes with the system's react-native-kepler. `react-native` imports are
  * rewritten to @amazon-devices/react-native-kepler, which is listed itself.
  * recyclerlistview is vega-carousel's JS list; the bundle only has its native
- * carousel.
+ * carousel. kepler-media-types is only imported by system libraries
+ * (w3cmedia, kepler-media-controls) for now.
  */
 const NOT_BUNDLED = new Set([
   'react',
   'react-native',
+  '@amazon-devices/kepler-media-controls',
+  '@amazon-devices/kepler-media-types',
   '@amazon-devices/react-native-localize',
   '@amazon-devices/react-native-safe-area-context',
   '@amazon-devices/react-native-screens',

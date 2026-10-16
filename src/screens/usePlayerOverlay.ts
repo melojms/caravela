@@ -32,11 +32,11 @@ const DPAD_TARGETS: Partial<Record<string, OverlayFocus>> = {
 };
 
 /**
- * The remote's media keys. Vega's player session (w3cmedia's legacy media
- * controls, on while the manifest declares no Kepler Media Controls) already
- * plays, pauses and seeks ±10 s on them, so acting here too ran each press
- * twice: Play/Pause resumed and paused again at once. They only bring the
- * overlay up. Vega OS 2.0+ sends the normalised names; 1.x the raw values.
+ * The remote's media keys. They also arrive through Vega Media Controls, which
+ * the manifest declares, at `PlayerController` (Play/Pause toggles, ⏩ +30 s,
+ * ⏪ −10 s), so acting here too would run each press twice: Play/Pause would
+ * resume and pause again at once. They only bring the overlay up. Vega OS
+ * 2.0+ sends the normalised names; 1.x the raw values.
  */
 const SKIP_KEYS = new Set([
   'skip_forward',
@@ -92,8 +92,8 @@ export type PlayerOverlayState = {
  *   the navigator, which leaves the player;
  * - OK released with it hidden toggles pause (on the release: the press
  *   would otherwise show the overlay and the release press its button);
- * - the remote's media keys are Vega's player session's (see `SKIP_KEYS`);
- *   fast-forward / rewind bring it up.
+ * - the remote's media keys are `PlayerController`'s, through Vega Media
+ *   Controls (see `SKIP_KEYS`); fast-forward / rewind bring it up.
  */
 export const usePlayerOverlay = (
   options: PlayerOverlayOptions,
@@ -232,7 +232,7 @@ export const usePlayerOverlay = (
         }
         return;
       }
-      // The player session seeks; the overlay shows where it lands.
+      // The controller seeks; the overlay shows where it lands.
       if (SKIP_KEYS.has(eventType) && !current.popupOpen) {
         show('playpause');
       }
