@@ -69,7 +69,7 @@ What works today:
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
 - Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
 - Search for movies, shows and episodes (no voice search or search history yet).
-- An About page in Settings: the app version and build, the server and its Jellyfin version, the licence, source and privacy policy.
+- An About page in Settings: the app version and build, the server and its Jellyfin version, the licence, source and privacy policy, and the full licence texts of the third-party packages the app ships.
 
 Coming next, roughly in this order:
 
@@ -83,7 +83,7 @@ Coming next, roughly in this order:
 - Search across your libraries for movies, shows and episodes, with results as you type.
 - Quick Connect sign-in by default, so you don't type a password with the remote.
 - Several servers and users, with auto-login off, for the last user or for a specific one.
-- About in Settings shows the app's version and build number and the server's name and Jellyfin version, handy for bug reports.
+- About in Settings shows the app's version and build number and the server's name and Jellyfin version, handy for bug reports, and lists the third-party packages with their full licence texts.
 - Plays what the Fire TV can handle directly and asks the server to remux or transcode the rest.
 - Free software under GPL-2.0-or-later.
 
@@ -115,7 +115,7 @@ Debug builds load JavaScript from the Metro dev server, so run `npm start` and f
 
 Use `npm run build:release` and `-b Release` for a release build. With more than one device connected, pass `--device <serial>` to the `vega device` commands.
 
-The Licences screen in Settings reads `src/about/licenses.json`, the third-party packages in the Release bundle with their licence texts. After changing dependencies, and before a release, regenerate it and commit the result:
+The third-party licences screen (Settings → About) reads `src/about/licenses.json`, the third-party packages in the Release bundle with their licence texts. After changing dependencies, and before a release, regenerate it and commit the result:
 
 ```sh
 npm run build:release   # the generator reads the bundle's source map from build/

@@ -15,6 +15,7 @@ import {AboutScreen} from '../screens/AboutScreen';
 import {DetailsScreen} from '../screens/DetailsScreen';
 import {HomeScreen} from '../screens/HomeScreen';
 import {LibraryScreen} from '../screens/LibraryScreen';
+import {LicensesScreen, LicenseTextScreen} from '../screens/LicensesScreen';
 import {PlayerScreen} from '../screens/PlayerScreen';
 import {SearchScreen} from '../screens/SearchScreen';
 import {SettingsScreen} from '../screens/SettingsScreen';
@@ -73,6 +74,8 @@ const RootStack = () => {
           <Stack.Screen name="Search" component={SearchScreen} />
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="About" component={AboutScreen} />
+          <Stack.Screen name="Licenses" component={LicensesScreen} />
+          <Stack.Screen name="LicenseText" component={LicenseTextScreen} />
           <Stack.Screen name="Library" component={LibraryScreen} />
           <Stack.Screen name="Details" component={DetailsScreen} />
           {/* Full-screen video: cut straight to it rather than sliding in. */}

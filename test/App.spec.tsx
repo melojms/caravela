@@ -165,6 +165,25 @@ describe('App', () => {
     expect(screen.getByTestId('home-screen')).toBeTruthy();
   });
 
+  it("reaches the third-party licences from About and a package's text", async () => {
+    const screen = render(<App />);
+    await screen.findByTestId('home-screen');
+
+    await press(screen, 'toolbar-settings');
+    await press(screen, 'settings-about');
+    await press(screen, 'about-licenses');
+    expect(screen.getByTestId('licenses-screen')).toBeTruthy();
+
+    await press(screen, 'licenses-row-0');
+    expect(screen.getByTestId('license-text-screen')).toBeTruthy();
+
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('licenses-screen')).toBeTruthy();
+    expect(screen.queryByTestId('license-text-screen')).toBeNull();
+    expect(await pressBack()).toBe(true);
+    expect(screen.getByTestId('about-screen')).toBeTruthy();
+  });
+
   it('opens the user picker from the avatar', async () => {
     const screen = render(<App />);
     await screen.findByTestId('home-screen');

@@ -1,6 +1,6 @@
 import packageJson from '../../package.json';
 import packageLock from '../../package-lock.json';
-import {LICENSES} from '../../src/about/licenses';
+import {LICENSES} from '../../src/about/thirdPartyLicenses';
 
 /**
  * Direct dependencies that aren't in the app's JS bundle. The Vega system
