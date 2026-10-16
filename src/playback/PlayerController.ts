@@ -131,6 +131,11 @@ const MEDIA_EVENTS = [
   'loadeddata',
   'ended',
   'error',
+  // Vega's own (HTMLMediaElement.d.ts): it pauses and resumes the pipeline
+  // itself around an Alexa question, with no `pause` or `play`.
+  'audiofocuspaused',
+  'audiofocusgranted',
+  'audiofocuslost',
 ] as const;
 type MediaEvent = (typeof MEDIA_EVENTS)[number];
 
@@ -155,6 +160,15 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * with no event; leaving such a player skips its blocking native calls.
  * Shaka's buffering (rate 0, HLS) counts as a stall, not a freeze: the
  * watchdog watches it and the poll waits it out.
+ *
+ * An Alexa question takes the audio focus: Vega pauses the pipeline itself
+ * (`audiofocuspaused`; no `pause`, `paused` stays false) and resumes it at
+ * the same position when Alexa is done (`audiofocusgranted`). While the
+ * player is held like that, neither the poll nor the watchdog runs, and
+ * nothing re-arms them; focus back restarts what `playing` (or a stall
+ * still going) would have. The screen and the reports go on as if playing.
+ * `audiofocuslost` means Vega won't resume: the player pauses as if the user
+ * had, so Play resumes it.
  *
  * In URL mode a rate change while playing goes pause → rate → play: Vega
  * applies it mid-play as a `seekWithRate`, which froze direct play on the
@@ -198,6 +212,11 @@ export class PlayerController {
   private watchdog?: ReturnType<typeof setTimeout>;
   /** A `pause` came and no `play` since: the watchdog waits. */
   private suspended = false;
+  /**
+   * Vega paused the pipeline for the audio focus (`audiofocuspaused`) and
+   * hasn't given it back: neither the watchdog nor the poll runs.
+   */
+  private held = false;
   private hasMetadata = false;
   /** Where the last seek goes until its `seeked`; relative seeks add to it. */
   private pendingSeekMs?: number;
@@ -247,6 +266,9 @@ export class PlayerController {
       loadeddata: this.onProgress,
       ended: this.onEnded,
       error: this.onError,
+      audiofocuspaused: this.onAudioFocusPaused,
+      audiofocusgranted: this.onAudioFocusGranted,
+      audiofocuslost: this.onAudioFocusLost,
     };
     this.ready = this.initialize();
   }
@@ -631,10 +653,10 @@ export class PlayerController {
     return this.shaka?.isBuffering() ?? false;
   }
 
-  /** Starts the poll from the current position. */
+  /** Starts the poll from the current position; nothing while held. */
   private startFreezeCheck() {
     this.stopFreezeCheck();
-    if (!this.live()) {
+    if (!this.live() || this.held) {
       return;
     }
     this.polledTime = this.read(() => this.player.currentTime);
@@ -668,10 +690,15 @@ export class PlayerController {
     }
   };
 
-  /** (Re)starts the watchdog; nothing while paused, ended or done. */
+  /** (Re)starts the watchdog; nothing while paused, held, ended or done. */
   private armWatchdog() {
     this.clearWatchdog();
-    if (!this.live() || this.suspended || this.state === 'ended') {
+    if (
+      !this.live() ||
+      this.suspended ||
+      this.held ||
+      this.state === 'ended'
+    ) {
       return;
     }
     const [message, timeout] = this.hasPlayed
@@ -847,6 +874,41 @@ export class PlayerController {
     this.clearWatchdog();
     this.setState('ended');
     this.reporter.stop();
+  };
+
+  /** Vega paused the pipeline for a while (an Alexa question). */
+  private onAudioFocusPaused = () => {
+    if (!this.live() || this.state === 'ended') {
+      return;
+    }
+    this.held = true;
+    this.clearWatchdog();
+    this.stopFreezeCheck();
+  };
+
+  /** Vega resumes by itself: the checks start over from here. */
+  private onAudioFocusGranted = () => {
+    if (!this.live() || !this.held) {
+      return;
+    }
+    this.held = false;
+    if (this.state === 'playing') {
+      this.startFreezeCheck();
+    } else if (this.state === 'loading') {
+      // A start, or a stall that came while held.
+      this.armWatchdog();
+    }
+  };
+
+  /** Vega won't resume: paused, as if the user had. */
+  private onAudioFocusLost = () => {
+    if (!this.live() || this.state === 'ended') {
+      return;
+    }
+    this.held = false;
+    this.pause();
+    // Vega may send no `pause` for a pipeline it already paused.
+    this.onPause();
   };
 
   private onError = () => {

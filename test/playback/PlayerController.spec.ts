@@ -998,6 +998,223 @@ describe('freeze check', () => {
   });
 });
 
+describe('audio focus (an Alexa question)', () => {
+  const advance = (ms: number) => jest.advanceTimersByTime(ms);
+  const HELD_MS = Math.max(FREEZE_TIMEOUT_MS, STALL_TIMEOUT_MS) + 5000;
+
+  /** Playing at 10 s, past the start watchdog. */
+  const setupPlaying = async () => {
+    const result = await setup();
+    startPlaying(result.player);
+    result.player.setPosition(10);
+    result.player.fire('timeupdate');
+    return result;
+  };
+
+  it.each(['audiofocuspaused', 'audiofocusgranted', 'audiofocuslost'])(
+    'listens for %s and removes it on destroy',
+    async (type) => {
+      const {controller, player} = await setup();
+      expect(player.listenerCount(type)).toBe(1);
+      await controller.destroy();
+      expect(player.listenerCount(type)).toBe(0);
+    },
+  );
+
+  it('fails nothing while Vega holds the player, however long', async () => {
+    const {controller, player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS - 2000);
+    // Vega pauses the pipeline itself: no `pause`, `paused` stays false.
+    player.fire('audiofocuspaused');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    expect(controller.playerState).toBe('playing');
+    expect(player.pause).not.toHaveBeenCalled();
+  });
+
+  it('checks again once focus is back, counted from then', async () => {
+    const {player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    advance(HELD_MS);
+    player.fire('audiofocusgranted');
+    // Vega resumes by itself.
+    expect(player.play).not.toHaveBeenCalled();
+    playOn(player, FREEZE_TIMEOUT_MS * 2);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    advance(FREEZE_TIMEOUT_MS - FREEZE_POLL_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(FREEZE_POLL_MS);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('restarts the freeze check from the position at audiofocusgranted', async () => {
+    const {player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    advance(HELD_MS);
+    player.fire('audiofocusgranted');
+    advance(FREEZE_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it.each(['waiting', 'seeking'])(
+    "doesn't arm the stall watchdog on %s while held",
+    async (type) => {
+      const {player} = await setupPlaying();
+      player.fire('audiofocuspaused');
+      player.fire(type);
+      advance(HELD_MS);
+      expect(listeners.onError).not.toHaveBeenCalled();
+    },
+  );
+
+  it("doesn't let progress or a playing re-arm the checks while held", async () => {
+    const {player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    player.fire('progress');
+    player.fire('canplay');
+    player.fire('playing');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('watches a stall that is still going once focus is back', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    player.fire('waiting');
+    advance(HELD_MS);
+    player.fire('audiofocusgranted');
+    expect(controller.playerState).toBe('loading');
+    advance(STALL_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('watches the start again once focus is back', async () => {
+    const {player} = await setup();
+    advance(START_TIMEOUT_MS - 1000);
+    player.fire('audiofocuspaused');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    player.fire('audiofocusgranted');
+    advance(START_TIMEOUT_MS - 1);
+    expect(listeners.onError).not.toHaveBeenCalled();
+    advance(1);
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+  });
+
+  it('pauses on audiofocuslost, so Play can resume it', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    advance(5000);
+    reporter.update.mockClear();
+    player.fire('audiofocuslost');
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    expect(controller.playerState).toBe('paused');
+    expect(listeners.onStateChange).toHaveBeenLastCalledWith('paused');
+    expect(reporter.update).toHaveBeenCalled();
+    // The `pause` that Vega may send after it changes nothing.
+    player.paused = true;
+    player.fire('pause');
+    expect(controller.playerState).toBe('paused');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    controller.togglePause();
+    expect(player.play).toHaveBeenCalledTimes(1);
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    // Not held any more: the checks run.
+    advance(FREEZE_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('pauses on audiofocuslost without an audiofocuspaused first', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('audiofocuslost');
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    expect(controller.playerState).toBe('paused');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores an audiofocusgranted without an audiofocuspaused', async () => {
+    const {controller, player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS - 2000);
+    player.fire('audiofocusgranted');
+    expect(player.play).not.toHaveBeenCalled();
+    expect(controller.playerState).toBe('playing');
+    // The running check keeps its count.
+    advance(2000);
+    expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
+  });
+
+  it('leaves a pause the user made alone', async () => {
+    const {controller, player} = await setupPlaying();
+    player.paused = true;
+    player.fire('pause');
+    player.fire('audiofocuspaused');
+    advance(HELD_MS);
+    player.fire('audiofocusgranted');
+    expect(controller.playerState).toBe('paused');
+    expect(player.play).not.toHaveBeenCalled();
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pause the user made while held', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    controller.togglePause();
+    expect(player.pause).toHaveBeenCalledTimes(1);
+    player.paused = true;
+    player.fire('pause');
+    player.fire('audiofocusgranted');
+    expect(controller.playerState).toBe('paused');
+    expect(player.play).not.toHaveBeenCalled();
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('removes the listeners and reports stopped on destroy while held', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('audiofocuspaused');
+    advance(5000);
+    await controller.destroy();
+    expect(player.listenerCount()).toBe(0);
+    expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    expect(reporter.stop).toHaveBeenCalledTimes(1);
+    player.fire('audiofocusgranted');
+    player.fire('audiofocuslost');
+    advance(HELD_MS);
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('ignores focus events once ended', async () => {
+    const {controller, player} = await setupPlaying();
+    player.fire('ended');
+    player.fire('audiofocuslost');
+    expect(player.pause).not.toHaveBeenCalled();
+    expect(controller.playerState).toBe('ended');
+  });
+
+  it('ignores focus events after an error', async () => {
+    const {player} = await setupPlaying();
+    advance(FREEZE_TIMEOUT_MS);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+    player.fire('audiofocusgranted');
+    player.fire('audiofocuslost');
+    expect(player.pause).not.toHaveBeenCalled();
+    advance(HELD_MS);
+    expect(listeners.onError).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('seeking', () => {
   /** Metadata loaded (2 h), playing at `seconds`. */
   const setupAt = async (seconds: number) => {
@@ -1739,6 +1956,39 @@ describe('HLS mode', () => {
       expect(player.pause).toHaveBeenCalledTimes(1);
       expect(player.clearSurfaceHandle).toHaveBeenCalledWith('surface-1');
       expect(player.deinitialize).toHaveBeenCalledTimes(1);
+    });
+
+    it("doesn't watch a buffer that starts while audio focus holds the player", async () => {
+      const {player, shakaPlayer} = await setupHlsPlaying();
+      player.fire('audiofocuspaused');
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS * 2);
+      expect(listeners.onError).not.toHaveBeenCalled();
+    });
+
+    it('stops watching a buffer when audio focus holds the player', async () => {
+      const {player, shakaPlayer} = await setupHlsPlaying();
+      setBuffering(shakaPlayer, true);
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS - 1000);
+      player.fire('audiofocuspaused');
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS * 2);
+      expect(listeners.onError).not.toHaveBeenCalled();
+    });
+
+    it('checks for a freeze again once audio focus is back', async () => {
+      const {player, shakaPlayer} = await setupHlsPlaying();
+      player.fire('audiofocuspaused');
+      setBuffering(shakaPlayer, true);
+      setBuffering(shakaPlayer, false);
+      jest.advanceTimersByTime(STALL_TIMEOUT_MS * 2);
+      expect(listeners.onError).not.toHaveBeenCalled();
+
+      player.fire('audiofocusgranted');
+      expect(player.play).toHaveBeenCalledTimes(1); // startHls only
+      jest.advanceTimersByTime(FREEZE_TIMEOUT_MS - 1);
+      expect(listeners.onError).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(1);
+      expect(listeners.onError).toHaveBeenCalledWith(STALL_TIMEOUT_MESSAGE);
     });
   });
 
