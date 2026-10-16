@@ -67,9 +67,15 @@ type SessionQueryClientProviderProps = {
 /**
  * Gives each signed-in server and user its own QueryClient, so one user's
  * data never shows for another. Signing out, switching user or server makes
- * a new, empty client and remounts the children (useQuery keeps the client it
- * was first rendered with); the old client is cleared. A 401 expires the
- * session, unless it comes from an old client after the scope moved on.
+ * a new, empty client; the old client is cleared. A 401 expires the session,
+ * unless it comes from an old client after the scope moved on.
+ *
+ * The children aren't remounted: that would remount the navigation stack,
+ * and Vega's screens library (OS 1.2) crashes when a stack with more than one
+ * screen goes at once. useQuery keeps the client it was first rendered with,
+ * which is still right: the scope only changes as RootNavigator swaps the
+ * signed-in screens in or out, so every screen that queries mounts with its
+ * user's client.
  */
 export const SessionQueryClientProvider = ({
   children,
@@ -105,9 +111,5 @@ export const SessionQueryClientProvider = ({
     },
     [client],
   );
-  return (
-    <QueryClientProvider key={scope} client={client}>
-      {children}
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 };

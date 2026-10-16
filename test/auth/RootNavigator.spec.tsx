@@ -6,7 +6,10 @@ import {AuthError, getAuthService} from '../../src/auth/authService';
 import type {QuickConnectAttempt, Session} from '../../src/auth/authService';
 import type {AuthState} from '../../src/auth/store';
 import {getAuthStore} from '../../src/auth/store';
-import {RootNavigator} from '../../src/navigation/RootNavigator';
+import {
+  POP_SETTLE_MS,
+  RootNavigator,
+} from '../../src/navigation/RootNavigator';
 import {
   fakeService,
   fakeStore,
@@ -156,6 +159,65 @@ describe('RootNavigator', () => {
     };
     return {attempt, approve};
   };
+
+  /** Lets a pop settle before the stack changes again. */
+  const settle = () =>
+    act(() => new Promise<void>((done) => setTimeout(done, POP_SETTLE_MS)));
+
+  /** Picker → Password (Quick Connect is off), so the stack is two deep. */
+  const openPassword = async (service: ReturnType<typeof fakeService>) => {
+    service.startQuickConnect.mockRejectedValue(
+      new AuthError('quick-connect-disabled', 'Off.'),
+    );
+    service.loginWithPassword.mockResolvedValue(sessionFor());
+    const screen = renderApp(pickerWithoutAutoLogin(), service);
+    expect(await screen.findByTestId('user-tile-u2')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('user-tile-u2'));
+    });
+    expect(await screen.findByTestId('password-screen')).toBeTruthy();
+    return screen;
+  };
+
+  // Vega's screens library (OS 1.2) crashes when a swap removes more than
+  // the top screen, so the stack is popped to one screen first.
+  it('pops to the picker before swapping to Home on sign-in', async () => {
+    const service = fakeService();
+    const screen = await openPassword(service);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('password-sign-in'));
+    });
+
+    expect(screen.queryByTestId('password-screen')).toBeNull();
+    expect(screen.getByTestId('user-picker')).toBeTruthy();
+    expect(screen.queryByTestId('home-screen')).toBeNull();
+
+    await settle();
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(screen.queryByTestId('user-picker')).toBeNull();
+  });
+
+  it('pops to Home before swapping to the picker on Switch user', async () => {
+    const screen = renderApp(signedInState());
+    expect(await screen.findByTestId('home-screen')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('toolbar-settings'));
+    });
+    expect(await screen.findByTestId('settings-screen')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('settings-switch-user'));
+    });
+
+    expect(screen.queryByTestId('settings-screen')).toBeNull();
+    expect(screen.getByTestId('home-screen')).toBeTruthy();
+    expect(screen.queryByTestId('user-picker')).toBeNull();
+
+    await settle();
+    expect(screen.getByTestId('user-picker')).toBeTruthy();
+    expect(screen.queryByTestId('home-screen')).toBeNull();
+  });
 
   const backHandlers = () =>
     (BackHandler.addEventListener as jest.Mock).mock.calls.map(

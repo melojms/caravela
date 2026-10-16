@@ -20,6 +20,7 @@ import {
   SessionQueryClientProvider,
 } from '../../src/api/queryClient';
 import {SessionProvider, useSession} from '../../src/auth/SessionContext';
+import type {SessionContextValue} from '../../src/auth/SessionContext';
 import {
   fakeService,
   fakeStore,
@@ -53,6 +54,29 @@ const wrapper = ({children}: {children: ReactNode}) => (
     <SessionQueryClientProvider>{children}</SessionQueryClientProvider>
   </SessionProvider>
 );
+
+// The session as last rendered, read from outside the signed-in screens.
+let current: SessionContextValue;
+const SessionProbe = () => {
+  current = useSession();
+  return null;
+};
+const SignedInOnly = ({children}: {children: ReactNode}) =>
+  useSession().status === 'signedIn' ? <>{children}</> : null;
+
+/**
+ * Like the app: screens that query mount once a user is signed in (the
+ * navigator swaps them in), so they start with that user's client.
+ */
+const screenWrapper = ({children}: {children: ReactNode}) =>
+  wrapper({
+    children: (
+      <>
+        <SessionProbe />
+        <SignedInOnly>{children}</SignedInOnly>
+      </>
+    ),
+  });
 
 const signedIn = async (result: {current: {session: {status: string}}}) =>
   waitFor(() => expect(result.current.session.status).toBe('signedIn'));
@@ -112,6 +136,32 @@ describe('SessionQueryClientProvider', () => {
     expect(result.current.client.getQueryCache().getAll()).toEqual([]);
   });
 
+  // Remounting the navigation tree with a multi-screen stack crashes Vega's
+  // screens library on OS 1.2, so a new user gets a new client without it.
+  it('keeps its children mounted when the user changes', async () => {
+    let mounts = 0;
+    const useMountCount = () => {
+      React.useEffect(() => {
+        mounts += 1;
+      }, []);
+    };
+    const {result} = renderHook(
+      () => {
+        useMountCount();
+        return {session: useSession(), client: useQueryClient()};
+      },
+      {wrapper},
+    );
+    await signedIn(result);
+    const first = result.current.client;
+
+    act(() => result.current.session.switchUser());
+    act(() => result.current.session.signIn(sessionFor(HOME, 'u2')));
+
+    expect(result.current.client).not.toBe(first);
+    expect(mounts).toBe(1);
+  });
+
   it('keeps the cache while the same user stays signed in', async () => {
     const {result, rerender} = renderHook(
       () => ({session: useSession(), client: useQueryClient()}),
@@ -154,7 +204,7 @@ describe('refetching on return to the foreground', () => {
   });
 
   const renderResume = async () => {
-    const view = renderHook(useResume, {wrapper});
+    const view = renderHook(useResume, {wrapper: screenWrapper});
     await waitFor(() => expect(view.result.current.isSuccess).toBe(true));
     expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
     return view;
@@ -213,7 +263,7 @@ describe('refetching on return to the foreground', () => {
 describe('Home hooks', () => {
   it('useResume fetches for the signed-in user', async () => {
     libraryApi.getResumeItems.mockResolvedValue({data: {Items: [{Id: 'm1'}]}});
-    const {result} = renderHook(useResume, {wrapper});
+    const {result} = renderHook(useResume, {wrapper: screenWrapper});
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{Id: 'm1'}]);
@@ -226,27 +276,20 @@ describe('Home hooks', () => {
     libraryApi.getResumeItems.mockImplementation(async ({userId}) => ({
       data: {Items: [{Id: `item-${userId}`}]},
     }));
-    const {result} = renderHook(
-      () => ({session: useSession(), resume: useResume()}),
-      {wrapper},
-    );
-    await waitFor(() =>
-      expect(result.current.resume.data).toEqual([{Id: 'item-u1'}]),
-    );
+    const {result} = renderHook(useResume, {wrapper: screenWrapper});
+    await waitFor(() => expect(result.current.data).toEqual([{Id: 'item-u1'}]));
 
-    act(() => result.current.session.switchUser());
-    act(() => result.current.session.signIn(sessionFor(HOME, 'u2')));
-    expect(result.current.resume.data).toBeUndefined();
-    await waitFor(() =>
-      expect(result.current.resume.data).toEqual([{Id: 'item-u2'}]),
-    );
+    act(() => current.switchUser());
+    act(() => current.signIn(sessionFor(HOME, 'u2')));
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(result.current.data).toEqual([{Id: 'item-u2'}]));
   });
 
   it('useHomeSections shows the default order when the prefs fail', async () => {
     displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
       httpError(500),
     );
-    const {result} = renderHook(useHomeSections, {wrapper});
+    const {result} = renderHook(useHomeSections, {wrapper: screenWrapper});
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([
@@ -261,20 +304,17 @@ describe('Home hooks', () => {
     displayPreferenceApi.getDisplayPreferences.mockRejectedValue(
       httpError(401),
     );
-    const {result} = renderHook(
-      () => ({session: useSession(), sections: useHomeSections()}),
-      {wrapper},
-    );
+    renderHook(useHomeSections, {wrapper: screenWrapper});
 
-    await waitFor(() =>
-      expect(result.current.session.status).toBe('needsUser'),
-    );
-    expect(result.current.session.notice?.kind).toBe('expired');
+    await waitFor(() => expect(current.status).toBe('needsUser'));
+    expect(current.notice?.kind).toBe('expired');
     expect(displayPreferenceApi.getDisplayPreferences).toHaveBeenCalledTimes(1);
   });
 
   it('useLatest waits for a library id', async () => {
-    const {result} = renderHook(() => useLatest(''), {wrapper});
+    const {result} = renderHook(() => useLatest(''), {
+      wrapper: screenWrapper,
+    });
     await waitFor(() => expect(result.current.fetchStatus).toBe('idle'));
     expect(result.current.isPending).toBe(true);
     expect(libraryApi.getLatestMedia).not.toHaveBeenCalled();
@@ -282,14 +322,9 @@ describe('Home hooks', () => {
 
   it('does not retry a 401', async () => {
     libraryApi.getResumeItems.mockRejectedValue(httpError(401));
-    const {result} = renderHook(
-      () => ({session: useSession(), resume: useResume()}),
-      {wrapper},
-    );
+    renderHook(useResume, {wrapper: screenWrapper});
 
-    await waitFor(() =>
-      expect(result.current.session.status).toBe('needsUser'),
-    );
+    await waitFor(() => expect(current.status).toBe('needsUser'));
     expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(1);
   });
 });
@@ -337,20 +372,17 @@ describe('expiring the session on a 401', () => {
   it('expires the session once when two rows 401 together', async () => {
     libraryApi.getResumeItems.mockRejectedValue(httpError(401));
     libraryApi.getLatestMedia.mockRejectedValue(httpError(401));
-    const {result} = renderHook(
+    renderHook(
       () => ({
-        session: useSession(),
         resume: useResume(),
         latest: useLatest('lib1'),
       }),
-      {wrapper},
+      {wrapper: screenWrapper},
     );
 
-    await waitFor(() =>
-      expect(result.current.session.status).toBe('needsUser'),
-    );
-    expect(result.current.session.serverId).toBe('srv1');
-    expect(result.current.session.notice).toEqual({
+    await waitFor(() => expect(current.status).toBe('needsUser'));
+    expect(current.serverId).toBe('srv1');
+    expect(current.notice).toEqual({
       kind: 'expired',
       message: 'Your saved login for melojms has expired. Sign in again.',
     });
@@ -361,17 +393,14 @@ describe('expiring the session on a 401', () => {
 
   it('keeps the session on a 500', async () => {
     libraryApi.getResumeItems.mockRejectedValue(httpError(500));
-    const {result} = renderHook(
-      () => ({session: useSession(), resume: useResume()}),
-      {wrapper},
-    );
+    const {result} = renderHook(useResume, {wrapper: screenWrapper});
 
     // After the one retry, which waits 1 s.
-    await waitFor(() => expect(result.current.resume.isError).toBe(true), {
+    await waitFor(() => expect(result.current.isError).toBe(true), {
       timeout: 3000,
     });
     expect(libraryApi.getResumeItems).toHaveBeenCalledTimes(2);
-    expect(result.current.session.status).toBe('signedIn');
+    expect(current.status).toBe('signedIn');
     expect(store.clearToken).not.toHaveBeenCalled();
   });
 
@@ -383,18 +412,15 @@ describe('expiring the session on a 401', () => {
       }),
     );
     libraryApi.getResumeItems.mockResolvedValue({data: {Items: []}});
-    const {result} = renderHook(
-      () => ({session: useSession(), resume: useResume()}),
-      {wrapper},
-    );
+    renderHook(useResume, {wrapper: screenWrapper});
     await waitFor(() => expect(libraryApi.getResumeItems).toHaveBeenCalled());
 
-    act(() => result.current.session.switchUser());
-    act(() => result.current.session.signIn(sessionFor(HOME, 'u2')));
+    act(() => current.switchUser());
+    act(() => current.signIn(sessionFor(HOME, 'u2')));
     await act(async () => reject(httpError(401)));
 
-    expect(result.current.session.status).toBe('signedIn');
-    expect(result.current.session.session?.user.Id).toBe('u2');
+    expect(current.status).toBe('signedIn');
+    expect(current.session?.user.Id).toBe('u2');
     expect(store.clearToken).not.toHaveBeenCalled();
   });
 });

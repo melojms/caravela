@@ -2,14 +2,17 @@ import {
   DarkTheme,
   NavigationContainer,
   NavigationState,
+  StackActions,
   Theme,
+  useNavigationContainerRef,
 } from '@amazon-devices/react-navigation__native';
 import {createNativeStackNavigator} from '@amazon-devices/react-navigation__native-stack';
-import React from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 
 import {SessionQueryClientProvider} from '../api/queryClient';
 import type {AuthService} from '../auth/authService';
 import {SessionProvider, useSession} from '../auth/SessionContext';
+import type {SessionState} from '../auth/SessionContext';
 import type {AuthStore} from '../auth/store';
 import {AboutScreen} from '../screens/AboutScreen';
 import {DetailsScreen} from '../screens/DetailsScreen';
@@ -46,9 +49,31 @@ const Launch = () => {
   return <LaunchScreen error={error} onRetry={retry} />;
 };
 
+/**
+ * How long a pop takes to settle in Vega's screens library before the next
+ * stack change. A timer, because on OS 1.2 a pop sends no transitionEnd
+ * (pushes do).
+ */
+export const POP_SETTLE_MS = 500;
+
+type ScreenSet = Pick<SessionState, 'status' | 'serverId'>;
+
+/** Which screens the stack shows; a new key swaps the screen set. */
+const screenSetKey = ({status, serverId}: ScreenSet) =>
+  status === 'signedIn'
+    ? 'signedIn'
+    : status === 'loading' || status === 'error'
+    ? 'launch'
+    : `${status}:${serverId ?? ''}`;
+
 const addServer = (
   <Stack.Screen key="AddServer" name="AddServer" component={AddServerScreen} />
 );
+
+type RootStackProps = ScreenSet & {
+  /** Pops without animation while the stack unwinds for a swap. */
+  unwinding: boolean;
+};
 
 /**
  * Root stack, gated on the session (React Navigation's conditional screens):
@@ -58,13 +83,13 @@ const addServer = (
  * key, so Back from any page returns to the one that opened it; on Home (a
  * root screen) it doesn't handle it and Vega's BackHandler exits the app.
  */
-const RootStack = () => {
-  const {status, serverId} = useSession();
+const RootStack = ({status, serverId, unwinding}: RootStackProps) => {
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
         contentStyle: {backgroundColor: colors.background},
+        ...(unwinding ? {animation: 'none' as const} : {}),
       }}>
       {status === 'loading' || status === 'error' ? (
         <Stack.Screen name="Launch" component={Launch} />
@@ -116,7 +141,47 @@ type RootNavigatorProps = {
  * keeps the notice when the screen set swaps to the auth routes.
  */
 const Navigation = () => {
-  const {notice, clearNotice} = useSession();
+  const {notice, clearNotice, status, serverId} = useSession();
+  const navigation = useNavigationContainerRef<RootStackParamList>();
+  const [shown, setShown] = useState<ScreenSet>({status, serverId});
+  const unwinding = screenSetKey({status, serverId}) !== screenSetKey(shown);
+  // Bumped when a pop has settled, to take the next unwinding step.
+  const [settled, setSettled] = useState(0);
+  // The timer of the pop that is settling.
+  const pop = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  /*
+   * Vega's screens library (OS 1.2) crashes when a swap removes more than
+   * the top screen, or removes one while a pop is still settling. So before
+   * the screen set changes, the stack is popped down to one screen, one pop
+   * at a time, each given POP_SETTLE_MS.
+   */
+  useEffect(() => {
+    if (!unwinding || pop.current !== undefined) {
+      return;
+    }
+    const routes = navigation.isReady()
+      ? navigation.getRootState().routes.length
+      : 0;
+    if (routes <= 1) {
+      setShown({status, serverId});
+      return;
+    }
+    pop.current = setTimeout(() => {
+      pop.current = undefined;
+      setSettled((count) => count + 1);
+    }, POP_SETTLE_MS);
+    navigation.dispatch(StackActions.pop());
+  }, [navigation, unwinding, status, serverId, settled]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(pop.current);
+      pop.current = undefined;
+    },
+    [],
+  );
+
   const onStateChange = (state?: NavigationState) => {
     const focused = state?.routes[state.index]?.name;
     if (notice && focused !== 'UserPicker') {
@@ -124,8 +189,14 @@ const Navigation = () => {
     }
   };
   return (
-    <NavigationContainer theme={theme} onStateChange={onStateChange}>
-      <RootStack />
+    <NavigationContainer
+      ref={navigation}
+      theme={theme}
+      onStateChange={onStateChange}>
+      <RootStack
+        {...(unwinding ? shown : {status, serverId})}
+        unwinding={unwinding}
+      />
     </NavigationContainer>
   );
 };
