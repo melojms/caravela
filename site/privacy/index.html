@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caravela privacy policy</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --link: #0969da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --link: #4493f8;
+    }
+  }
+  body {
+    margin: 0;
+    padding: 2rem 16px 4rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; }
+  h1 { font-size: 1.8rem; line-height: 1.25; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; }
+  .updated { color: var(--muted); margin-top: 0; }
+  a { color: var(--link); overflow-wrap: anywhere; }
+  li { margin-bottom: 0.4rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Caravela privacy policy</h1>
+<p class="updated">Last updated: 16 October 2026</p>
+
+<p>Caravela is an unofficial Jellyfin client for Amazon Fire TV, made by José Melo. It is not affiliated with the Jellyfin project. It connects only to Jellyfin servers that you add yourself.</p>
+
+<h2>What Caravela stores on your device</h2>
+<ul>
+  <li><strong>The servers you add:</strong> their address, name and Jellyfin version.</li>
+  <li><strong>The accounts you sign in with:</strong> your user name and user ID, and the access token your server issues.</li>
+  <li><strong>Your auto-login choice.</strong></li>
+  <li><strong>A random device ID</strong> that Caravela creates the first time it runs. Jellyfin uses it to recognise this device. It isn't linked to your Amazon account or your hardware.</li>
+</ul>
+<p>This data stays in the app's private storage on your Fire TV. Fire TV has no secure storage for apps, so access tokens are saved <strong>unencrypted</strong>. Signing out removes the token. Uninstalling the app removes everything.</p>
+
+<h2>What Caravela sends, and where</h2>
+<p>Caravela talks only to the Jellyfin server you choose. It sends what a Jellyfin client needs: your sign-in details, requests to browse and play your library, the device ID and the device name "Fire TV (Vega)", and playback progress (start, position and stop) so the server can keep your resume points and watched status. How your server handles that data is up to whoever runs it.</p>
+<p>Caravela sends nothing to the developer or to anyone else. There are no analytics, no ads, no crash reporting and no tracking.</p>
+
+<h2>Amazon</h2>
+<p>Caravela is installed through the Amazon Appstore. Amazon may collect data about the installation and use of apps under its own privacy policy, and Caravela has no control over that.</p>
+
+<h2>Children</h2>
+<p>Caravela is not aimed at children and collects nothing from anyone.</p>
+
+<h2>Changes</h2>
+<p>Changes to this policy are published at this address. The full history is in the source repository: <a href="https://github.com/melojms/caravela">github.com/melojms/caravela</a>.</p>
+
+<h2>Contact</h2>
+<p>Email <a href="mailto:melojms@gmail.com">melojms@gmail.com</a> or open an issue at <a href="https://github.com/melojms/caravela/issues">github.com/melojms/caravela/issues</a>.</p>
+</main>
+</body>
+</html>

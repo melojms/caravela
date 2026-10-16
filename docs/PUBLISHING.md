@@ -47,7 +47,7 @@ Without these the app fails review or can't be uploaded.
 
 ### Phase 4: listing and submission (the user)
 
-- [ ] **Privacy policy** published (R0-3) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics.
+- [ ] **Privacy policy** published (R0-3) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics. Source: `site/privacy/index.html`, deployed by `.github/workflows/pages.yml` (only `site/` is published; Settings → Pages → Source must be "GitHub Actions"). Update its "Last updated" date with any change.
 - [ ] **Store assets:** the console lists the sizes; expect the icon (512×512 exists), a 1920×1080 Fire TV background, and 3+ 1920×1080 screenshots (the README's set from the demo server works, retaken on a Release build).
 - [ ] **Description:** what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
 - [ ] **Reviewer notes:** the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.
