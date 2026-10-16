@@ -387,7 +387,7 @@ describe('PlayerScreen', () => {
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 
-  it('gives the controller the component Vega Media Controls sends to', async () => {
+  it('gives the controller the component and title Vega Media Controls use', async () => {
     const {player} = await renderPlaying();
     const {getComponentInstance} = jest.mocked(useKeplerAppStateManager());
     const instance = getComponentInstance.mock.results[0].value;
@@ -395,6 +395,7 @@ describe('PlayerScreen', () => {
     expect(jest.mocked(PlayerController).mock.calls[0][3]).toEqual({
       playbackRate: 1,
       componentInstance: instance,
+      title: 'The Movie',
     });
 
     // Asked once; re-renders keep the controller.

@@ -329,7 +329,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         },
       },
       // Retry and track switches keep the speed too.
-      {playbackRate: speedSelection, componentInstance},
+      {playbackRate: speedSelection, componentInstance, title},
     );
     controllerRef.current = controller;
     if (surfaceRef.current) {
@@ -339,7 +339,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       controllerRef.current = null;
       stoppedRef.current = controller.destroy();
     };
-  }, [phase, api, goBack, positions, componentInstance]);
+  }, [phase, api, goBack, positions, componentInstance, title]);
 
   // Declared after the controller effect, so its cleanup runs after destroy():
   // refetch once the server has the stopped position.
