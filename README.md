@@ -67,6 +67,7 @@ What works today:
 - Details pages for movies, series, seasons, episodes and people: cast and crew, seasons and episodes, next up, similar titles, watched and favourite toggles.
 - Playback: direct play, or the server's remux/transcode over HLS with Shaka Player. Resume points and playback progress are reported back to Jellyfin. Sending the app to the background (Home, another app, the screensaver) leaves the player, which stops playback and saves the position. An Alexa question during playback pauses the video until Alexa is done, then it carries on. Alexa voice commands ("pause", "play", "stop", "skip forward 30 seconds", "rewind 10 seconds") control playback.
 - Subtitles (drawn by the app, or burned in by the server for ASS and PGS) and audio track switching.
+- Audio in AAC or Dolby, picked from what the audio output supports, and switched when it changes (for example to a Bluetooth headset).
 - Player controls: a seek bar with trickplay previews, chapters, skip back and forward (also from the remote's rewind and fast-forward keys), playback speed and zoom.
 - Search for movies, shows and episodes (no voice search or search history yet).
 - An About page in Settings: the app version and build, the server and its Jellyfin version, the licence, source and privacy policy, and the full licence texts of the third-party packages the app ships.
