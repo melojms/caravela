@@ -18,3 +18,9 @@ docs/LOCAL.md
 
 # Amazon's Vega Shaka Player build and polyfills (proprietary; see README)
 src/vendor/
+
+# Claude Code: commit only the project's own skill (the Amazon Builder Tools add others here)
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/caravela-next/

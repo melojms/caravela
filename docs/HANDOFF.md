@@ -3,6 +3,8 @@
 Read this file, docs/PLAN.md and docs/PUBLISHING.md before starting. Last updated 2026-10-17 (after R6).
 
 ## Starting a fresh session
+The `/caravela-next` skill (`.claude/skills/caravela-next/`) runs these steps: it reads the three docs, checks them against the repo, briefs the user and orchestrates the chosen task.
+
 1. Read the "Next" item under Status: the work is the Appstore release, "Plan to v1.0" in docs/PUBLISHING.md (phases 0–4). Done so far: R1-0 (lifecycle probe), R1-a (leave the player on background), R1-b (Alexa audio focus, and the remote's media keys), R1-c (refetch on foreground), R2 (manifest and versioning), R3 (minimal Search), R4 (About and licences), R6 (Media Controls: Alexa voice commands and the remote's media keys). Phase 0 (R0-1…R0-4) is the user's decisions; ask which are settled, but code tasks don't wait on them. Remaining code tasks, and where to start reading:
    - **R1-0**, **R1-a** and **R1-b** are done (under Status); `../caravela-wt/probe-r1-0b` keeps the lifecycle probe if an event needs re-checking.
    - **R6** is done (under Status); `../caravela-wt/probe-r6` (branch `probe/r6`, not for `main`) logs every Media Controls call if a command needs re-checking.
@@ -263,7 +265,7 @@ Read this file, docs/PLAN.md and docs/PUBLISHING.md before starting. Last update
 - **Debug builds** load JavaScript from Metro (`npm start` plus port forwarding); without it the app starts blank. Use **Release** builds for checks on the TV.
 - **Jest:** the Vega preset's stand-ins for BackHandler and Dimensions are wrong for RN 0.83. `test/setup.tsx` replaces them, and `test/jestSetup.js` sets up the API tests. Both are listed in `jest.config.json` `setupFiles`.
 - **Manifest:** the build adds `[[needs.module]]` entries for each native package it uses. Keep them when merging.
-- **Untracked files:** the Amazon Builder Tools create an untracked `CLAUDE.md` and `.claude/skills/` in the repo. Leave them uncommitted.
+- **Untracked files:** the Amazon Builder Tools create an untracked `CLAUDE.md` and `.claude/skills/` in the repo. Leave them uncommitted; `.gitignore` ignores everything under `.claude/` except the project's own `caravela-next` skill.
 - **Metro resolves `.json` before `.ts`:** a `.ts` module must never share a base name with a JSON file next to it (`licenses.ts` + `licenses.json` crashed the Release app in R4c). Jest resolves `.ts` first, so the tests don't catch it.
 - **Vega OS 1.2 native-stack pops send no `transitionEnd`** (pushes do), so code that must wait for a pop to settle uses a timer (`POP_SETTLE_MS` in `RootNavigator`). On OS 1.2, removing more than the top screen of a stack at once crashes the screens library: unwind one pop at a time.
 - **Vega CLI:** read `vega_cli_commands_reference.md` (Amazon Devices MCP) before using new Vega CLI commands.
