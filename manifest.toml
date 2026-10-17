@@ -56,6 +56,9 @@ id = "/com.amazon.kepler.keplermediadescriptor_1@IKeplermediadescriptor_1"
 [[needs.module]]
 id = "/com.amazon.kepler.w3cmedia_2@IW3cmedia_3"
 
+[[needs.module]]
+id = "/com.amazon.kepler.audio_lib_2@IAudioLib_0"
+
 [components]
 [[components.interactive]]
 id = "com.melojms.caravela.main"

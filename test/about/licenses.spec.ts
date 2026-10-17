@@ -17,6 +17,7 @@ const NOT_BUNDLED = new Set([
   'react-native',
   '@amazon-devices/kepler-media-controls',
   '@amazon-devices/kepler-media-types',
+  '@amazon-devices/keplerscript-audio-lib',
   '@amazon-devices/react-native-localize',
   '@amazon-devices/react-native-safe-area-context',
   '@amazon-devices/react-native-screens',
