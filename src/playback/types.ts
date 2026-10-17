@@ -40,6 +40,8 @@ export type MediaTrack = {
   language?: string;
   /** The server's `IsDefault` flag on the stream. */
   isDefault?: boolean;
+  /** The stream's `Codec`, lowercased (`eac3`, `ac3`, `aac`, …). */
+  codec?: string;
 };
 
 /**

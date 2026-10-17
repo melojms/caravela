@@ -17,10 +17,13 @@ import {homeKeys} from '../../src/api/home';
 import {useSession} from '../../src/auth/SessionContext';
 import {ChapterRow} from '../../src/components/ChapterRow';
 import {PlayerOverlay} from '../../src/components/PlayerOverlay';
+import {watchAudioOutput} from '../../src/playback/audioOutput';
+import {supportsDolby} from '../../src/playback/deviceProfile';
 import {PlayerController} from '../../src/playback/PlayerController';
 import {createPlaybackReporter} from '../../src/playback/reporting';
 import {clearSubtitleCache} from '../../src/playback/subtitles';
 import {
+  RELOAD_REWIND_MS,
   RESOLVE_ERROR_MESSAGE,
   PlayerScreen,
   resetPlaybackSpeed,
@@ -57,6 +60,14 @@ jest.mock('../../src/playback/resolver', () => ({
 
 jest.mock('../../src/playback/reporting', () => ({
   createPlaybackReporter: jest.fn(),
+}));
+
+jest.mock('../../src/playback/audioOutput', () => ({
+  watchAudioOutput: jest.fn(),
+}));
+
+jest.mock('../../src/playback/deviceProfile', () => ({
+  supportsDolby: jest.fn(() => false),
 }));
 
 // The app state manager is one per root tag, like Vega's; each
@@ -106,6 +117,7 @@ const reporter = {
 
 const session = sessionFor();
 const expireSession = jest.fn();
+const stopWatching = jest.fn();
 const goBack = jest.fn();
 const isFocused = jest.fn(() => true);
 let client: QueryClient;
@@ -236,6 +248,7 @@ beforeEach(() => {
     .mocked(resolvePlayback)
     .mockResolvedValue({kind: 'play', session: SESSION});
   jest.mocked(createPlaybackReporter).mockReturnValue(reporter);
+  jest.mocked(watchAudioOutput).mockReturnValue(stopWatching);
   warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -868,7 +881,7 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-1',
         userId: 'u1',
-        startMs: 754000,
+        startMs: 754000 - RELOAD_REWIND_MS,
         audioStreamIndex: 2,
         subtitleStreamIndex: 3,
       });
@@ -919,13 +932,14 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-1',
         userId: 'u1',
-        startMs: 60000,
+        startMs: 60000 - RELOAD_REWIND_MS,
         audioStreamIndex: 1,
         subtitleStreamIndex: to,
       });
       expect(Fake.instances).toHaveLength(2);
     });
 
+    // The Retry repeats the switch, so it starts where the switch would have.
     it('keeps the chosen tracks on Retry after a failed switch', async () => {
       await renderPaused();
       jest
@@ -942,7 +956,7 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-1',
         userId: 'u1',
-        startMs: 754000,
+        startMs: 754000 - RELOAD_REWIND_MS,
         audioStreamIndex: 2,
         subtitleStreamIndex: 3,
       });
@@ -972,7 +986,7 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-1',
         userId: 'u1',
-        startMs: 754000,
+        startMs: 754000 - RELOAD_REWIND_MS,
         audioStreamIndex: 1,
         subtitleStreamIndex: 3,
       });
@@ -1006,10 +1020,18 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-1',
         userId: 'u1',
-        startMs: 754000,
+        startMs: 754000 - RELOAD_REWIND_MS,
         audioStreamIndex: 2,
         subtitleStreamIndex: 3,
       });
+    });
+
+    it('starts a switch near the beginning at 0', async () => {
+      await renderPaused(3);
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(0);
     });
 
     it('resumes a switch at the target of a seek still in flight', async () => {
@@ -1020,10 +1042,11 @@ describe('PlayerScreen tracks', () => {
       fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
       await flush();
       expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(
-        130000,
+        130000 - RELOAD_REWIND_MS,
       );
     });
 
+    // Retry isn't a reload: no rewind.
     it("resumes a Retry after a switch at the new session's last position", async () => {
       const {player} = await renderPaused(100);
       fireEvent.press(screen.getByTestId('player-overlay-audio'));
@@ -1078,7 +1101,7 @@ describe('PlayerScreen tracks', () => {
       pressKey('skip_forward');
       expect(fresh.seeks).toEqual([]);
       expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(
-        100000,
+        100000 - RELOAD_REWIND_MS,
       );
     });
 
@@ -1256,6 +1279,243 @@ describe('PlayerScreen tracks', () => {
       expect(listeners.size).toBe(1);
       view.unmount();
       expect(listeners.size).toBe(0);
+    });
+  });
+
+  describe('audio output changes', () => {
+    type Listener = (state: AppStateStatus) => void;
+    let listeners: Set<Listener>;
+    let log: jest.SpyInstance;
+
+    /** The source's tracks: E-AC-3, AC-3, AAC and one with no codec known. */
+    const DOLBY: PlaybackSession = {
+      ...TRACKED,
+      audioTracks: [
+        {index: 1, label: 'English - Dolby Digital+', codec: 'eac3'},
+        {index: 2, label: 'Commentary - Dolby Digital', codec: 'ac3'},
+        {index: 7, label: 'Stereo - AAC', codec: 'aac'},
+        {index: 8, label: 'Unknown'},
+      ],
+    };
+
+    /** The watcher reports a new Dolby answer for the output. */
+    const changeOutput = (dolby: boolean) =>
+      act(() => jest.mocked(watchAudioOutput).mock.lastCall![0](dolby));
+
+    const playingAt = async (
+      audioStreamIndex: number,
+      seconds = 300,
+    ): Promise<{view: ReturnType<typeof renderScreen>; player: FakePlayer}> => {
+      jest.mocked(resolvePlayback).mockResolvedValue({
+        kind: 'play',
+        session: {...DOLBY, audioStreamIndex},
+      });
+      const result = await renderPlaying();
+      play(result.player);
+      result.player.setPosition(seconds);
+      fire(result.player, 'timeupdate');
+      await flush();
+      return result;
+    };
+
+    beforeEach(() => {
+      listeners = new Set();
+      jest
+        .mocked(AppState.addEventListener)
+        .mockImplementation((_type, listener) => {
+          listeners.add(listener as Listener);
+          return {remove: () => listeners.delete(listener as Listener)};
+        });
+      log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      log.mockRestore();
+    });
+
+    it('watches the output once for the screen, across Retry and switches', async () => {
+      const {view, player} = await playingAt(1);
+      expect(watchAudioOutput).toHaveBeenCalledTimes(1);
+      // It reads the output's answer afresh each time.
+      const {readDolby} = jest.mocked(watchAudioOutput).mock.calls[0][1];
+      jest.mocked(supportsDolby).mockReturnValueOnce(true);
+      expect(readDolby()).toBe(true);
+
+      pressKey('up');
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(Fake.instances).toHaveLength(2);
+      player.error = {code: 2, message: 'socket'};
+      const fresh = Fake.instances[1];
+      fresh.error = {code: 2, message: 'socket'};
+      fire(fresh, 'error');
+      fireEvent.press(screen.getByTestId('player-retry'));
+      await flush();
+      expect(Fake.instances).toHaveLength(3);
+      expect(watchAudioOutput).toHaveBeenCalledTimes(1);
+      expect(stopWatching).not.toHaveBeenCalled();
+
+      view.unmount();
+      expect(stopWatching).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['E-AC-3', 1],
+      ['AC-3', 2],
+    ])(
+      'reloads an %s track at the position when Dolby is lost, then gained',
+      async (_name, audioIndex) => {
+        const {player} = await playingAt(audioIndex);
+        const order: string[] = [];
+        player.deinitialize.mockImplementation(() => {
+          order.push('deinitialize');
+          return Promise.resolve();
+        });
+        jest.mocked(resolvePlayback).mockImplementation((_api, request) => {
+          order.push('resolve');
+          return Promise.resolve({
+            kind: 'play',
+            session: {...DOLBY, audioStreamIndex: audioIndex, ...request},
+          });
+        });
+
+        changeOutput(false);
+        await flush();
+        expect(order).toEqual(['deinitialize', 'resolve']);
+        // The same tracks, named for the source, from where it was.
+        expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+          itemId: 'm1',
+          mediaSourceId: 'source-1',
+          userId: 'u1',
+          startMs: 300000 - RELOAD_REWIND_MS,
+          audioStreamIndex: audioIndex,
+          subtitleStreamIndex: 3,
+        });
+        expect(log).toHaveBeenCalledWith(
+          'Audio output Dolby support changed',
+          false,
+          'reloading',
+        );
+        expect(Fake.instances).toHaveLength(2);
+
+        const fresh = Fake.instances[1];
+        play(fresh);
+        fresh.setPosition(320);
+        fire(fresh, 'timeupdate');
+        changeOutput(true);
+        await flush();
+        expect(resolvePlayback).toHaveBeenCalledTimes(3);
+        expect(resolvePlayback).toHaveBeenLastCalledWith(session.api, {
+          itemId: 'm1',
+          mediaSourceId: 'source-1',
+          userId: 'u1',
+          startMs: 320000 - RELOAD_REWIND_MS,
+          audioStreamIndex: audioIndex,
+          subtitleStreamIndex: 3,
+        });
+        expect(fresh.deinitialize).toHaveBeenCalled();
+        expect(Fake.instances).toHaveLength(3);
+      },
+    );
+
+    it('keeps a client-side subtitle pick through the reload', async () => {
+      await playingAt(1);
+      pressKey('up');
+      fireEvent.press(screen.getByTestId('player-overlay-subtitles'));
+      fireEvent.press(screen.getByTestId('player-subtitle-picker-row-4'));
+      expect(resolvePlayback).toHaveBeenCalledTimes(1);
+
+      changeOutput(false);
+      await flush();
+      expect(jest.mocked(resolvePlayback).mock.lastCall?.[1]).toEqual(
+        expect.objectContaining({audioStreamIndex: 1, subtitleStreamIndex: 4}),
+      );
+    });
+
+    it.each([
+      ['AAC', 7],
+      ['unknown-codec', 8],
+    ])('leaves an %s track alone', async (_name, audioIndex) => {
+      await playingAt(audioIndex);
+      changeOutput(false);
+      changeOutput(true);
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(1);
+      expect(Fake.instances).toHaveLength(1);
+      expect(log).toHaveBeenCalledWith(
+        'Audio output Dolby support changed',
+        true,
+        'no reload',
+      );
+    });
+
+    it('ignores a change while a switch resolves', async () => {
+      await playingAt(1);
+      const next = deferred<PlaybackResolution>();
+      jest.mocked(resolvePlayback).mockReturnValueOnce(next.promise);
+      pressKey('up');
+      fireEvent.press(screen.getByTestId('player-overlay-audio'));
+      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(2);
+
+      changeOutput(false);
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(2);
+      next.resolve({kind: 'play', session: {...DOLBY, audioStreamIndex: 2}});
+      await flush();
+      expect(Fake.instances).toHaveLength(2);
+      expect(resolvePlayback).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores a change in the error view', async () => {
+      const {player} = await playingAt(1);
+      player.error = {code: 2, message: 'socket'};
+      fire(player, 'error');
+      expect(screen.getByTestId('player-retry')).toBeTruthy();
+
+      changeOutput(false);
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('player-retry')).toBeTruthy();
+    });
+
+    it('ignores a change once the app went to the background', async () => {
+      const {view} = await playingAt(1);
+      act(() => listeners.forEach((listener) => listener('background')));
+      expect(goBack).toHaveBeenCalledTimes(1);
+
+      changeOutput(false);
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(1);
+      expect(Fake.instances).toHaveLength(1);
+      view.unmount();
+      expect(stopWatching).toHaveBeenCalledTimes(1);
+    });
+
+    // As an audio switch: the reload plays from the paused position.
+    it('reloads while paused, and the new session plays', async () => {
+      const {player} = await playingAt(1);
+      pause(player);
+      await flush();
+      expect(screen.getByTestId('player-overlay')).toBeTruthy();
+      jest.mocked(resolvePlayback).mockResolvedValueOnce({
+        kind: 'play',
+        session: {...DOLBY, audioStreamIndex: 1, startMs: 300000},
+      });
+
+      changeOutput(false);
+      await flush();
+      expect(jest.mocked(resolvePlayback).mock.lastCall?.[1].startMs).toBe(
+        300000 - RELOAD_REWIND_MS,
+      );
+      expect(Fake.instances).toHaveLength(2);
+      const fresh = Fake.instances[1];
+      fire(fresh, 'loadedmetadata');
+      fresh.setPosition(300);
+      fire(fresh, 'seeked');
+      expect(fresh.play).toHaveBeenCalled();
     });
   });
 
@@ -1928,7 +2188,7 @@ describe('PlayerScreen tracks', () => {
         itemId: 'm1',
         mediaSourceId: 'source-2',
         userId: 'u1',
-        startMs: 754000,
+        startMs: 754000 - RELOAD_REWIND_MS,
         audioStreamIndex: 7,
         subtitleStreamIndex: -1,
       });

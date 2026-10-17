@@ -116,6 +116,7 @@ const nonEmpty = (value: string | null | undefined): string | undefined =>
  */
 function toMediaTrack(stream: MediaStream, position: number): MediaTrack {
   const language = nonEmpty(stream.Language);
+  const codec = nonEmpty(stream.Codec)?.toLowerCase();
   return {
     index: stream.Index ?? -1,
     label:
@@ -125,6 +126,7 @@ function toMediaTrack(stream: MediaStream, position: number): MediaTrack {
       `Track ${position + 1}`,
     ...(language ? {language} : {}),
     ...(stream.IsDefault != null ? {isDefault: stream.IsDefault} : {}),
+    ...(codec ? {codec} : {}),
   };
 }
 

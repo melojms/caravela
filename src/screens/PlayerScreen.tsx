@@ -27,7 +27,9 @@ import {PlayerOverlay} from '../components/PlayerOverlay';
 import {SEEK_BACK_STEP_MS, SEEK_FORWARD_STEP_MS} from '../components/SeekBar';
 import {TRACK_OFF_INDEX, TrackPicker} from '../components/TrackPicker';
 import {RootStackScreenProps} from '../navigation/types';
+import {watchAudioOutput} from '../playback/audioOutput';
 import {currentChapterIndex, itemChapters} from '../playback/chapters';
+import {supportsDolby} from '../playback/deviceProfile';
 import {PlayerController, type PlayerState} from '../playback/PlayerController';
 import {type PlaybackRequest, resolvePlayback} from '../playback/resolver';
 import {trickplayInfo, trickplayTile} from '../playback/trickplay';
@@ -131,6 +133,18 @@ export const resetPlaybackSpeed = () => {
 };
 
 const NO_CHAPTERS: Chapter[] = [];
+
+/**
+ * How far before the last position a reload starts, so the viewer sees a
+ * short repeat rather than a skip. On the Fire TV an output change drops the
+ * old audio sink ~2 s before the reload reads the position (the clock runs
+ * on, unheard), and the new stream takes ~1 s to be heard; plus ~2 s margin.
+ * Retry doesn't use it: it resumes at the last healthy position.
+ */
+export const RELOAD_REWIND_MS = 5000;
+
+/** Audio the server copies only while the output takes Dolby. */
+const DOLBY_CODECS = new Set(['ac3', 'eac3']);
 
 const readPosition = (controller: PlayerController): Position => ({
   positionMs: controller.positionMs,
@@ -505,9 +519,9 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   );
 
   /**
-   * Stops the controller, then resolves again at the current position with
-   * these tracks (androidtv's `stop()` + `playInternal`). A newer switch
-   * cancels this one's resolve.
+   * Stops the controller, then resolves again a little before the current
+   * position (`RELOAD_REWIND_MS`) with these tracks (androidtv's `stop()` +
+   * `playInternal`). A newer switch cancels this one's resolve.
    */
   const reload = (next: Tracks) => {
     // The live position is the freshest (it includes a seek in flight); it
@@ -517,7 +531,12 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     if (live > 0) {
       reportedRef.current = live;
     }
-    resumeFromRef.current = reportedRef.current;
+    // Not cumulative: a second switch during the resolve rewinds from the
+    // same reported position.
+    resumeFromRef.current = Math.max(
+      0,
+      reportedRef.current - RELOAD_REWIND_MS,
+    );
     choiceRef.current = {
       mediaSourceId: next.session.mediaSourceId,
       ...(next.audioIndex !== undefined && {audioStreamIndex: next.audioIndex}),
@@ -565,6 +584,51 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     controller.setSubtitleStreamIndex(index);
     setSubtitlePick({session: phase.session, index});
   };
+
+  // Read by the output watcher, which outlives the renders.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+
+  // For the screen's lifetime (one observer per app, so Retry and switches
+  // keep it). When the output gains or loses Dolby, a Dolby track resolves
+  // again with the same tracks: the fresh profile makes the server convert it
+  // to AAC or copy it again. Only while playing: a resolve in flight (a
+  // switch, Retry) probes afresh anyway, and the error view's Retry will. A
+  // paused player reloads like an audio switch: the new session plays.
+  useEffect(() => {
+    const stop = watchAudioOutput(
+      (dolby) => {
+        const current = tracksRef.current;
+        const codec = current?.session.audioTracks?.find(
+          (track) => track.index === current.audioIndex,
+        )?.codec;
+        const reloads =
+          current !== null &&
+          phaseRef.current.kind === 'ready' &&
+          !leftRef.current &&
+          codec !== undefined &&
+          DOLBY_CODECS.has(codec);
+        // Unconditional: a Release build's device log shows it.
+        console.log(
+          'Audio output Dolby support changed',
+          dolby,
+          reloads ? 'reloading' : 'no reload',
+        );
+        if (reloads) {
+          reloadRef.current(current);
+        }
+      },
+      {readDolby: () => supportsDolby()},
+    );
+    return () => {
+      console.log('Audio output watcher stopped');
+      stop();
+    };
+  }, []);
 
   const pickSpeed = (index: number) => {
     closePopup();

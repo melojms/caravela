@@ -405,9 +405,7 @@ describe('transcodingUrl', () => {
         withBase('https://jf.example'),
         '/videos/1/master.m3u8?a=1',
       ),
-    ).toBe(
-      'https://jf.example/videos/1/master.m3u8?a=1&ApiKey=tok%20en%2F%2B',
-    );
+    ).toBe('https://jf.example/videos/1/master.m3u8?a=1&ApiKey=tok%20en%2F%2B');
     expect(
       transcodingUrl(withBase('https://jf.example'), '/videos/1/master.m3u8'),
     ).toBe('https://jf.example/videos/1/master.m3u8?ApiKey=tok%20en%2F%2B');
@@ -433,11 +431,18 @@ describe('resolvePlayback tracks', () => {
     {
       Type: 'Audio',
       Index: 1,
+      Codec: 'EAC3',
       DisplayTitle: 'English - AAC - Stereo - Default',
       Language: 'eng',
       IsDefault: true,
     },
-    {Type: 'Audio', Index: 2, Title: 'Commentary', Language: 'fre'},
+    {
+      Type: 'Audio',
+      Index: 2,
+      Codec: 'aac',
+      Title: 'Commentary',
+      Language: 'fre',
+    },
     {Type: 'Audio', Index: 3, DisplayTitle: ' ', Language: 'ger'},
     {Type: 'Audio', Index: 4, IsDefault: false},
     {
@@ -493,14 +498,18 @@ describe('resolvePlayback tracks', () => {
         label: 'English - AAC - Stereo - Default',
         language: 'eng',
         isDefault: true,
+        // Lowercased: the Dolby check compares it.
+        codec: 'eac3',
       },
       // androidtv: displayTitle ?: title.
-      {index: 2, label: 'Commentary', language: 'fre'},
+      {index: 2, label: 'Commentary', language: 'fre', codec: 'aac'},
       // A blank DisplayTitle counts as missing: the language is next.
       {index: 3, label: 'ger', language: 'ger'},
       // Numbered by position among the audio streams.
       {index: 4, label: 'Track 4', isDefault: false},
     ]);
+    // No Codec from the server: no key at all.
+    expect(session.audioTracks?.[3]).not.toHaveProperty('codec');
   });
 
   it('maps subtitle streams as external or burn-in by DeliveryMethod', async () => {
@@ -511,19 +520,32 @@ describe('resolvePlayback tracks', () => {
         label: 'English - SUBRIP',
         language: 'eng',
         isDefault: false,
+        codec: 'subrip',
         delivery: 'external',
         vttUrl: vtt(5),
       },
-      {index: 6, label: 'Signs - ASS', delivery: 'burn-in'},
-      {index: 7, label: 'Track 3', delivery: 'burn-in'},
-      {index: 8, label: 'Track 4', delivery: 'burn-in'},
+      {index: 6, label: 'Signs - ASS', codec: 'ass', delivery: 'burn-in'},
+      {
+        index: 7,
+        label: 'Track 3',
+        codec: 'pgssub',
+        delivery: 'burn-in',
+      },
+      {index: 8, label: 'Track 4', codec: 'webvtt', delivery: 'burn-in'},
       // No DeliveryMethod: burn-in.
-      {index: 9, label: 'spa', language: 'spa', delivery: 'burn-in'},
+      {
+        index: 9,
+        label: 'spa',
+        language: 'spa',
+        codec: 'dvdsub',
+        delivery: 'burn-in',
+      },
       // A sidecar file is a track too.
       {
         index: 10,
         label: 'Portuguese - SRT - External',
         language: 'por',
+        codec: 'srt',
         delivery: 'external',
         vttUrl: vtt(10),
       },
