@@ -7,6 +7,7 @@ import {
   DEFAULT_MAX_BITRATE,
   PROBES,
   probeCapabilities,
+  supportsDolby,
 } from '../../src/playback/deviceProfile';
 import type {ProbeName} from '../../src/playback/deviceProfile';
 
@@ -347,11 +348,25 @@ describe('buildDeviceProfile', () => {
   });
 
   describe('default profile', () => {
-    // A fresh module registry per test, so the memoized profile starts empty.
+    // A fresh module registry per test, so the cached video probes start empty.
     let mod: typeof import('../../src/playback/deviceProfile');
     let isTypeSupported: jest.MockedFunction<
       typeof MediaSource.isTypeSupported
     >;
+
+    const AUDIO: ProbeName[] = [
+      'aac',
+      'mp3',
+      'ac3',
+      'eac3',
+      'opus',
+      'flac',
+      'dts',
+      'truehd',
+    ];
+    const VIDEO = ALL.filter((name) => !AUDIO.includes(name));
+    const callsFor = (type: string) =>
+      isTypeSupported.mock.calls.filter(([t]) => t === type).length;
 
     beforeEach(() => {
       jest.isolateModules(() => {
@@ -359,19 +374,67 @@ describe('buildDeviceProfile', () => {
         isTypeSupported = require('@amazon-devices/react-native-w3cmedia')
           .MediaSource.isTypeSupported;
       });
+      isTypeSupported.mockReset();
       isTypeSupported.mockImplementation((type) => type === PROBES.h264);
     });
 
-    it('probes with Vega MediaSource once per app run', () => {
-      const first = mod.buildDeviceProfile();
-      const calls = isTypeSupported.mock.calls.length;
-      expect(calls).toBeGreaterThan(0);
-      expect(mod.buildDeviceProfile()).toBe(first);
+    it('probes with Vega MediaSource', () => {
+      const profile = mod.buildDeviceProfile();
+      expect(isTypeSupported).toHaveBeenCalled();
+      expect(directPlay(profile, 'mp4,m4v,mov')?.VideoCodec).toBe('h264');
       expect(mod.buildDeviceProfile({maxStreamingBitrate: 1e6})).toMatchObject({
         MaxStreamingBitrate: 1e6,
       });
-      expect(isTypeSupported).toHaveBeenCalledTimes(calls);
-      expect(directPlay(first, 'mp4,m4v,mov')?.VideoCodec).toBe('h264');
+    });
+
+    it('probes video once per app run and audio on every call', () => {
+      mod.buildDeviceProfile();
+      const firstVideo = new Map(
+        VIDEO.map((name) => [name, callsFor(PROBES[name])]),
+      );
+      const firstLevel = callsFor('video/mp4; codecs="avc1.640034"');
+      mod.buildDeviceProfile();
+      mod.buildDeviceProfile({maxStreamingBitrate: 1e6});
+      mod.getDeviceCapabilities();
+      for (const name of VIDEO) {
+        expect(firstVideo.get(name)).toBeGreaterThan(0);
+        expect(callsFor(PROBES[name])).toBe(firstVideo.get(name));
+      }
+      // The level ladders run with their codec's probe, so once per run too.
+      expect(firstLevel).toBe(1);
+      expect(callsFor('video/mp4; codecs="avc1.640034"')).toBe(1);
+      for (const name of AUDIO) {
+        expect(callsFor(PROBES[name])).toBe(4);
+      }
+    });
+
+    it('follows the current audio output from one play to the next', () => {
+      let eac3 = true;
+      isTypeSupported.mockImplementation(
+        (type) =>
+          type === PROBES.h264 ||
+          type === PROBES.aac ||
+          (eac3 && type === PROBES.eac3),
+      );
+      const hls = (profile: DeviceProfile, container: string) =>
+        profile.TranscodingProfiles?.find(
+          (p) => p.Type === 'Video' && p.Container === container,
+        )?.AudioCodec;
+
+      const hdmi = mod.buildDeviceProfile();
+      expect(directPlay(hdmi, 'mp4,m4v,mov')?.AudioCodec).toBe('aac,eac3');
+      expect(hls(hdmi, 'ts')).toBe('aac,eac3');
+      expect(hls(hdmi, 'mp4')).toBe('aac,eac3');
+
+      eac3 = false; // e.g. switched to a Bluetooth headset
+      const bluetooth = mod.buildDeviceProfile();
+      expect(directPlay(bluetooth, 'mp4,m4v,mov')?.AudioCodec).toBe('aac');
+      expect(hls(bluetooth, 'ts')).toBe('aac');
+      expect(hls(bluetooth, 'mp4')).toBe('aac');
+      expect(mod.getDeviceCapabilities().eac3).toBe(false);
+
+      eac3 = true;
+      expect(hls(mod.buildDeviceProfile(), 'ts')).toBe('aac,eac3');
     });
 
     it('re-probes when isTypeSupported is injected', () => {
@@ -379,6 +442,58 @@ describe('buildDeviceProfile', () => {
       const injected = jest.fn(() => true);
       mod.buildDeviceProfile({isTypeSupported: injected});
       expect(injected).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('supportsDolby', () => {
+  it.each([
+    [['ac3'], true],
+    [['eac3'], true],
+    [['ac3', 'eac3'], true],
+    [['aac', 'h264'], false],
+  ] as [ProbeName[], boolean][])('with %j supported is %s', (names, dolby) => {
+    expect(supportsDolby(supporting(...names))).toBe(dolby);
+  });
+
+  it('only probes AC-3 and E-AC-3', () => {
+    const isTypeSupported = supporting();
+    supportsDolby(isTypeSupported);
+    expect(isTypeSupported.mock.calls.map(([type]) => type).sort()).toEqual(
+      [PROBES.ac3, PROBES.eac3].sort(),
+    );
+  });
+
+  it('is false when the probe throws', () => {
+    expect(
+      supportsDolby(() => {
+        throw new Error('boom');
+      }),
+    ).toBe(false);
+  });
+
+  describe('by default', () => {
+    let isTypeSupported: jest.MockedFunction<
+      typeof MediaSource.isTypeSupported
+    >;
+    let dolby: typeof supportsDolby;
+
+    beforeEach(() => {
+      jest.isolateModules(() => {
+        dolby = require('../../src/playback/deviceProfile').supportsDolby;
+        isTypeSupported = require('@amazon-devices/react-native-w3cmedia')
+          .MediaSource.isTypeSupported;
+      });
+      isTypeSupported.mockReset();
+    });
+
+    it('asks Vega MediaSource afresh on every call', () => {
+      isTypeSupported.mockImplementation((type) => type === PROBES.eac3);
+      expect(dolby()).toBe(true);
+      isTypeSupported.mockImplementation(() => false);
+      expect(dolby()).toBe(false);
+      isTypeSupported.mockImplementation((type) => type === PROBES.ac3);
+      expect(dolby()).toBe(true);
     });
   });
 });

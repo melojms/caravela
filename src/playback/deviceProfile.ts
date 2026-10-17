@@ -114,14 +114,31 @@ const safeProbe = (isTypeSupported: IsTypeSupported, type: string) => {
   }
 };
 
-/** Runs every probe once. */
-export function probeCapabilities(
-  isTypeSupported: IsTypeSupported,
-): DeviceCapabilities {
-  const probe: IsTypeSupported = (type) => safeProbe(isTypeSupported, type);
+const AUDIO_PROBES = [
+  'aac',
+  'mp3',
+  'ac3',
+  'eac3',
+  'opus',
+  'flac',
+  'dts',
+  'truehd',
+] as const satisfies readonly ProbeName[];
+
+type AudioProbeName = (typeof AUDIO_PROBES)[number];
+type AudioCapabilities = Pick<ProbeResults, AudioProbeName>;
+type VideoCapabilities = Omit<DeviceCapabilities, AudioProbeName>;
+
+const isAudioProbe = (name: string): name is AudioProbeName =>
+  (AUDIO_PROBES as readonly string[]).includes(name);
+
+/** The video probes and their levels; they don't depend on the audio output. */
+function probeVideo(probe: IsTypeSupported): VideoCapabilities {
   const results = Object.fromEntries(
-    Object.entries(PROBES).map(([name, type]) => [name, probe(type)]),
-  ) as ProbeResults;
+    Object.entries(PROBES)
+      .filter(([name]) => !isAudioProbe(name))
+      .map(([name, type]) => [name, probe(type)]),
+  ) as Omit<ProbeResults, AudioProbeName>;
   return {
     ...results,
     avcLevel: probeLevel(probe, results.h264, AVC_LEVELS),
@@ -129,6 +146,38 @@ export function probeCapabilities(
     hevcLevel: probeLevel(probe, results.hevc, HEVC_LEVELS),
     hevcMain10Level: probeLevel(probe, results.hevcMain10, HEVC_MAIN10_LEVELS),
   };
+}
+
+/**
+ * The audio probes. Vega answers them from the current audio output (HDMI,
+ * Bluetooth...), live on every call, so they can change between plays.
+ */
+function probeAudio(probe: IsTypeSupported): AudioCapabilities {
+  return Object.fromEntries(
+    AUDIO_PROBES.map((name) => [name, probe(PROBES[name])]),
+  ) as AudioCapabilities;
+}
+
+/** Runs every probe once. */
+export function probeCapabilities(
+  isTypeSupported: IsTypeSupported,
+): DeviceCapabilities {
+  const probe: IsTypeSupported = (type) => safeProbe(isTypeSupported, type);
+  return {...probeVideo(probe), ...probeAudio(probe)};
+}
+
+/**
+ * Whether the current audio output takes AC-3 or E-AC-3 right now. Probes
+ * just those two, afresh on every call.
+ */
+export function supportsDolby(
+  isTypeSupported: IsTypeSupported = (type) =>
+    MediaSource.isTypeSupported(type),
+): boolean {
+  return (
+    safeProbe(isTypeSupported, PROBES.ac3) ||
+    safeProbe(isTypeSupported, PROBES.eac3)
+  );
 }
 
 // Jellyfin's codec names for each probe.
@@ -531,39 +580,34 @@ export type DeviceProfileOptions = {
   maxStreamingBitrate?: number;
 };
 
-let defaultCapabilities: DeviceCapabilities | undefined;
-let defaultProfile: DeviceProfile | undefined;
+const vegaProbe: IsTypeSupported = (type) =>
+  safeProbe((t) => MediaSource.isTypeSupported(t), type);
 
-/** The device's capabilities, probed once per app run. */
+let videoCapabilities: VideoCapabilities | undefined;
+
+/**
+ * The device's capabilities. The video probes run once per app run; the
+ * audio ones run on every call, since they follow the current audio output.
+ */
 export function getDeviceCapabilities(): DeviceCapabilities {
-  if (!defaultCapabilities) {
-    defaultCapabilities = probeCapabilities((type) =>
-      MediaSource.isTypeSupported(type),
-    );
+  if (!videoCapabilities) {
+    videoCapabilities = probeVideo(vegaProbe);
   }
-  return defaultCapabilities;
+  return {...videoCapabilities, ...probeAudio(vegaProbe)};
 }
 
 /**
- * The profile sent with every PlaybackInfo request. Without an injected
- * `isTypeSupported` the probes run once per app run, and without options the
- * same profile object comes back each time.
+ * The profile sent with every PlaybackInfo request, built afresh on each
+ * call so its audio codecs follow the current audio output. Without an
+ * injected `isTypeSupported` only the audio probes run again (see
+ * {@link getDeviceCapabilities}); with one, every probe runs.
  */
 export function buildDeviceProfile(
   options: DeviceProfileOptions = {},
 ): DeviceProfile {
   const {isTypeSupported, maxStreamingBitrate} = options;
-  if (isTypeSupported) {
-    return createDeviceProfile(
-      probeCapabilities(isTypeSupported),
-      maxStreamingBitrate,
-    );
-  }
-  if (maxStreamingBitrate !== undefined) {
-    return createDeviceProfile(getDeviceCapabilities(), maxStreamingBitrate);
-  }
-  if (!defaultProfile) {
-    defaultProfile = createDeviceProfile(getDeviceCapabilities());
-  }
-  return defaultProfile;
+  const caps = isTypeSupported
+    ? probeCapabilities(isTypeSupported)
+    : getDeviceCapabilities();
+  return createDeviceProfile(caps, maxStreamingBitrate);
 }
