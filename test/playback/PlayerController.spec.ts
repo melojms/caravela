@@ -221,6 +221,100 @@ describe('resume', () => {
   });
 });
 
+// The screen's return from the background: the same position, paused.
+describe('starting paused', () => {
+  const advance = (ms: number) => jest.advanceTimersByTime(ms);
+
+  it('seeks to the position and stays paused there', async () => {
+    const {player} = await setup({startMs: 90000}, {startPaused: true});
+    expect(player.autoplay).toBe(false);
+    player.duration = 7200;
+    player.fire('loadedmetadata');
+    expect(player.seeks).toEqual([90]);
+    player.fire('seeking');
+    player.fire('seeked');
+
+    expect(player.play).not.toHaveBeenCalled();
+    expect(listeners.onStateChange).toHaveBeenLastCalledWith('paused');
+  });
+
+  it('starts paused from 0 once the media can play', async () => {
+    const {controller, player} = await setup({}, {startPaused: true});
+    expect(player.autoplay).toBe(false);
+    player.fire('loadedmetadata');
+    expect(controller.playerState).toBe('loading');
+    player.fire('canplay');
+
+    expect(player.play).not.toHaveBeenCalled();
+    expect(controller.playerState).toBe('paused');
+  });
+
+  it('reports a paused start, once', async () => {
+    const {player} = await setup({startMs: 90000}, {startPaused: true});
+    player.fire('loadedmetadata');
+    player.setPosition(90);
+    player.fire('seeked');
+
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+    expect(getSnapshot()).toMatchObject({positionMs: 90000, isPaused: true});
+
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't fail the start while it waits paused", async () => {
+    const {player} = await setup({startMs: 90000}, {startPaused: true});
+    player.fire('loadedmetadata');
+    player.fire('seeked');
+    advance(START_TIMEOUT_MS * 3);
+
+    expect(listeners.onError).not.toHaveBeenCalled();
+  });
+
+  it('still fails a start that never loads', async () => {
+    await setup({startMs: 90000}, {startPaused: true});
+    advance(START_TIMEOUT_MS);
+
+    expect(listeners.onError).toHaveBeenCalledWith(START_TIMEOUT_MESSAGE);
+  });
+
+  it('plays on Play', async () => {
+    const {controller, player} = await setup(
+      {startMs: 90000},
+      {startPaused: true},
+    );
+    player.duration = 7200;
+    player.fire('loadedmetadata');
+    player.fire('seeked');
+    expect(controller.canSeek).toBe(true);
+
+    controller.togglePause();
+    expect(player.play).toHaveBeenCalledTimes(1);
+    player.paused = false;
+    player.fire('play');
+    player.fire('playing');
+    expect(controller.playerState).toBe('playing');
+  });
+
+  it('plays as usual when Play came during the resume seek', async () => {
+    const {controller, player} = await setup(
+      {startMs: 90000},
+      {startPaused: true},
+    );
+    player.fire('loadedmetadata');
+    controller.togglePause();
+    player.paused = false;
+    player.fire('play');
+    player.fire('seeked');
+    player.fire('playing');
+
+    expect(controller.playerState).toBe('playing');
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('reporting', () => {
   it('starts after the first playing only', async () => {
     const {player} = await setup();
@@ -1571,6 +1665,18 @@ describe('Media Controls (Alexa, the remote media keys)', () => {
       expect(report).not.toHaveBeenCalled();
       report.mockRestore();
     });
+
+    it('is told a paused start is paused', async () => {
+      const {player} = await setup(
+        {startMs: 90000},
+        {componentInstance: COMPONENT, startPaused: true},
+      );
+      const report = jest.spyOn(handlerOf(player), 'reportPaused');
+      player.fire('loadedmetadata');
+      expect(report).not.toHaveBeenCalled();
+      player.fire('seeked');
+      expect(report).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -1939,7 +2045,10 @@ describe('HLS mode', () => {
   /** An HLS controller whose Shaka load waits for `load.resolve()`. */
   const setupHls = async (
     session: Partial<PlaybackSession> = {},
-    {surface = true} = {},
+    {
+      surface = true,
+      options,
+    }: {surface?: boolean; options?: PlayerOptions} = {},
   ) => {
     const load = deferred();
     shaka.Player.loadResult.mockReturnValueOnce(load.promise);
@@ -1947,6 +2056,7 @@ describe('HLS mode', () => {
       api,
       {...SESSION, ...HLS, ...session},
       listeners,
+      options,
     );
     const player = Fake.instances.at(-1)!;
     if (surface) {
@@ -2003,6 +2113,26 @@ describe('HLS mode', () => {
 
     load.resolve();
     await flush();
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays paused at the position once loaded, when starting paused', async () => {
+    const {controller, player, load, shakaPlayer} = await setupHls(
+      {},
+      {options: {startPaused: true}},
+    );
+    await flush();
+    expect(shakaPlayer.load).toHaveBeenCalledWith(HLS.url, 90);
+    load.resolve();
+    await flush();
+
+    expect(player.play).not.toHaveBeenCalled();
+    expect(controller.playerState).toBe('paused');
+    expect(reporter.start).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(START_TIMEOUT_MS * 3);
+    expect(listeners.onError).not.toHaveBeenCalled();
+
+    controller.togglePause();
     expect(player.play).toHaveBeenCalledTimes(1);
   });
 

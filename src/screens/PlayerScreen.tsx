@@ -57,7 +57,10 @@ type Phase =
   | {kind: 'resolving'}
   | {kind: 'unavailable'; message: string}
   | {kind: 'error'; message: string}
-  | {kind: 'ready'; session: PlaybackSession};
+  /** `startPaused`: the return from the background. */
+  | {kind: 'ready'; session: PlaybackSession; startPaused: boolean}
+  /** The app is in the background: no player until it comes back. */
+  | {kind: 'background'};
 
 type Position = {
   positionMs: number;
@@ -156,9 +159,10 @@ const readPosition = (controller: PlayerController): Position => ({
 /**
  * Full-screen video for one item. Each visit (and each Retry) asks the server
  * for a new play session; the controller reports it and is destroyed on
- * unmount, which sends stopped. The screen leaves (Back, the end of playback,
- * or the app going to the background) by going back, so unmount does that
- * teardown.
+ * unmount, which sends stopped. The screen leaves (Back, the end of playback)
+ * by going back, so unmount does that teardown. The app going to the
+ * background releases the player but keeps the screen; the return builds a
+ * new session, paused at the same position.
  */
 export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const {itemId, title, startMs} = route.params;
@@ -224,6 +228,13 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   const stoppedRef = useRef<Promise<void> | undefined>(undefined);
   /** The overlay is up, so position updates render (they're skipped when not). */
   const overlayShownRef = useRef(false);
+  /** The next resolve is the return from the background: start paused. */
+  const startPausedRef = useRef(false);
+  /**
+   * Set from `background` until `active`; `resume` when the return builds a
+   * player again (there was one, or one on the way).
+   */
+  const backgroundRef = useRef<{resume: boolean} | null>(null);
 
   // Not a query: every visit needs its own PlaySessionId.
   useEffect(() => {
@@ -238,25 +249,30 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
       startMs: resumeFromRef.current,
       ...choiceRef.current,
     };
+    const startPaused = startPausedRef.current;
+    startPausedRef.current = false;
+    // A resolve that ends in the background starts nothing; the return
+    // resolves again.
+    const dropped = () => cancelled || backgroundRef.current !== null;
     const resolve = () => {
-      if (cancelled) {
+      if (dropped()) {
         return;
       }
       resolvePlayback(api, request).then(onResolved, onFailed);
     };
     const onResolved = (resolution: PlaybackResolution) => {
-      if (cancelled) {
+      if (dropped()) {
         return;
       }
       setSwitching(null);
       setPhase(
         resolution.kind === 'play'
-          ? {kind: 'ready', session: resolution.session}
+          ? {kind: 'ready', session: resolution.session, startPaused}
           : {kind: 'unavailable', message: resolution.message},
       );
     };
     const onFailed = (error: unknown) => {
-      if (cancelled) {
+      if (dropped()) {
         return;
       }
       setSwitching(null);
@@ -281,22 +297,73 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
   }, [api, userId, itemId, attempt, expireSession]);
 
   const goBack = useCallback(() => navigation.goBack(), [navigation]);
+
+  // Refetch Details and Home once the server has the stopped position.
+  const refreshAfter = useCallback(
+    (stopped: Promise<void> | undefined) => {
+      (stopped ?? Promise.resolve()).then(() => {
+        queryClient.invalidateQueries({
+          queryKey: detailsKeys.item(serverId, userId, itemId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: homeKeys.all(serverId, userId),
+        });
+      });
+    },
+    [queryClient, serverId, userId, itemId],
+  );
+
+  // Read by the AppState listener and the output watcher, which outlive the
+  // renders.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
   // In the background the player must be released (Amazon's lifecycle tests:
-  // no audio on the launcher), and JS is suspended ~4 s later: leave at once,
-  // in any phase. Details refetches the stopped position on return. Only
-  // `background`: `inactive` and blur/focus (an Alexa question) keep playing.
-  const leftRef = useRef(false);
+  // no audio on the launcher or over the screensaver), and JS is suspended
+  // ~4 s later: destroy it at once, before any render, which sends stopped.
+  // The screen stays; `active` resolves a new session at the position,
+  // paused (nothing autoplays on return). Without a player (the error and
+  // unavailable views) the return keeps the view. Only `background`:
+  // `inactive` and blur/focus (an Alexa question) keep playing.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (next) => {
-      // Not focused: going back would pop whatever is on top instead.
-      if (next !== 'background' || leftRef.current || !navigation.isFocused()) {
+      if (next === 'background') {
+        // Not focused: another screen is on top, with its own lifecycle.
+        if (backgroundRef.current || !navigation.isFocused()) {
+          return;
+        }
+        const current = phaseRef.current;
+        const controller = controllerRef.current;
+        if (controller) {
+          // As a reload: the live position, or the last known one.
+          const live = controller.positionMs;
+          if (live > 0) {
+            reportedRef.current = live;
+          }
+          resumeFromRef.current = reportedRef.current;
+          controllerRef.current = null;
+          stoppedRef.current = controller.destroy();
+          refreshAfter(stoppedRef.current);
+        }
+        const resume = current.kind === 'ready' || current.kind === 'resolving';
+        backgroundRef.current = {resume};
+        if (resume) {
+          setSwitching(null);
+          setPhase({kind: 'background'});
+        }
         return;
       }
-      leftRef.current = true;
-      goBack();
+      if (next === 'active' && backgroundRef.current) {
+        const {resume} = backgroundRef.current;
+        backgroundRef.current = null;
+        if (resume) {
+          startPausedRef.current = true;
+          setAttempt((count) => count + 1);
+        }
+      }
     });
     return () => subscription.remove();
-  }, [goBack, navigation]);
+  }, [navigation, refreshAfter]);
   useEffect(() => {
     if (phase.kind !== 'ready' || !api) {
       return;
@@ -343,7 +410,12 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         },
       },
       // Retry and track switches keep the speed too.
-      {playbackRate: speedSelection, componentInstance, title},
+      {
+        playbackRate: speedSelection,
+        componentInstance,
+        title,
+        startPaused: phase.startPaused,
+      },
     );
     controllerRef.current = controller;
     if (surfaceRef.current) {
@@ -355,21 +427,8 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     };
   }, [phase, api, goBack, positions, componentInstance, title]);
 
-  // Declared after the controller effect, so its cleanup runs after destroy():
-  // refetch once the server has the stopped position.
-  useEffect(
-    () => () => {
-      (stoppedRef.current ?? Promise.resolve()).then(() => {
-        queryClient.invalidateQueries({
-          queryKey: detailsKeys.item(serverId, userId, itemId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: homeKeys.all(serverId, userId),
-        });
-      });
-    },
-    [queryClient, serverId, userId, itemId],
-  );
+  // Declared after the controller effect, so its cleanup runs after destroy().
+  useEffect(() => () => refreshAfter(stoppedRef.current), [refreshAfter]);
 
   const onSurfaceViewCreated = useCallback((handle: string) => {
     surfaceRef.current = handle;
@@ -585,9 +644,6 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
     setSubtitlePick({session: phase.session, index});
   };
 
-  // Read by the output watcher, which outlives the renders.
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
   const reloadRef = useRef(reload);
@@ -609,7 +665,7 @@ export const PlayerScreen = ({route, navigation}: PlayerProps) => {
         const reloads =
           current !== null &&
           phaseRef.current.kind === 'ready' &&
-          !leftRef.current &&
+          backgroundRef.current === null &&
           codec !== undefined &&
           DOLBY_CODECS.has(codec);
         // Unconditional: a Release build's device log shows it.

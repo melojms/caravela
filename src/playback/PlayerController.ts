@@ -35,6 +35,11 @@ export type PlayerOptions = {
   componentInstance?: IComponentInstance;
   /** The item's name, for Vega's Media Controls metadata. */
   title?: string;
+  /**
+   * Load at the start position and stay paused there (the screen's return
+   * from the background): nothing plays until `play()`.
+   */
+  startPaused?: boolean;
 };
 
 /** W3C `MediaError` codes. */
@@ -195,6 +200,12 @@ type MediaEvent = (typeof MEDIA_EVENTS)[number];
  * until another player takes the focus, and the controller ignores its
  * commands once destroyed.
  *
+ * `startPaused` loads the same way without the play: once the media is ready
+ * at the position (the resume `seeked`, `canplay` from 0, Shaka's load), the
+ * player is `paused`, start is reported paused, Media Controls is told so,
+ * and the watchdog waits as after a pause. A play before that (Play during
+ * the resume seek) starts as usual.
+ *
  * In URL mode a rate change while playing goes pause → rate → play: Vega
  * applies it mid-play as a `seekWithRate`, which froze direct play on the
  * TV. That pause and play aren't shown or reported.
@@ -228,6 +239,8 @@ export class PlayerController {
    */
   private initialSeek: 'pending' | 'seeking' | 'done';
   private started = false;
+  /** `startPaused`, until the media is ready or something plays it. */
+  private startPausedDue: boolean;
   /** The first `playing` came: the watchdog now only watches stalls. */
   private hasPlayed = false;
   /**
@@ -285,6 +298,7 @@ export class PlayerController {
     this.rate = isRate(options.playbackRate) ? options.playbackRate : 1;
     this.componentInstance = options.componentInstance;
     this.title = options.title;
+    this.startPausedDue = options.startPaused === true;
     this.initialSeek =
       session.mode === 'url' && session.startMs > 0 ? 'pending' : 'done';
     this.subtitleIndex = session.subtitleStreamIndex;
@@ -300,7 +314,7 @@ export class PlayerController {
       seeked: this.onSeeked,
       timeupdate: this.onTimeupdate,
       progress: this.onProgress,
-      canplay: this.onProgress,
+      canplay: this.onCanPlay,
       loadeddata: this.onProgress,
       ended: this.onEnded,
       error: this.onError,
@@ -569,6 +583,10 @@ export class PlayerController {
       return;
     }
     this.hlsStarted = true;
+    if (this.startPausedDue) {
+      this.settlePaused();
+      return;
+    }
     attempt('play', () => this.player.play());
   }
 
@@ -593,7 +611,8 @@ export class PlayerController {
     this.loaded = true;
     attempt('load', () => {
       // A resume seeks first and plays on `seeked`, so nothing plays from 0.
-      this.player.autoplay = this.initialSeek === 'done';
+      this.player.autoplay =
+        this.initialSeek === 'done' && !this.startPausedDue;
       this.player.src = this.session.url;
     });
   }
@@ -787,6 +806,28 @@ export class PlayerController {
     }
   };
 
+  private onCanPlay = () => {
+    this.onProgress();
+    // URL mode from 0; a resume settles on its `seeked`, HLS on its load.
+    if (this.session.mode === 'url' && this.initialSeek === 'done') {
+      this.settlePaused();
+    }
+  };
+
+  /** `startPaused`: the media is ready at the position; stay there. */
+  private settlePaused() {
+    if (!this.startPausedDue || !this.live()) {
+      return;
+    }
+    this.startPausedDue = false;
+    this.suspended = true;
+    this.clearWatchdog();
+    this.setState('paused');
+    this.started = true;
+    this.reporter.start();
+    this.mediaControls?.reportPaused();
+  }
+
   private onTimeupdate = () => {
     this.emitPosition();
     const time = this.read(() => this.player.currentTime);
@@ -861,6 +902,7 @@ export class PlayerController {
     }
     const restart = this.rateRestart;
     this.rateRestart = false;
+    this.startPausedDue = false;
     this.suspended = false;
     this.pausedWhileHeld = false;
     // A start already being watched keeps its timer; after a pause (or
@@ -930,7 +972,11 @@ export class PlayerController {
     this.emitPosition();
     if (this.initialSeek === 'seeking') {
       this.initialSeek = 'done';
-      attempt('play', () => this.player.play());
+      if (this.startPausedDue) {
+        this.settlePaused();
+      } else {
+        attempt('play', () => this.player.play());
+      }
       return;
     }
     // Shaka seeks to the start position before the first frame: the

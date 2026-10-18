@@ -409,6 +409,7 @@ describe('PlayerScreen', () => {
       playbackRate: 1,
       componentInstance: instance,
       title: 'The Movie',
+      startPaused: false,
     });
 
     // Asked once; re-renders keep the controller.
@@ -1133,8 +1134,9 @@ describe('PlayerScreen tracks', () => {
     });
   });
 
-  // `goBack` is a mock here: each test unmounts as the navigator would.
-  describe('leaving on background', () => {
+  // R1-a releases the player on background; R7-d keeps the screen and
+  // builds a paused player at the same position on return.
+  describe('the background', () => {
     type Listener = (state: AppStateStatus) => void;
     let listeners: Set<Listener>;
     const changeTo = (state: AppStateStatus) =>
@@ -1148,137 +1150,320 @@ describe('PlayerScreen tracks', () => {
           listeners.add(listener as Listener);
           return {remove: () => listeners.delete(listener as Listener)};
         });
+      // As the server does: the session starts where it was asked to.
+      jest
+        .mocked(resolvePlayback)
+        .mockImplementation(async (_api, request) => ({
+          kind: 'play',
+          session: {...TRACKED, startMs: request.startMs ?? 0},
+        }));
     });
 
-    it('leaves while playing; unmount stops at the position', async () => {
-      const {view, player} = await renderPlaying();
-      play(player);
-      player.setPosition(754);
-      fire(player, 'timeupdate');
-      const snapshot = jest.mocked(createPlaybackReporter).mock.calls[0][2];
-      let stoppedAt: number | undefined;
-      reporter.stop.mockImplementationOnce(() => {
-        stoppedAt = snapshot().positionMs;
-        return Promise.resolve();
+    /** Playing at `seconds`, past the start. */
+    const playingAt = async (seconds: number) => {
+      const result = await renderPlaying();
+      play(result.player);
+      result.player.setPosition(seconds);
+      fire(result.player, 'timeupdate');
+      return result;
+    };
+
+    /** The new player after a return, ready paused at `seconds`. */
+    const readyAt = async (seconds: number) => {
+      await flush();
+      const player = Fake.instances.at(-1)!;
+      player.duration = 5400;
+      fire(player, 'loadedmetadata');
+      player.setPosition(seconds);
+      fire(player, 'seeking', 'seeked');
+      await flush();
+      return player;
+    };
+
+    describe('going there', () => {
+      it('releases the player at once and stops at the position', async () => {
+        const {player} = await playingAt(754);
+        const snapshot = jest.mocked(createPlaybackReporter).mock.calls[0][2];
+        let stoppedAt: number | undefined;
+        reporter.stop.mockImplementationOnce(() => {
+          stoppedAt = snapshot().positionMs;
+          return Promise.resolve();
+        });
+
+        changeTo('background');
+        // Before any render: JS is suspended ~4 s later.
+        expect(reporter.stop).toHaveBeenCalledTimes(1);
+        expect(stoppedAt).toBe(754000);
+        await flush();
+        expect(player.deinitialize).toHaveBeenCalledTimes(1);
+        expect(goBack).not.toHaveBeenCalled();
+        expect(screen.getByTestId('player-screen')).toBeTruthy();
+        expect(screen.queryByTestId('player-overlay-playpause')).toBeNull();
       });
 
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-      await flush();
-      expect(reporter.stop).toHaveBeenCalledTimes(1);
-      expect(stoppedAt).toBe(754000);
-      expect(player.deinitialize).toHaveBeenCalledTimes(1);
-    });
+      it('releases a paused player', async () => {
+        const {player} = await renderPaused();
 
-    it('leaves while resolving and starts nothing after', async () => {
-      const pending = deferred<PlaybackResolution>();
-      jest.mocked(resolvePlayback).mockReturnValueOnce(pending.promise);
-      const view = renderScreen();
-
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-      pending.resolve({kind: 'play', session: TRACKED});
-      await flush();
-      expect(Fake.instances).toHaveLength(0);
-    });
-
-    it('leaves while paused', async () => {
-      const {view, player} = await renderPaused();
-
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-      await flush();
-      expect(reporter.stop).toHaveBeenCalledTimes(1);
-      expect(player.deinitialize).toHaveBeenCalledTimes(1);
-    });
-
-    it('leaves from the error view and resolves nothing more', async () => {
-      const {view, player} = await renderPlaying();
-      play(player);
-      player.error = {code: 2, message: 'socket'};
-      fire(player, 'error');
-      expect(screen.getByTestId('player-retry')).toBeTruthy();
-
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-      await flush();
-      expect(resolvePlayback).toHaveBeenCalledTimes(1);
-      expect(Fake.instances).toHaveLength(1);
-    });
-
-    it('leaves during a track switch and starts no second session', async () => {
-      const stopped = deferred<void>();
-      const {view} = await renderPaused();
-      reporter.stop.mockReturnValueOnce(stopped.promise);
-      fireEvent.press(screen.getByTestId('player-overlay-audio'));
-      fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
-
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-      stopped.resolve();
-      await flush();
-      expect(resolvePlayback).toHaveBeenCalledTimes(1);
-      expect(Fake.instances).toHaveLength(1);
-    });
-
-    it('leaves with a picker open', async () => {
-      const {view} = await renderPaused();
-      fireEvent.press(screen.getByTestId('player-overlay-audio'));
-      expect(screen.getByTestId('player-audio-picker')).toBeTruthy();
-
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-    });
-
-    it('leaves once when background comes twice', async () => {
-      const {view} = await renderPlaying();
-      changeTo('background');
-      changeTo('background');
-      expect(goBack).toHaveBeenCalledTimes(1);
-      view.unmount();
-    });
-
-    it.each<AppStateStatus>(['inactive', 'active'])(
-      'stays on %s',
-      async (state) => {
-        const {view, player} = await renderPlaying();
-        play(player);
-        changeTo(state);
+        changeTo('background');
+        await flush();
+        expect(reporter.stop).toHaveBeenCalledTimes(1);
+        expect(player.deinitialize).toHaveBeenCalledTimes(1);
         expect(goBack).not.toHaveBeenCalled();
+      });
+
+      it('starts nothing from a resolve that ends in the background', async () => {
+        const pending = deferred<PlaybackResolution>();
+        jest.mocked(resolvePlayback).mockReturnValueOnce(pending.promise);
+        renderScreen();
+
+        changeTo('background');
+        pending.resolve({kind: 'play', session: TRACKED});
+        await flush();
+        expect(Fake.instances).toHaveLength(0);
+        expect(goBack).not.toHaveBeenCalled();
+      });
+
+      it('starts no second session from a track switch', async () => {
+        const stopped = deferred<void>();
+        await renderPaused();
+        reporter.stop.mockReturnValueOnce(stopped.promise);
+        fireEvent.press(screen.getByTestId('player-overlay-audio'));
+        fireEvent.press(screen.getByTestId('player-audio-picker-row-2'));
+
+        changeTo('background');
+        stopped.resolve();
+        await flush();
+        // The switch's resolve may have gone out; its answer is dropped.
+        expect(Fake.instances).toHaveLength(1);
+      });
+
+      it('closes an open picker', async () => {
+        await renderPaused();
+        fireEvent.press(screen.getByTestId('player-overlay-audio'));
+        expect(screen.getByTestId('player-audio-picker')).toBeTruthy();
+
+        changeTo('background');
+        expect(screen.queryByTestId('player-audio-picker')).toBeNull();
+        expect(reporter.stop).toHaveBeenCalledTimes(1);
+      });
+
+      it('releases once when background comes twice', async () => {
+        await playingAt(10);
+        changeTo('background');
+        changeTo('background');
+        await flush();
+        expect(reporter.stop).toHaveBeenCalledTimes(1);
+      });
+
+      it('refreshes Details and Home once stopped is answered', async () => {
+        const stopped = deferred<void>();
+        reporter.stop.mockReturnValueOnce(stopped.promise);
+        const invalidate = jest.spyOn(client, 'invalidateQueries');
+        await playingAt(10);
+
+        changeTo('background');
+        await flush();
+        expect(invalidate).not.toHaveBeenCalled();
+        stopped.resolve();
+        await flush();
+        expect(invalidate).toHaveBeenCalledWith({
+          queryKey: detailsKeys.item(session.server.id, 'u1', 'm1'),
+        });
+        expect(invalidate).toHaveBeenCalledWith({
+          queryKey: homeKeys.all(session.server.id, 'u1'),
+        });
+      });
+
+      it.each<AppStateStatus>(['inactive', 'active'])(
+        'keeps playing on %s',
+        async (state) => {
+          const {player} = await playingAt(10);
+          changeTo(state);
+          await flush();
+          expect(goBack).not.toHaveBeenCalled();
+          expect(reporter.stop).not.toHaveBeenCalled();
+          expect(resolvePlayback).toHaveBeenCalledTimes(1);
+          expect(player.deinitialize).not.toHaveBeenCalled();
+        },
+      );
+
+      it('only listens to `change` (blur and focus are audio focus)', async () => {
+        await renderPlaying();
+        const types = jest
+          .mocked(AppState.addEventListener)
+          .mock.calls.map(([type]) => type);
+        expect(new Set(types)).toEqual(new Set(['change']));
+      });
+
+      it("leaves the player alone when it isn't focused", async () => {
+        await playingAt(10);
+        isFocused.mockReturnValue(false);
+        changeTo('background');
+        changeTo('active');
+        await flush();
         expect(reporter.stop).not.toHaveBeenCalled();
-        expect(screen.getByTestId('player-screen')).toBeTruthy();
+        expect(resolvePlayback).toHaveBeenCalledTimes(1);
+      });
+
+      it('removes the subscription on unmount', async () => {
+        const {view} = await renderPlaying();
+        expect(listeners.size).toBe(1);
         view.unmount();
-      },
-    );
-
-    it('only listens to `change` (blur and focus are audio focus)', async () => {
-      const {view} = await renderPlaying();
-      const types = jest
-        .mocked(AppState.addEventListener)
-        .mock.calls.map(([type]) => type);
-      expect(new Set(types)).toEqual(new Set(['change']));
-      view.unmount();
+        expect(listeners.size).toBe(0);
+      });
     });
 
-    it("doesn't pop another screen when the player isn't focused", async () => {
-      const {view} = await renderPlaying();
-      isFocused.mockReturnValue(false);
-      changeTo('background');
-      expect(goBack).not.toHaveBeenCalled();
-      view.unmount();
-    });
+    describe('coming back', () => {
+      it('builds a paused player at the position, after the old one stopped', async () => {
+        const stopped = deferred<void>();
+        const {player: first} = await playingAt(754);
+        reporter.stop.mockReturnValueOnce(stopped.promise);
+        changeTo('background');
+        changeTo('active');
+        await flush();
+        // The new play session waits for the old one's stopped.
+        expect(resolvePlayback).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('player-loading')).toBeTruthy();
 
-    it('removes the subscription on unmount', async () => {
-      const {view} = await renderPlaying();
-      expect(listeners.size).toBe(1);
-      view.unmount();
-      expect(listeners.size).toBe(0);
+        stopped.resolve();
+        const player = await readyAt(754);
+        expect(first.deinitialize).toHaveBeenCalledTimes(1);
+        expect(resolvePlayback).toHaveBeenCalledTimes(2);
+        expect(jest.mocked(resolvePlayback).mock.calls[1][1]).toEqual({
+          itemId: 'm1',
+          userId: 'u1',
+          startMs: 754000,
+        });
+        expect(Fake.instances).toHaveLength(2);
+        expect(player).not.toBe(first);
+        expect(player.seeks).toEqual([754]);
+        expect(player.play).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('player-loading')).toBeNull();
+        const playPause = screen.getByTestId('player-overlay-playpause');
+        expect(playPause.props.hasTVPreferredFocus).toBe(true);
+        expect(jest.mocked(PlayerController).mock.calls[1][3]).toMatchObject({
+          startPaused: true,
+        });
+        expect(goBack).not.toHaveBeenCalled();
+      });
+
+      it('comes back paused when it was paused', async () => {
+        await renderPaused(754);
+        changeTo('background');
+        changeTo('active');
+        const player = await readyAt(754);
+        expect(player.play).not.toHaveBeenCalled();
+        expect(jest.mocked(resolvePlayback).mock.calls[1][1]).toMatchObject({
+          startMs: 754000,
+        });
+      });
+
+      it('plays on Play', async () => {
+        await playingAt(754);
+        changeTo('background');
+        changeTo('active');
+        const player = await readyAt(754);
+
+        fireEvent.press(screen.getByTestId('player-overlay-playpause'));
+        expect(player.play).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps the tracks picked', async () => {
+        await renderPaused(754);
+        // External on both sides: no new session, but the choice is kept.
+        fireEvent.press(screen.getByTestId('player-overlay-subtitles'));
+        fireEvent.press(screen.getByTestId('player-subtitle-picker-row-4'));
+
+        changeTo('background');
+        changeTo('active');
+        await flush();
+        expect(resolvePlayback).toHaveBeenCalledTimes(2);
+        expect(jest.mocked(resolvePlayback).mock.calls[1][1]).toMatchObject({
+          mediaSourceId: 'source-1',
+          subtitleStreamIndex: 4,
+          startMs: 754000,
+        });
+      });
+
+      it('builds it again after a background during the resolve', async () => {
+        const pending = deferred<PlaybackResolution>();
+        jest.mocked(resolvePlayback).mockReturnValueOnce(pending.promise);
+        renderScreen(90000);
+        act(() => Surface.create('surface-1'));
+
+        changeTo('background');
+        pending.resolve({kind: 'play', session: SESSION});
+        await flush();
+        changeTo('active');
+        await readyAt(90);
+        expect(Fake.instances).toHaveLength(1);
+        expect(jest.mocked(resolvePlayback).mock.calls[1][1]).toMatchObject({
+          startMs: 90000,
+        });
+        expect(Fake.instances[0].play).not.toHaveBeenCalled();
+      });
+
+      it('stays on the error view', async () => {
+        const {player} = await playingAt(10);
+        player.error = {code: 2, message: 'socket'};
+        fire(player, 'error');
+
+        changeTo('background');
+        changeTo('active');
+        await flush();
+        expect(resolvePlayback).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('player-retry')).toBeTruthy();
+      });
+
+      it('plays as usual on a Retry after a failed return', async () => {
+        await playingAt(754);
+        jest
+          .mocked(resolvePlayback)
+          .mockRejectedValueOnce(new Error('Network Error'));
+        changeTo('background');
+        changeTo('active');
+        await flush();
+        expect(screen.getByText(RESOLVE_ERROR_MESSAGE)).toBeTruthy();
+
+        fireEvent.press(screen.getByTestId('player-retry'));
+        await flush();
+        expect(
+          jest.mocked(PlayerController).mock.calls.at(-1)![3],
+        ).not.toMatchObject({startPaused: true});
+      });
+
+      it('releases and comes back again on a second background', async () => {
+        await playingAt(754);
+        changeTo('background');
+        changeTo('active');
+        const second = await readyAt(754);
+
+        changeTo('background');
+        await flush();
+        expect(reporter.stop).toHaveBeenCalledTimes(2);
+        expect(second.deinitialize).toHaveBeenCalledTimes(1);
+        changeTo('active');
+        await readyAt(754);
+        expect(Fake.instances).toHaveLength(3);
+        expect(Fake.instances[2].play).not.toHaveBeenCalled();
+      });
+
+      it("doesn't build anything on `active` without a background", async () => {
+        await playingAt(10);
+        changeTo('active');
+        await flush();
+        expect(resolvePlayback).toHaveBeenCalledTimes(1);
+        expect(Fake.instances).toHaveLength(1);
+      });
+
+      it('watches the audio output once, across the cycle', async () => {
+        await playingAt(10);
+        changeTo('background');
+        changeTo('active');
+        await readyAt(10);
+        expect(watchAudioOutput).toHaveBeenCalledTimes(1);
+        expect(stopWatching).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -1484,7 +1669,7 @@ describe('PlayerScreen tracks', () => {
     it('ignores a change once the app went to the background', async () => {
       const {view} = await playingAt(1);
       act(() => listeners.forEach((listener) => listener('background')));
-      expect(goBack).toHaveBeenCalledTimes(1);
+      expect(goBack).not.toHaveBeenCalled();
 
       changeOutput(false);
       await flush();
@@ -1492,6 +1677,20 @@ describe('PlayerScreen tracks', () => {
       expect(Fake.instances).toHaveLength(1);
       view.unmount();
       expect(stopWatching).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a change while the return resolves', async () => {
+      const pending = deferred<PlaybackResolution>();
+      await playingAt(1);
+      act(() => listeners.forEach((listener) => listener('background')));
+      jest.mocked(resolvePlayback).mockReturnValueOnce(pending.promise);
+      act(() => listeners.forEach((listener) => listener('active')));
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(2);
+
+      changeOutput(false);
+      await flush();
+      expect(resolvePlayback).toHaveBeenCalledTimes(2);
     });
 
     // As an audio switch: the reload plays from the paused position.
