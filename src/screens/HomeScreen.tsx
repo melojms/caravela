@@ -335,25 +335,35 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   // itself, once that has happened. If the card is gone after a refetch, the
   // first row's last focused card (Home's first focus lands there). The tag
   // is the Carousel's slot: if the card moved since, the row then follows it.
+  // The card comes from when Home was left: Vega's own refocus reports the
+  // card that slot shows now, which after a reorder is another item.
+  const leftOn = useRef<
+    {rowKey: string; id: string; tag?: number; tagIndex: number} | undefined
+  >(undefined);
+  const leaveHome = useCallback(() => {
+    const rowKey = lastFocusedRow.current;
+    const focused = rowKey ? rowFocus.current.get(rowKey) : undefined;
+    leftOn.current = rowKey && focused ? {rowKey, ...focused} : undefined;
+  }, []);
   const restoreFocus = useRef<() => void>(undefined);
   restoreFocus.current = () => {
-    const restore = (rowKey?: string) => {
-      const focused = rowKey ? rowFocus.current.get(rowKey) : undefined;
-      if (
-        !rowKey ||
-        focused?.tag === undefined ||
-        indexIn(rowKey, focused.id) < 0
-      ) {
+    const restore = (
+      rowKey?: string,
+      focused?: {id: string; tag?: number; tagIndex: number},
+    ) => {
+      const index = rowKey && focused ? indexIn(rowKey, focused.id) : -1;
+      if (!rowKey || !focused || focused.tag === undefined || index < 0) {
         return false;
       }
       FocusManager.focus(focused.tag);
-      if (focused.index !== focused.tagIndex) {
+      if (index !== focused.tagIndex) {
         rowHandles.current.get(rowKey)?.focusItem(focused.id);
       }
       return true;
     };
-    if (!restore(lastFocusedRow.current)) {
-      restore(firstRow);
+    const left = leftOn.current;
+    if (!restore(left?.rowKey, left)) {
+      restore(firstRow, firstRow ? rowFocus.current.get(firstRow) : undefined);
     }
   };
 
@@ -365,7 +375,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
     useCallback(() => {
       if (!focusedBefore.current) {
         focusedBefore.current = true;
-        return;
+        return leaveHome;
       }
       const restoreTimer = setTimeout(
         () => restoreFocus.current?.(),
@@ -381,8 +391,11 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
           {cancelRefetch: false},
         )
         .catch(() => undefined);
-      return () => clearTimeout(restoreTimer);
-    }, [queryClient, serverId, userId]),
+      return () => {
+        clearTimeout(restoreTimer);
+        leaveHome();
+      };
+    }, [queryClient, serverId, userId, leaveHome]),
   );
 
   const anyShown = rows.some(

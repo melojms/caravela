@@ -43,10 +43,10 @@ jest.mock('../src/api/home', () => ({
   fetchLatest: jest.fn(),
 }));
 
-let mockFocusEffect: (() => void) | undefined;
+let mockFocusEffect: (() => void | (() => void)) | undefined;
 jest.mock('@amazon-devices/react-navigation__native', () => ({
   ...jest.requireActual('@amazon-devices/react-navigation__native'),
-  useFocusEffect: (effect: () => void) => {
+  useFocusEffect: (effect: () => void | (() => void)) => {
     mockFocusEffect = effect;
   },
   // For the toolbar, which navigates on its own.
@@ -475,9 +475,17 @@ describe('HomeScreen', () => {
       fireEvent(screen.getByTestId(testID), 'focus', {
         nativeEvent: {target: tag},
       });
-    // The navigator runs the focus effect on mount and on every return.
+    // The navigator runs the focus effect on mount and on every return, and
+    // its cleanup when Home loses focus.
+    let leave: void | (() => void);
+    const focusHome = () =>
+      act(() => {
+        leave = mockFocusEffect?.();
+      });
+    const leaveHome = () => act(() => leave?.());
     const returnToHome = () => {
-      act(() => mockFocusEffect?.());
+      leaveHome();
+      focusHome();
       act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
     };
 
@@ -490,7 +498,7 @@ describe('HomeScreen', () => {
 
     it('focuses the last focused card again', () => {
       renderHome();
-      act(() => mockFocusEffect?.());
+      focusHome();
       focusCard('row-myMedia-item-0', 101);
       focusCard('row-resume-item-1', 202);
 
@@ -501,10 +509,11 @@ describe('HomeScreen', () => {
 
     it('waits for Vega to settle focus first', () => {
       renderHome();
-      act(() => mockFocusEffect?.());
+      focusHome();
       focusCard('row-resume-item-0', 202);
 
-      act(() => mockFocusEffect?.());
+      leaveHome();
+      focusHome();
       act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS - 1));
       expect(mockFocusManager.focus).not.toHaveBeenCalled();
       act(() => jest.advanceTimersByTime(1));
@@ -513,7 +522,7 @@ describe('HomeScreen', () => {
 
     it("falls back to the first row's card when that card is gone", () => {
       renderHome();
-      act(() => mockFocusEffect?.());
+      focusHome();
       focusCard('row-myMedia-item-0', 101);
       focusCard('row-resume-item-1', 202);
       // Watched to the end elsewhere: r2 left Continue watching.
@@ -526,7 +535,7 @@ describe('HomeScreen', () => {
 
     it('does nothing on the first visit or before any card had focus', () => {
       renderHome();
-      act(() => mockFocusEffect?.());
+      focusHome();
       act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
       returnToHome();
 
@@ -534,68 +543,87 @@ describe('HomeScreen', () => {
     });
 
     describe('when a row reorders (R7-e)', () => {
-      const {mockScrollToKey} = jest.requireMock<{
-        mockScrollToKey: jest.Mock;
+      const {mockScrollTo} = jest.requireMock<{
+        mockScrollTo: jest.Mock;
       }>('@amazon-devices/vega-carousel');
 
       it('follows the item it was on, not the slot', () => {
         queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
         renderHome();
-        act(() => mockFocusEffect?.());
+        focusHome();
         focusCard('row-resume-item-1', 202);
 
         returnToHome();
-        mockScrollToKey.mockClear();
+        mockScrollTo.mockClear();
         // Played just now: r2 moves to the front of Continue watching.
         queries.resume = loaded([movie('r2'), movie('r1'), movie('r3')]);
         rerenderHome();
-        expect(mockScrollToKey).toHaveBeenCalledTimes(1);
-        expect(mockScrollToKey).toHaveBeenCalledWith('row-resume', 'r2', false);
+        expect(mockScrollTo).toHaveBeenCalledTimes(1);
+        expect(mockScrollTo).toHaveBeenCalledWith('row-resume', 0, false);
       });
 
       it('follows it when the reorder came before the restore', () => {
         queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
         renderHome();
-        act(() => mockFocusEffect?.());
+        focusHome();
         focusCard('row-resume-item-1', 202);
         queries.resume = loaded([movie('r2'), movie('r1'), movie('r3')]);
         rerenderHome();
-        mockScrollToKey.mockClear();
+        mockScrollTo.mockClear();
 
         returnToHome();
         expect(mockFocusManager.focus).toHaveBeenCalledWith(202);
-        expect(mockScrollToKey).toHaveBeenCalledWith('row-resume', 'r2', false);
+        expect(mockScrollTo).toHaveBeenCalledWith('row-resume', 0, false);
+      });
+
+      // Vega first gives focus back to the native view that had it, which
+      // now shows another item, and reports that card as focused.
+      it("restores the item Home was left on, not Vega's refocus", () => {
+        queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
+        renderHome();
+        focusHome();
+        focusCard('row-resume-item-1', 202);
+        leaveHome();
+        queries.resume = loaded([movie('r2'), movie('r1'), movie('r3')]);
+        rerenderHome();
+        mockScrollTo.mockClear();
+
+        focusHome();
+        focusCard('row-resume-item-1', 202);
+        act(() => jest.advanceTimersByTime(RESTORE_FOCUS_DELAY_MS));
+        expect(mockFocusManager.focus).toHaveBeenCalledWith(202);
+        expect(mockScrollTo).toHaveBeenCalledWith('row-resume', 0, false);
       });
 
       it('does nothing when the order stays', () => {
         queries.resume = loaded([movie('r1'), movie('r2')]);
         renderHome();
-        act(() => mockFocusEffect?.());
+        focusHome();
         focusCard('row-resume-item-1', 202);
-        mockScrollToKey.mockClear();
+        mockScrollTo.mockClear();
 
         queries.resume = loaded([movie('r1'), movie('r2')]);
         rerenderHome();
-        expect(mockScrollToKey).not.toHaveBeenCalled();
+        expect(mockScrollTo).not.toHaveBeenCalled();
       });
 
       it('stays on the slot when the item left the row', () => {
         queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
         renderHome();
-        act(() => mockFocusEffect?.());
+        focusHome();
         focusCard('row-resume-item-1', 202);
-        mockScrollToKey.mockClear();
+        mockScrollTo.mockClear();
 
         queries.resume = loaded([movie('r1'), movie('r3')]);
         rerenderHome();
-        expect(mockScrollToKey).not.toHaveBeenCalled();
+        expect(mockScrollTo).not.toHaveBeenCalled();
       });
     });
 
     it('tells apart the same item in two rows', () => {
       queries.nextUp = loaded([movie('r1')]);
       renderHome();
-      act(() => mockFocusEffect?.());
+      focusHome();
       focusCard('row-resume-item-0', 202);
       focusCard('row-nextUp-item-0', 303);
 

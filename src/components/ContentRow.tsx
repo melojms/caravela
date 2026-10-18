@@ -61,11 +61,19 @@ export const ContentRow = memo(
     },
     ref,
   ) {
+    // By index: this Carousel's `scrollToKey` only logs a warning.
     const carouselRef = useRef<CarouselRef<string>>(null);
+    const itemsRef = useRef(items);
+    itemsRef.current = items;
     useImperativeHandle(
       ref,
       () => ({
-        focusItem: (id: string) => carouselRef.current?.scrollToKey(id, false),
+        focusItem: (id: string) => {
+          const index = itemsRef.current.findIndex((item) => item.id === id);
+          if (index >= 0) {
+            carouselRef.current?.scrollTo(index, false);
+          }
+        },
       }),
       [],
     );

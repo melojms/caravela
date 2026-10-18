@@ -3,20 +3,21 @@ import React from 'react';
 
 // The Vega Carousel renders through a native recycler that doesn't exist in
 // Jest. Render every item in a plain View so rows can be queried. Its ref's
-// scrollToKey(key, animated) is recorded as mockScrollToKey(uniqueId, key,
+// scrollTo(index, animated) is recorded as mockScrollTo(uniqueId, index,
 // animated).
 jest.mock('@amazon-devices/vega-carousel', () => {
   const {View} = require('react-native');
   const {forwardRef, useImperativeHandle} = require('react');
-  const mockScrollToKey = jest.fn();
+  const mockScrollTo = jest.fn();
   const Carousel = forwardRef(
     ({dataAdapter, renderItem, testID, uniqueId}: any, ref: any) => {
       useImperativeHandle(ref, () => ({
-        scrollTo: jest.fn(),
+        scrollTo: (index: number, animated: boolean) =>
+          mockScrollTo(uniqueId, index, animated),
         enableDpad: jest.fn(),
         notifyDataChange: jest.fn(),
-        scrollToKey: (key: unknown, animated: boolean) =>
-          mockScrollToKey(uniqueId, key, animated),
+        // A stub that only warns in the real Carousel.
+        scrollToKey: jest.fn(),
       }));
       const count = dataAdapter.getItemCount();
       const children = [];
@@ -31,7 +32,7 @@ jest.mock('@amazon-devices/vega-carousel', () => {
       return <View testID={testID}>{children}</View>;
     },
   );
-  return {Carousel, mockScrollToKey};
+  return {Carousel, mockScrollTo};
 });
 
 // react-native-svg draws natively. Stand in plain Views that keep their props,
