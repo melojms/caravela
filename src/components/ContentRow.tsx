@@ -1,5 +1,16 @@
-import {Carousel, CarouselRenderInfo} from '@amazon-devices/vega-carousel';
-import React, {memo, useCallback, useMemo} from 'react';
+import {
+  Carousel,
+  CarouselRef,
+  CarouselRenderInfo,
+} from '@amazon-devices/vega-carousel';
+import React, {
+  forwardRef,
+  memo,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 
 import {colors, focus, layout, spacing, typography} from '../theme';
@@ -25,20 +36,40 @@ export type ContentRowProps = {
   testID?: string;
 };
 
+export type ContentRowHandle = {
+  /**
+   * Moves the row's selection (its focus, when the row has it) to the card
+   * for `id`, wherever it now is.
+   */
+  focusItem(id: string): void;
+};
+
 /**
  * A titled horizontal row backed by the Vega Carousel, which recycles item
  * views natively and is the documented choice for TV browse rows.
  */
 export const ContentRow = memo(
-  ({
-    title,
-    items,
-    variant = 'poster',
-    onItemPress,
-    onItemFocus,
-    hasPreferredFocus = false,
-    testID = 'content-row',
-  }: ContentRowProps) => {
+  forwardRef<ContentRowHandle, ContentRowProps>(function ContentRow(
+    {
+      title,
+      items,
+      variant = 'poster',
+      onItemPress,
+      onItemFocus,
+      hasPreferredFocus = false,
+      testID = 'content-row',
+    },
+    ref,
+  ) {
+    const carouselRef = useRef<CarouselRef<string>>(null);
+    useImperativeHandle(
+      ref,
+      () => ({
+        focusItem: (id: string) => carouselRef.current?.scrollToKey(id, false),
+      }),
+      [],
+    );
+
     const getItem = useCallback(
       (index: number) =>
         index >= 0 && index < items.length ? items[index] : undefined,
@@ -82,6 +113,7 @@ export const ContentRow = memo(
       <View style={styles.row} testID={testID}>
         <Text style={styles.title}>{title}</Text>
         <Carousel
+          ref={carouselRef}
           testID={`${testID}-carousel`}
           uniqueId={testID}
           orientation="horizontal"
@@ -97,7 +129,7 @@ export const ContentRow = memo(
         />
       </View>
     );
-  },
+  }),
 );
 
 const styles = StyleSheet.create({

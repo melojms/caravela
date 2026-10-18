@@ -532,6 +532,65 @@ describe('HomeScreen', () => {
       expect(mockFocusManager.focus).not.toHaveBeenCalled();
     });
 
+    describe('when a row reorders (R7-e)', () => {
+      const {mockScrollToKey} = jest.requireMock<{
+        mockScrollToKey: jest.Mock;
+      }>('@amazon-devices/vega-carousel');
+
+      it('follows the item it was on, not the slot', () => {
+        queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
+        renderHome();
+        act(() => mockFocusEffect?.());
+        focusCard('row-resume-item-1', 202);
+
+        returnToHome();
+        mockScrollToKey.mockClear();
+        // Played just now: r2 moves to the front of Continue watching.
+        queries.resume = loaded([movie('r2'), movie('r1'), movie('r3')]);
+        rerenderHome();
+        expect(mockScrollToKey).toHaveBeenCalledTimes(1);
+        expect(mockScrollToKey).toHaveBeenCalledWith('row-resume', 'r2', false);
+      });
+
+      it('follows it when the reorder came before the restore', () => {
+        queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
+        renderHome();
+        act(() => mockFocusEffect?.());
+        focusCard('row-resume-item-1', 202);
+        queries.resume = loaded([movie('r2'), movie('r1'), movie('r3')]);
+        rerenderHome();
+        mockScrollToKey.mockClear();
+
+        returnToHome();
+        expect(mockFocusManager.focus).toHaveBeenCalledWith(202);
+        expect(mockScrollToKey).toHaveBeenCalledWith('row-resume', 'r2', false);
+      });
+
+      it('does nothing when the order stays', () => {
+        queries.resume = loaded([movie('r1'), movie('r2')]);
+        renderHome();
+        act(() => mockFocusEffect?.());
+        focusCard('row-resume-item-1', 202);
+        mockScrollToKey.mockClear();
+
+        queries.resume = loaded([movie('r1'), movie('r2')]);
+        rerenderHome();
+        expect(mockScrollToKey).not.toHaveBeenCalled();
+      });
+
+      it('stays on the slot when the item left the row', () => {
+        queries.resume = loaded([movie('r1'), movie('r2'), movie('r3')]);
+        renderHome();
+        act(() => mockFocusEffect?.());
+        focusCard('row-resume-item-1', 202);
+        mockScrollToKey.mockClear();
+
+        queries.resume = loaded([movie('r1'), movie('r3')]);
+        rerenderHome();
+        expect(mockScrollToKey).not.toHaveBeenCalled();
+      });
+    });
+
     it('tells apart the same item in two rows', () => {
       queries.nextUp = loaded([movie('r1')]);
       renderHome();

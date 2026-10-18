@@ -26,7 +26,7 @@ import {
 import {toCardItem} from '../api/items';
 import {useSession} from '../auth/SessionContext';
 import {Backdrop} from '../components/Backdrop';
-import {ContentRow} from '../components/ContentRow';
+import {ContentRow, type ContentRowHandle} from '../components/ContentRow';
 import type {CardVariant} from '../components/FocusableCard';
 import {FocusableButton} from '../components/FocusableButton';
 import {CardItem} from '../components/types';
@@ -195,14 +195,58 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   firstRowRef.current = firstRow;
 
   // The last focused row, and each row's last focused card with its native
-  // tag, so coming back to Home can focus that card again.
+  // tag, so coming back to Home can focus that card again. `tagIndex` is
+  // where the card was when it had focus, `index` where it is now.
   const lastFocusedRow = useRef<string | undefined>(undefined);
-  const rowFocus = useRef(new Map<string, {id: string; tag?: number}>());
-  // Each row's card-focus handler, kept stable so the Carousels don't
-  // re-render.
+  const rowFocus = useRef(
+    new Map<
+      string,
+      {id: string; tag?: number; tagIndex: number; index: number}
+    >(),
+  );
+  const cardsByRow = useRef(new Map<string, CardItem[]>());
+  cardsByRow.current = new Map(
+    rows.map((row, index) => [row.key, rowCards[index]]),
+  );
+  const indexIn = (rowKey: string, id: string) =>
+    cardsByRow.current.get(rowKey)?.findIndex((card) => card.id === id) ?? -1;
+  // Each row's card-focus handler and ref, kept stable so the Carousels
+  // don't re-render.
   const focusHandlers = useRef(
     new Map<string, (item: CardItem, tag?: number) => void>(),
   );
+  const rowHandles = useRef(new Map<string, ContentRowHandle>());
+  const rowRefs = useRef(
+    new Map<string, (handle: ContentRowHandle | null) => void>(),
+  );
+  const rowRefFor = (rowKey: string) => {
+    let ref = rowRefs.current.get(rowKey);
+    if (!ref) {
+      ref = (handle) => {
+        if (handle) {
+          rowHandles.current.set(rowKey, handle);
+        } else {
+          rowHandles.current.delete(rowKey);
+        }
+      };
+      rowRefs.current.set(rowKey, ref);
+    }
+    return ref;
+  };
+
+  // A Carousel keeps its focus (and selection) on the slot, so a refetch
+  // that reorders a row (the item just played moves to the front of
+  // Continue watching) would leave it on another item: follow the item. One
+  // that left the row leaves the slot as it is.
+  useEffect(() => {
+    rowFocus.current.forEach((focused, rowKey) => {
+      const index = indexIn(rowKey, focused.id);
+      if (index >= 0 && index !== focused.index) {
+        focused.index = index;
+        rowHandles.current.get(rowKey)?.focusItem(focused.id);
+      }
+    });
+  });
 
   const [backdropUri, setBackdropUri] = useState<string>();
   const backdropTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -232,7 +276,13 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
       handler = (item: CardItem, tag?: number) => {
         lastFocusedRow.current = rowKey;
         setFocusTaken(true);
-        rowFocus.current.set(rowKey, {id: item.id, tag});
+        const index = indexIn(rowKey, item.id);
+        rowFocus.current.set(rowKey, {
+          id: item.id,
+          tag,
+          tagIndex: index,
+          index,
+        });
         if (rowKey === firstRowRef.current) {
           scrollRef.current?.scrollTo({y: 0});
         }
@@ -283,20 +333,27 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
   // restore focus after a pop: it focuses what was focused when Home was left
   // (e.g. the toolbar's Search). So Home focuses the card's native view
   // itself, once that has happened. If the card is gone after a refetch, the
-  // first row's last focused card (Home's first focus lands there).
+  // first row's last focused card (Home's first focus lands there). The tag
+  // is the Carousel's slot: if the card moved since, the row then follows it.
   const restoreFocus = useRef<() => void>(undefined);
   restoreFocus.current = () => {
-    const tagIn = (rowKey?: string) => {
+    const restore = (rowKey?: string) => {
       const focused = rowKey ? rowFocus.current.get(rowKey) : undefined;
-      const index = rows.findIndex((row) => row.key === rowKey);
-      return index >= 0 &&
-        rowCards[index].some((card) => card.id === focused?.id)
-        ? focused?.tag
-        : undefined;
+      if (
+        !rowKey ||
+        focused?.tag === undefined ||
+        indexIn(rowKey, focused.id) < 0
+      ) {
+        return false;
+      }
+      FocusManager.focus(focused.tag);
+      if (focused.index !== focused.tagIndex) {
+        rowHandles.current.get(rowKey)?.focusItem(focused.id);
+      }
+      return true;
     };
-    const tag = tagIn(lastFocusedRow.current) ?? tagIn(firstRow);
-    if (tag !== undefined) {
-      FocusManager.focus(tag);
+    if (!restore(lastFocusedRow.current)) {
+      restore(firstRow);
     }
   };
 
@@ -379,6 +436,7 @@ export const HomeScreen = ({navigation}: RootStackScreenProps<'Home'>) => {
           ) : (
             <ContentRow
               key={row.key}
+              ref={rowRefFor(row.key)}
               testID={`row-${row.key}`}
               title={row.title}
               variant={row.variant}
