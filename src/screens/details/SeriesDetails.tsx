@@ -33,6 +33,7 @@ import {
 import {useSession} from '../../auth/SessionContext';
 import {ContentRow} from '../../components/ContentRow';
 import {CardItem, DetailsAction} from '../../components/types';
+import {useMinuteClock} from '../../components/useMinuteClock';
 import {RootStackScreenProps} from '../../navigation/types';
 import {DetailsLayout, primaryImageUri} from './DetailsLayout';
 import {DetailsLoading, playEpisode, useOpenDetails} from './shared';
@@ -112,7 +113,11 @@ export const SeriesDetails = ({item, navigation}: SeriesDetailsProps) => {
   const posterUri = primaryImageUri(item, api, cardImageSize('poster'));
   const backdropUri = useMemo(() => backdropUris(item, api)[0], [item, api]);
   const infoRow = useMemo(() => infoRowEntries(item), [item]);
-  const infoItems = detailsInfoItems(item, {use24Hour: uses24HourClock()});
+  const infoItems = detailsInfoItems(item, {
+    // Current whenever Details shows: it ticks, and catches up on return.
+    now: useMinuteClock(),
+    use24Hour: uses24HourClock(),
+  });
 
   // androidtv's next-up lookup logs its errors and goes on without one.
   const nextUpItems = useMemo(

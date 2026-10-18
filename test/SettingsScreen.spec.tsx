@@ -19,6 +19,7 @@ jest.mock('../src/auth/SessionContext', () => ({
 
 const mockNavigate = jest.fn();
 jest.mock('@amazon-devices/react-navigation__native', () => ({
+  ...jest.requireActual('@amazon-devices/react-navigation__native'),
   useNavigation: () => ({navigate: mockNavigate}),
 }));
 

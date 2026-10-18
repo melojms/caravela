@@ -2,8 +2,15 @@ import type {BaseItemDto} from '@jellyfin/sdk/lib/generated-client/models/base-i
 import {BaseItemKind} from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import type {UserItemDataDto} from '@jellyfin/sdk/lib/generated-client/models/user-item-data-dto';
 import {PersonKind} from '@jellyfin/sdk/lib/generated-client/models/person-kind';
-import {fireEvent, render, screen, within} from '@testing-library/react-native';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react-native';
 import React from 'react';
+import {AppState, AppStateStatus} from 'react-native';
 
 import {createJellyfin} from '../../src/api/client';
 import {
@@ -129,6 +136,40 @@ beforeEach(() => {
 });
 
 describe('MovieDetails', () => {
+  // R7-f: "Ends" was what it was at the last render, e.g. before the app
+  // went to the background.
+  describe('Ends', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('moves on as time passes', () => {
+      // 90 min from 12:15:30.
+      jest.setSystemTime(new Date(2026, 9, 18, 12, 15, 30));
+      renderDetails();
+      expect(screen.getByText('13:45')).toBeTruthy();
+
+      act(() => jest.advanceTimersByTime(4 * 60_000));
+      expect(screen.getByText('13:49')).toBeTruthy();
+    });
+
+    it('is current on return from the background', () => {
+      const appListeners = new Set<(state: AppStateStatus) => void>();
+      jest
+        .mocked(AppState.addEventListener)
+        .mockImplementationOnce((_, listener) => {
+          appListeners.add(listener as (state: AppStateStatus) => void);
+          return {remove: jest.fn()} as never;
+        });
+      jest.setSystemTime(new Date(2026, 9, 18, 12, 15, 30));
+      renderDetails();
+      expect(screen.getByText('13:45')).toBeTruthy();
+
+      jest.setSystemTime(new Date(2026, 9, 18, 12, 19, 10));
+      act(() => appListeners.forEach((listener) => listener('active')));
+      expect(screen.getByText('13:49')).toBeTruthy();
+    });
+  });
+
   it('renders the header, actions and rows of a movie', () => {
     renderDetails();
 

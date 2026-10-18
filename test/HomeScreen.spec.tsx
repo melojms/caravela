@@ -45,6 +45,7 @@ jest.mock('../src/api/home', () => ({
 
 let mockFocusEffect: (() => void) | undefined;
 jest.mock('@amazon-devices/react-navigation__native', () => ({
+  ...jest.requireActual('@amazon-devices/react-navigation__native'),
   useFocusEffect: (effect: () => void) => {
     mockFocusEffect = effect;
   },

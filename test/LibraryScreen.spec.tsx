@@ -43,6 +43,7 @@ jest.mock('../src/api/libraryPrefs', () => ({
 
 let mockFocusEffect: (() => void | (() => void)) | undefined;
 jest.mock('@amazon-devices/react-navigation__native', () => ({
+  ...jest.requireActual('@amazon-devices/react-navigation__native'),
   useFocusEffect: (effect: () => void | (() => void)) => {
     mockFocusEffect = effect;
   },

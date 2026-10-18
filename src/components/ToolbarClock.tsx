@@ -1,10 +1,9 @@
 import {uses24HourClock} from '@amazon-devices/react-native-localize';
-import React, {memo, useEffect, useState} from 'react';
+import React, {memo} from 'react';
 import {StyleSheet, Text} from 'react-native';
 
 import {colors, px} from '../theme';
-
-const MINUTE_MS = 60_000;
+import {useMinuteClock} from './useMinuteClock';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -21,30 +20,14 @@ export const formatClock = (date: Date, use24Hour: boolean): string => {
   return `${hours % 12 || 12}:${minutes}`;
 };
 
-// Read on every tick, so a change to the device setting shows within a minute.
-const now = () => formatClock(new Date(), uses24HourClock());
-
 export type ToolbarClockProps = {
   testID?: string;
 };
 
 /** The current time, updated on each minute boundary. Not focusable. */
 export const ToolbarClock = memo(({testID}: ToolbarClockProps) => {
-  const [time, setTime] = useState(now);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const schedule = () => {
-      // Wait until the next whole minute rather than polling every second.
-      timer = setTimeout(() => {
-        setTime(now());
-        schedule();
-      }, MINUTE_MS - (Date.now() % MINUTE_MS));
-    };
-    setTime(now());
-    schedule();
-    return () => clearTimeout(timer);
-  }, []);
+  // The setting is read on every tick, so a change shows within a minute.
+  const time = formatClock(useMinuteClock(), uses24HourClock());
 
   return (
     <Text testID={testID} style={styles.clock} numberOfLines={1}>

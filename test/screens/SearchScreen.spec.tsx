@@ -27,6 +27,7 @@ jest.mock('../../src/api/search', () => ({
 }));
 
 jest.mock('@amazon-devices/react-navigation__native', () => ({
+  ...jest.requireActual('@amazon-devices/react-navigation__native'),
   useFocusEffect: jest.fn(),
   // For the toolbar, which navigates on its own.
   useNavigation: () => ({popTo: jest.fn(), navigate: jest.fn()}),

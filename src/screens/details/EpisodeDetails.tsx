@@ -23,6 +23,7 @@ import {useNextEpisodes, usePreviousEpisode} from '../../api/tvDetails';
 import {useSession} from '../../auth/SessionContext';
 import {ContentRow} from '../../components/ContentRow';
 import {CardItem, DetailsAction} from '../../components/types';
+import {useMinuteClock} from '../../components/useMinuteClock';
 import {RootStackScreenProps} from '../../navigation/types';
 import {DetailsLayout, primaryImageUri} from './DetailsLayout';
 
@@ -53,7 +54,11 @@ export const EpisodeDetails = ({item, navigation}: EpisodeDetailsProps) => {
   const backdropUri = useMemo(() => backdropUris(item, api)[0], [item, api]);
   const titles = detailsTitles(item);
   const infoRow = useMemo(() => infoRowEntries(item), [item]);
-  const infoItems = detailsInfoItems(item, {use24Hour: uses24HourClock()});
+  const infoItems = detailsInfoItems(item, {
+    // Current whenever Details shows: it ticks, and catches up on return.
+    now: useMinuteClock(),
+    use24Hour: uses24HourClock(),
+  });
 
   // `navigate`, not `push`: pressing Play twice mustn't stack two players.
   const onPlay = (startMs: number) =>
