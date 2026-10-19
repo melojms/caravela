@@ -27,7 +27,7 @@ Settle these first; if R0-1 is a no, the rest of this plan changes.
     - `src/playback/deviceProfile.ts`: the probes, containers, subtitle profiles and Vega workarounds are original. `codecProfiles` and `unsupportedRangeTypesAv1` / `Hevc` follow androidtv's `deviceProfile.kt` section by section (same profiles, order, conditions and values, the same nested HDR exclude-list logic), and `HLS_TS_AUDIO` / `HLS_FMP4_AUDIO` are its lists. Most of it is server-protocol data with little room for other expression (androidtv's own comment calls the HDR part a workaround for the server), but it is the one part that reads as a translation, ~200 lines.
   - Decision for the user: (a) accept: it's functional protocol data; (b) a small code task: reword the error strings and rewrite the codec/HDR profiles table-driven from the server's DeviceProfile semantics (not clean-room, but less literal); (c) ask the jellyfin-androidtv maintainers whether they object to those lines shipping beside Amazon's polyfills. **The user chose (a)** on 2026-10-18. The source offer itself is covered: About shows the source URL, Phase 4 tags the release, and `setup-shaka.sh` plus the build scripts are in the repo.
 - [x] **R0-3 Accounts and hosting** (2026-10-16). Amazon Developer account created. Privacy policy on GitHub Pages at https://melojms.github.io/caravela/privacy (source `site/privacy/index.html`, workflow `.github/workflows/pages.yml`).
-- [ ] **R0-4 v1 scope.** Decide what the first version has. Recommended: what works today + R1–R6. Task 12 (segments, next up, still watching), the rest of task 14 and the Follow-ups in `docs/HANDOFF.md` wait for 1.1.
+- [x] **R0-4 v1 scope** (2026-10-19, the user): v1.0 is the app on `main` as it is (R1–R6, R7-d/e/f). Task 12 (segments, next up, still watching), the rest of task 14, R7-a, R7-c and the Follow-ups in `docs/HANDOFF.md` wait for 1.1.
 
 ### Phase 1: store blockers (code)
 
@@ -55,13 +55,21 @@ Without these the app fails review or can't be uploaded.
 
 ### Phase 3: certification run on the Fire TV (the user, with a Release build)
 
-- [ ] Install the Release VPKG from R2 (not Debug) on the Fire TV Stick 4K Select.
-- [ ] All nine lifecycle tests below, on direct play and on an HLS remux/transcode.
-- [ ] A smoke pass as a new user on the public demo server: add server, sign in, Home, Movies, Shows, Details, play, subtitles, audio switch, Search, Settings, sign out. This is what the reviewer will do.
-- [ ] Optional: Vega KPIs (time to first frame, UI fluidity on grids), see "Performance" in `docs/PLAN.md`.
-- [ ] Fix what fails (`R7…` tasks), then repeat the failing tests.
+- [x] Install the Release VPKG from R2 (not Debug) on the Fire TV Stick 4K Select (2026-10-19, 0.1.1 / 1001, `vpt info` checked, `npm run licenses` no diff).
+- [x] All nine lifecycle tests below, on direct play (Practical Magic 2, DirectPlay) and HLS (Another Simple Favor, transcode) (2026-10-19). No crash, ANR, blank screen, audio leak or A/V sync problem; R7-d's paused player came back after Home, another app and the screensaver. One `MRM killed` in 8 backgrounds (screensaver, HLS) gave a cold start instead (R7-g). Display kills as accepted in R7-b, Resume 0–1.2 s behind. R7-a didn't show. Brief `docs/tasks/p3-certification-run.md`.
+- [x] A smoke pass as a new user on the public demo server (2026-10-19): fresh install, add server, sign in, Home, Movies (sort, filter, letter), Details, play (direct play), Shows → Pioneer One → episode, Search, Settings, About, licences, sign out all work. No demo item has subtitles or a second audio track, so those pickers weren't exercised there (they were on the test server in tasks 10 and R5). Sign-in focus is the reviewer's first stumble (R7-h).
+- [x] Optional: Vega KPIs: skipped for v1.0 (the user, 2026-10-19).
+- [ ] Fix what fails (`R7…` tasks), then repeat the failing tests. From the run, none judged a blocker; the user decides which go into v1.0:
+  - [ ] **R7-g** OS kill (`MRM killed`) right after a background (1 in 8): release more memory on `background` so the screensaver/Home tests land on the paused player more often.
+  - [ ] **R7-h** Sign in: Down from the password field lands on "Use Quick Connect", not "Sign in"; a password-less user gets Quick Connect first. The reviewer's first screen.
+  - [ ] **R7-i** (low) Home's first focus after a cold start sometimes isn't My media (an early Down skips rows still loading).
+  - [ ] **R7-j** (low) Settings opens with nothing visibly focused.
+  - [ ] **R7-k** (low) letter-filter subtitle reads clumsily; the letter bar covers the library title.
 
 ### Phase 4: listing and submission (the user)
+
+Drafts for every console field (description, reviewer notes, keywords, content rating, image list) are in `docs/STORE-LISTING.md` (2026-10-19).
+
 
 - [ ] **Privacy policy** published (R0-3) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics. Source: `site/privacy/index.html`, deployed by `.github/workflows/pages.yml` (only `site/` is published; Settings → Pages → Source must be "GitHub Actions"). Update its "Last updated" date with any change.
 - [ ] **Store assets:** the console lists the sizes; expect the icon (512×512 exists), a 1920×1080 Fire TV background, and 3+ 1920×1080 screenshots (the README's set from the demo server works, retaken on a Release build).
@@ -86,15 +94,17 @@ Task 12, Settings (task 14), Content Launcher, and the Follow-ups in `docs/HANDO
 
 Run each with on-demand content. Expected: no crash, no blank screen, no audio leaking onto the launcher, no A/V sync issues.
 
-- [ ] Play → Back until the launcher → relaunch: app works normally.
-- [ ] Play → Home → relaunch: no audio on the launcher, app works normally.
-- [ ] Play → Home → play something in another app → Home → relaunch and resume: no audio overlap.
-- [ ] HDMI unplug for 5 minutes during playback, then replug: playback paused, resumes from the same position.
-- [ ] Switch TV input, or turn the TV off, for 5 minutes during playback, then come back: paused, resumes from the same position.
-- [ ] Device restart → relaunch: still signed in, playback resumes.
-- [ ] Pause, idle 5 minutes until the screensaver/Ambient → Back: still paused, no audio over the screensaver, back in the app.
-- [ ] Alexa query during playback (e.g. "What's the weather?"): video pauses, no audio overlap, playback resumes after the card closes.
-- [ ] Bluetooth soundbar/headset, connected before and during playback: audio routes correctly and stays in sync.
+Last run 2026-10-19 on 0.1.1 (1001), results in `docs/tasks/p3-certification-run.md`; HDMI / TV input / TV off kill the app (R7-b, accepted).
+
+- [x] Play → Back until the launcher → relaunch: app works normally.
+- [x] Play → Home → relaunch: no audio on the launcher, app works normally.
+- [x] Play → Home → play something in another app → Home → relaunch and resume: no audio overlap.
+- [ ] HDMI unplug for 5 minutes during playback, then replug: playback paused, resumes from the same position. Not met: Vega kills the app (R7-b, accepted).
+- [ ] Switch TV input, or turn the TV off, for 5 minutes during playback, then come back: paused, resumes from the same position. Not met: Vega kills the app (R7-b, accepted).
+- [x] Device restart → relaunch: still signed in, playback resumes.
+- [ ] Pause, idle 5 minutes until the screensaver/Ambient → Back: still paused, no audio over the screensaver, back in the app. Passed except once: an `MRM killed` gave a cold start, position kept (R7-g).
+- [x] Alexa query during playback (e.g. "What's the weather?"): video pauses, no audio overlap, playback resumes after the card closes.
+- [x] Bluetooth soundbar/headset, connected before and during playback: audio routes correctly and stays in sync.
 
 ## Developer Console
 
