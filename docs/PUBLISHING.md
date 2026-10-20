@@ -65,13 +65,14 @@ Without these the app fails review or can't be uploaded.
   - [ ] **R7-i** (low) Home's first focus after a cold start sometimes isn't My media (an early Down skips rows still loading).
   - [ ] **R7-j** (low) Settings opens with nothing visibly focused.
   - [ ] **R7-k** (low) letter-filter subtitle reads clumsily; the letter bar covers the library title.
+  - [x] **R7-l** (2026-10-20): the app sends the device name `Fire TV` instead of `Fire TV (Vega)`, and the privacy policy quotes the new name (no "Vega" anywhere a reviewer looks). Checked on the Fire TV: the server shows the new name with the existing token. Brief `docs/tasks/r7l-device-name.md`.
 
 ### Phase 4: listing and submission (the user)
 
 Drafts for every console field (description, reviewer notes, keywords, content rating, image list) are in `docs/STORE-LISTING.md` (2026-10-19).
 
 
-- [ ] **Privacy policy** published (R0-3) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics. Source: `site/privacy/index.html`, deployed by `.github/workflows/pages.yml` (only `site/` is published; Settings → Pages → Source must be "GitHub Actions"). Update its "Last updated" date with any change.
+- [x] **Privacy policy** published (2026-10-19, live; updated 2026-10-20 for R7-l, deploys on the next push of `main`) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics. Source: `site/privacy/index.html`, deployed by `.github/workflows/pages.yml` (only `site/` is published; Settings → Pages → Source must be "GitHub Actions"). Update its "Last updated" date with any change.
 - [ ] **Store assets:** the console lists the sizes; expect the icon (512×512 exists), a 1920×1080 Fire TV background, and 3+ 1920×1080 screenshots (the README's set from the demo server works, retaken on a Release build).
 - [ ] **Description:** what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
 - [ ] **Reviewer notes:** the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.

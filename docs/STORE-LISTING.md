@@ -63,7 +63,7 @@ Notes:
 ## Privacy policy
 URL: https://melojms.github.io/caravela/privacy (source `site/privacy/index.html`).
 
-Checked 2026-10-19 against the code: it matches what `src/auth/store.ts` keeps (servers, users with tokens, auto-login choice, device ID), and that library sort/filters are saved on the user's server, not on the device. One thing to decide: it names the device name the app sends, **"Fire TV (Vega)"** (`DEVICE_NAME` in `src/api/client.ts`). The policy isn't a listing field, so "no Vega in any field" doesn't strictly apply, but a reviewer may follow the link.
+Checked 2026-10-19 against the code: it matches what `src/auth/store.ts` keeps (servers, users with tokens, auto-login choice, device ID), and that library sort/filters are saved on the user's server, not on the device. It names the device name the app sends, "Fire TV" (`DEVICE_NAME` in `src/api/client.ts`; was "Fire TV (Vega)" until R7-l, 2026-10-20). The live page shows the new text once `main` is pushed.
 
 Data-privacy questions in the console: no personal data collected by the developer; data stays on the device and the user's own server.
 
