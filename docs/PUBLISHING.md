@@ -77,7 +77,7 @@ Drafts for every console field (description, reviewer notes, keywords, content r
 - [ ] **Description:** what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
 - [ ] **Reviewer notes:** the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.
 - [ ] Content rating questionnaire, then the "Developer Console" steps below.
-- [ ] Tag the release in git and keep the source available (R0-2).
+- [x] Tag the release in git and keep the source available (R0-2) (2026-10-20): the release workflow (`major`) committed "Release v1.0.0" (`d9b01b7`) and pushed tag `v1.0.0` to the public repo; the **draft** release v1.0.0 holds `caravela-v1.0.0-armv7.vpkg` (stays a draft while R0-1 is open). Re-checked on the Fire TV with that exact file (see Binary).
 
 ### After v1.0
 
@@ -85,11 +85,13 @@ Task 12, Settings (task 14), Content Launcher, and the Follow-ups in `docs/HANDO
 
 ## Binary
 
-- [ ] Release VPKG, not Debug (Debug loads JS from Metro and starts blank): `build/<arch>-release/caravela_<arch>.vpkg`.
+v1.0.0 checked 2026-10-20 against `caravela-v1.0.0-armv7.vpkg` from the draft release (sha256 `59725e48…ffc9c`), the file to upload.
+
+- [x] Release VPKG, not Debug (Debug loads JS from Metro and starts blank): `build/<arch>-release/caravela_<arch>.vpkg` locally; the release workflow attaches it as `caravela-v<version>-armv7.vpkg`.
 - [x] `com.amazon.category.main` registered in `manifest.toml` (without it the app can't launch from the Fire TV home and fails submission).
-- [ ] Version and build number higher than the last submission; check with `vega exec vpt info <vpkg> --json`.
-- [ ] `npm run licenses` after the release build leaves `src/about/licenses.json` unchanged (commit it if not).
-- [ ] Tested on a physical Fire TV Stick 4K Select running Vega OS (the Virtual Device isn't enough).
+- [x] Version and build number higher than the last submission; check with `vega exec vpt info <vpkg> --json`. v1.0.0: version 1.0.0, build 1000000, OS 1.2 (first submission).
+- [x] `npm run licenses` after the release build leaves `src/about/licenses.json` unchanged (commit it if not). No diff on `4a7b9fe` (the release commit only bumps versions).
+- [x] Tested on a physical Fire TV Stick 4K Select running Vega OS (the Virtual Device isn't enough): fresh install of the release file, demo server sign-in, play, Home → warm relaunch (paused), About 1.0.0 (build 1000000).
 
 ## Lifecycle tests Amazon runs
 
