@@ -28,7 +28,7 @@ const mediaInfoApi = {getPostedPlaybackInfo: jest.fn()};
 const api = {
   basePath: 'https://jf.example/base',
   accessToken: 'tok en/+',
-  deviceInfo: {id: 'device 1', name: 'Fire TV (Vega)'},
+  deviceInfo: {id: 'device 1', name: 'Fire TV'},
 } as unknown as Api;
 
 const REQUEST: PlaybackRequest = {

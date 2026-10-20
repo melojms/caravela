@@ -7,7 +7,7 @@ import type {AuthStore} from '../auth/store';
 
 export const CLIENT_NAME = 'Caravela';
 export const CLIENT_VERSION = version;
-export const DEVICE_NAME = 'Fire TV (Vega)';
+export const DEVICE_NAME = 'Fire TV';
 
 /** Builds the SDK instance with Caravela's client info and the given device ID. */
 export function createJellyfin(deviceId: string): Jellyfin {

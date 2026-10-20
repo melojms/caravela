@@ -24,6 +24,11 @@ describe('api client', () => {
     expect(a.deviceInfo).toEqual({name: DEVICE_NAME, id: 'device-1'});
   });
 
+  it('sends the plain device name "Fire TV", with no "Vega" in it', () => {
+    expect(DEVICE_NAME).toBe('Fire TV');
+    expect(DEVICE_NAME).not.toMatch(/vega/i);
+  });
+
   it('creates an Api for a server URL and token', async () => {
     await getJellyfin(storeWithDeviceId('device-1'));
     const api = await createApi('https://jellyfin.example.com/', 'token-1');
