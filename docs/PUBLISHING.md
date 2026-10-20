@@ -61,7 +61,7 @@ Without these the app fails review or can't be uploaded.
 - [x] Optional: Vega KPIs: skipped for v1.0 (the user, 2026-10-19).
 - [ ] Fix what fails (`R7…` tasks), then repeat the failing tests. From the run, none judged a blocker; the user decides which go into v1.0:
   - [ ] **R7-g** OS kill (`MRM killed`) right after a background (1 in 8): release more memory on `background` so the screensaver/Home tests land on the paused player more often.
-  - [ ] **R7-h** Sign in: Down from the password field lands on "Use Quick Connect", not "Sign in"; a password-less user gets Quick Connect first. The reviewer's first screen.
+  - [x] **R7-h** (2026-10-20): Down from the password field lands on Sign in (`nextFocusDown`; `FocusManager.setNextFocus` is ignored from a TextInput on the Fire TV), on the picker path and on Add user. Quick Connect stays first for every user: Jellyfin 12.2 reports `HasPassword: true` for every public user, `demo` included, so a password-less user can't be detected (the user's choice; the reviewer notes explain "Use password"). Brief `docs/tasks/r7h-signin-focus.md`.
   - [ ] **R7-i** (low) Home's first focus after a cold start sometimes isn't My media (an early Down skips rows still loading).
   - [ ] **R7-j** (low) Settings opens with nothing visibly focused.
   - [ ] **R7-k** (low) letter-filter subtitle reads clumsily; the letter bar covers the library title.

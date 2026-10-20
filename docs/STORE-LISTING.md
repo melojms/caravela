@@ -50,7 +50,7 @@ First release.
 Caravela needs a Jellyfin server. Please use Jellyfin's public demo server:
 
 1. Open Caravela. On "Add server", enter `https://demo.jellyfin.org/stable` and press Connect.
-2. Pick the user `demo`. The app first offers Quick Connect: choose **Use password** (to the right), leave the password empty, and press **Sign in** (Left from the password field).
+2. Pick the user `demo`. The app first offers Quick Connect: choose **Use password** (to the right). The password field opens with the on-screen keyboard; press Back to close it, leave the password empty, then press Down to **Sign in** and select it.
 3. Home shows the demo server's movies and the series Pioneer One. Every title on the demo server plays.
 
 Notes:
