@@ -71,14 +71,16 @@ Data-privacy questions in the console: no personal data collected by the develop
 No content of its own; the user's server provides everything. Answer "none" to violence, sex, language, gambling, etc.; it has unrestricted web access only to the user's server (no browser). If the questionnaire asks about user-generated or streamed content, say the app plays media from the user's own server.
 
 ## Images
-Sizes as the console showed them for Fire TV apps; **check them against the console before making anything** (not in the Vega docs the MCP serves).
+Confirmed 2026-10-20 against Amazon's [Appstore Details → Images and videos](https://developer.amazon.com/docs/app-submission/appstore-details.html#images-and-videos). Made in S4 (`docs/tasks/s4-store-images.md`); the files are in `../caravela-wt/store-assets/`, outside the repo. `scripts/store-images.sh <dir>` regenerates the icons and the background.
 
-| Asset | Size | Have it? |
+| Asset | Size and rules | File |
 |---|---|---|
-| Large icon | 512×512 PNG | `assets/image/app_icon.png` |
-| Small icon | 114×114 PNG | scale the large icon |
-| Fire TV app icon (launcher tile) | 1280×720 PNG | from `assets/brand/caravela-pill.svg` (Sail + "Caravela" on navy) |
-| Fire TV background | 1920×1080 | to make (navy with the Sail, no text) |
-| Screenshots, 3–10 | 1920×1080 | the README set is 1280×720: retake at 1080p on the demo server (Gotchas, "Full-size captures"), on a Release build |
+| Large icon | 512×512 PNG, transparency allowed | `assets/image/app_icon.png` |
+| Small icon | 114×114 PNG, transparency allowed | `small-icon-114.png` (the Sail alone; the wordmark is unreadable at that size) |
+| Fire TV app icon | 1280×720, no transparency; logo and title inside the centred 882×448 safe area | `firetv-icon-1280x720.png` |
+| Fire TV background | 1920×1080 JPG/24-bit PNG, no transparency, no logos or titles; subject inside 1214×830, ideally right | `firetv-background-1920x1080.png` |
+| Fire TV screenshots | 3–10 at 1920×1080, JPG/24-bit PNG, no transparency | `screenshot-1-home.png`, `-2-movie-details`, `-3-episode-details`, `-4-player`, `-5-library` |
+| Tablet screenshots | 3–10; 1920×1080 is an accepted size | the same five |
+| Promotional image (1024×500), video | optional | skipped (the user, 2026-10-20) |
 
-Screenshots: Home, movie details, series details, the player paused with the overlay, the user picker. Demo-server content only; no test-server address or unblurred avatar in any of them.
+The file extension must match the real type. Screenshots are from the demo server only. Left out on purpose: the user picker (the demo user's avatar is the Jellyfin logo; it still shows ~40 px in Home's toolbar, accepted) and Pioneer One's series page (its overview mentions BitTorrent).
