@@ -116,6 +116,8 @@ Debug builds load JavaScript from the Metro dev server, so run `npm start` and f
 
 Use `npm run build:release` and `-b Release` for a release build. With more than one device connected, pass `--device <serial>` to the `vega device` commands.
 
+`scripts/store-images.sh <dir>` regenerates the Appstore icons and the Fire TV background from `assets/brand/` (it fetches the resvg SVG renderer with `npx`).
+
 The third-party licences screen (Settings → About) reads `src/about/licenses.json`, the third-party packages in the Release bundle with their licence texts. After changing dependencies, and before a release, regenerate it and commit the result:
 
 ```sh
