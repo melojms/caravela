@@ -1,5 +1,5 @@
-import React, {memo, useCallback, useState} from 'react';
-import {Pressable, StyleSheet, Text} from 'react-native';
+import React, {forwardRef, memo, useCallback, useState} from 'react';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 
 import {colors, focus, px, radius, spacing, typography} from '../theme';
 
@@ -18,16 +18,20 @@ export type FocusableButtonProps = {
   testID?: string;
 };
 
+/** The ref reaches the Pressable, e.g. to point focus at it (nextFocusDown). */
 export const FocusableButton = memo(
-  ({
-    label,
-    onPress,
-    onFocus,
-    active = false,
-    hasTVPreferredFocus,
-    disabled = false,
-    testID,
-  }: FocusableButtonProps) => {
+  forwardRef<View, FocusableButtonProps>(function FocusableButton(
+    {
+      label,
+      onPress,
+      onFocus,
+      active = false,
+      hasTVPreferredFocus,
+      disabled = false,
+      testID,
+    },
+    ref,
+  ) {
     const [focused, setFocused] = useState(false);
 
     const handleFocus = useCallback(() => {
@@ -45,6 +49,7 @@ export const FocusableButton = memo(
 
     return (
       <Pressable
+        ref={ref}
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -71,7 +76,7 @@ export const FocusableButton = memo(
         </Text>
       </Pressable>
     );
-  },
+  }),
 );
 
 const styles = StyleSheet.create({

@@ -1,6 +1,7 @@
 import 'react-native';
 import {fireEvent, render} from '@testing-library/react-native';
 import * as React from 'react';
+import type {View} from 'react-native';
 
 import {FocusableButton} from '../src/components/FocusableButton';
 import {colors, focus} from '../src/theme';
@@ -28,6 +29,15 @@ describe('FocusableButton', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(button.props.accessibilityState).toMatchObject({disabled: false});
     expect(flatStyle(button.props.style).opacity).toBeUndefined();
+  });
+
+  it('forwards a ref to its Pressable', () => {
+    const ref = React.createRef<View>();
+    render(<FocusableButton ref={ref} testID="btn" label="Connect" />);
+    expect(ref.current).not.toBeNull();
+    expect((ref.current as {props?: {testID?: string}}).props?.testID).toBe(
+      'btn',
+    );
   });
 
   it('ignores presses while disabled', () => {

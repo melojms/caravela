@@ -2,6 +2,7 @@ import {isAxiosError} from 'axios';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  findNodeHandle,
   NativeSyntheticEvent,
   StyleSheet,
   Text,
@@ -45,6 +46,8 @@ const isReturnKey = (
   return action === undefined || action === returnKey;
 };
 
+type TVFocusProps = {nextFocusDown?: number};
+
 type PasswordScreenProps = RootStackScreenProps<'Password'> & {
   /** Injected in tests; the app uses the default service and store. */
   authService?: AuthService;
@@ -75,6 +78,7 @@ export const PasswordScreen = ({
   const [quickConnectEnabled, setQuickConnectEnabled] = useState(false);
   const [focused, setFocused] = useState<'username' | 'password'>();
   const passwordInput = useRef<TextInput>(null);
+  const [signInTag, setSignInTag] = useState<number>();
   // A ref as well as state, so a second press in the same frame is ignored.
   const busy = useRef(false);
   const mounted = useRef(true);
@@ -183,6 +187,17 @@ export const PasswordScreen = ({
     [submit],
   );
 
+  // Down from the password field lands on Sign in: Vega's focus search would
+  // pick "Use Quick Connect" when it shows, sending users without a password
+  // back to Quick Connect. FocusManager.setNextFocus has no effect from a
+  // TextInput on Vega; the field's nextFocusDown does.
+  const signInButton = useCallback((node: View | null) => {
+    const tag = node ? findNodeHandle(node) : null;
+    setSignInTag(typeof tag === 'number' ? tag : undefined);
+  }, []);
+  // Vega's TextInput takes the TV View props, but its typings leave them out.
+  const passwordFocusProps: TVFocusProps = {nextFocusDown: signInTag};
+
   const onChangeUsername = useCallback((text: string) => {
     setUsernameInput(text);
     setError(undefined);
@@ -258,6 +273,7 @@ export const PasswordScreen = ({
           onBlur={() => setFocused(undefined)}
           editable={!signingIn}
           hasTVPreferredFocus={Boolean(username)}
+          {...passwordFocusProps}
         />
       </View>
 
@@ -273,6 +289,7 @@ export const PasswordScreen = ({
 
       <View style={styles.actions}>
         <FocusableButton
+          ref={signInButton}
           testID="password-sign-in"
           label={signingIn ? 'Signing in…' : 'Sign in'}
           disabled={signingIn}

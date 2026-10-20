@@ -19,6 +19,27 @@ import {
 
 jest.mock('../../src/auth/SessionContext', () => ({useSession: jest.fn()}));
 
+// findNodeHandle reads a tag from the node's testID.
+const mockTags = new Map<string, number>();
+const mockTagFor = (testID: string) => {
+  if (!mockTags.has(testID)) {
+    mockTags.set(testID, 100 + mockTags.size);
+  }
+  return mockTags.get(testID)!;
+};
+jest.mock('@amazon-devices/react-native-kepler', () => {
+  const actual = jest.requireActual('@amazon-devices/react-native-kepler');
+  return new Proxy(actual, {
+    get: (target, key) => {
+      if (key === 'findNodeHandle') {
+        return (node: {props?: {testID?: string}} | null) =>
+          node?.props?.testID ? mockTagFor(node.props.testID) : null;
+      }
+      return target[key];
+    },
+  });
+});
+
 type Params = {
   serverId: string;
   userId?: string;
@@ -316,6 +337,59 @@ describe('PasswordScreen', () => {
     expect(navigation.navigate).toHaveBeenCalledWith('QuickConnect', {
       serverId: 'srv1',
       userId: 'u1',
+    });
+  });
+
+  describe('Down from the password field', () => {
+    const expectDownToSignIn = () =>
+      expect(screen.getByTestId('password-input').props.nextFocusDown).toBe(
+        mockTagFor('password-sign-in'),
+      );
+
+    it('lands on Sign in with Use Quick Connect showing', async () => {
+      service.isQuickConnectEnabled.mockResolvedValue(true);
+      await renderScreen();
+      expect(screen.getByTestId('password-use-quick-connect')).toBeTruthy();
+
+      expectDownToSignIn();
+    });
+
+    it('lands on Sign in when Quick Connect is off', async () => {
+      service.isQuickConnectEnabled.mockResolvedValue(false);
+      await renderScreen();
+      expect(screen.queryByTestId('password-use-quick-connect')).toBeNull();
+
+      expectDownToSignIn();
+    });
+
+    it('lands on Sign in on Add user', async () => {
+      await renderScreen({serverId: 'srv1'});
+
+      expectDownToSignIn();
+    });
+
+    it('still lands on Sign in after Use Quick Connect shows up', async () => {
+      let settle!: (enabled: boolean) => void;
+      service.isQuickConnectEnabled.mockReturnValue(
+        new Promise((done) => {
+          settle = done;
+        }),
+      );
+      await renderScreen();
+      expectDownToSignIn();
+
+      await act(async () => settle(true));
+
+      expect(screen.getByTestId('password-use-quick-connect')).toBeTruthy();
+      expectDownToSignIn();
+    });
+
+    it('leaves Down from the username field to Vega', async () => {
+      await renderScreen({serverId: 'srv1'});
+
+      expect(
+        screen.getByTestId('password-username-input').props.nextFocusDown,
+      ).toBeUndefined();
     });
   });
 });
