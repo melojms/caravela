@@ -1,6 +1,6 @@
 # Publishing to the Amazon Appstore
 
-Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). Written 2026-10-12 against the Vega SDK 0.24 docs; re-check them before submitting, since the Vega docs are still an open beta and may change.
+Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). **v1.0.0 was approved and is live on the Amazon Appstore (2026-10-26): https://www.amazon.com/dp/B0HNR62RQ9.** Written 2026-10-12 against the Vega SDK 0.24 docs; re-check them before submitting, since the Vega docs are still an open beta and may change.
 
 Sources:
 - [App Submission for Vega](https://developer.amazon.com/docs/vega/0.24/app-submission.html)
@@ -17,9 +17,10 @@ Written 2026-10-13. Work top to bottom: each phase unblocks the next. Code tasks
 
 Settle these first; if R0-1 is a no, the rest of this plan changes.
 
-- [ ] **R0-1 Shaka polyfills.** Every VPKG bundles Amazon's proprietary Shaka polyfills and wrapper ("AMAZON PROPRIETARY/CONFIDENTIAL"); the release workflow keeps GitHub releases as drafts for that reason. Confirm Amazon allows them in an Appstore build (read the Vega SDK licence; if unclear, ask on the Amazon Developer forum). If not, the fallback is a direct-play-only build without Shaka, which loses remux/transcode and most of the library: not worth shipping.
+- [x] **R0-1 Shaka polyfills** (settled before submission: Amazon answered OK). Every VPKG bundles Amazon's proprietary Shaka polyfills and wrapper ("AMAZON PROPRIETARY/CONFIDENTIAL"); the release workflow keeps GitHub releases as drafts for that reason. Confirm Amazon allows them in an Appstore build (read the Vega SDK licence; if unclear, ask on the Amazon Developer forum). If not, the fallback is a direct-play-only build without Shaka, which loses remux/transcode and most of the library: not worth shipping.
   - 2026-10-18, read (not legal advice): the SDK's `LICENSE.txt` and the polyfill headers point to the [Program Materials License Agreement](https://developer.amazon.com/support/legal/pml) (PML, updated 2020-01-09). Its grant says materials "we make available specifically for incorporation in Your Products (as indicated by the applicable documentation)" may be incorporated and distributed "as incorporated in Your Products"; Amazon's Shaka page tells apps to copy the polyfills in, so a VPKG on the Appstore fits. The same covers the four bundled `@amazon-devices/*` JS packages. **Open:** the headers say "AMAZON PROPRIETARY/CONFIDENTIAL", and the PML's Restricted Program Materials Schedule covers anything Amazon "designate[s] as confidential": then distribution needs Amazon's written approval, and source-form files may only ship in binary form. The package is a public download with no NDA, so probably boilerplate, but unconfirmed. Keeping them out of the repo and the GitHub releases as drafts suits either reading.
   - 2026-10-18: the user sent this question to Amazon; R0-1 waits on the answer. The question (Developer Console → Contact Us gives a written answer, or the Vega forum): *"My Vega app bundles the polyfills from `shaka-rel-v4.16.13-r1.2-devices_scope.tar.gz` as your Shaka Player docs describe. Their headers say 'AMAZON PROPRIETARY/CONFIDENTIAL'. Are they Restricted Program Materials under the PML, or materials 'made available specifically for incorporation in Your Products' that I may distribute in my app's VPKG on the Appstore? My app's own code is open source (GPL-2.0-or-later with an exception that keeps your files out of the GPL); the polyfills are not published in my repository."*
+  - Amazon answered OK: the polyfills may ship in the app's VPKG on the Appstore. The answer is about the Appstore VPKG only, so the polyfills stay out of the repo and GitHub releases stay drafts.
 - [x] **R0-2 GPL compliance** (2026-10-18, the user accepted the androidtv-derived lines). Publishing a binary means offering its source: the GitHub repo at the released tag, plus `scripts/setup-shaka.sh` for the parts we can't commit. Check `LICENSE-EXCEPTION.md` covers linking the polyfills into a distributed build.
   - 2026-10-18, read (not legal advice): the PML forbids using Program Materials with open-source licences that "would require you or us to disclose, license, distribute… any part of such Program Materials", which plain GPL would for the combined bundle (the GPL's system-library exception doesn't cover polyfills bundled in the app). `LICENSE-EXCEPTION.md` removes that, and it holds for Caravela's own code: every human commit is the user's, and contributions are bound by the exception.
   - **The weak spot is code derived from jellyfin-androidtv** (GPL-2.0; its sources carry no "only"/"or later" notice, so under GPL-2.0 §9 any version may be chosen, which makes "or later" defensible). The user can't add an exception for Jellyfin's contributors. A read-only comparison found:
@@ -74,10 +75,11 @@ Drafts for every console field (description, reviewer notes, keywords, content r
 
 - [x] **Privacy policy** published (2026-10-19, live; updated 2026-10-20 for R7-l, deploys on the next push of `main`) at https://melojms.github.io/caravela/privacy (the URL About shows since R4): the app stores server addresses, user names and access tokens on the device, unencrypted; it sends nothing anywhere except the user's own Jellyfin server; no analytics. Source: `site/privacy/index.html`, deployed by `.github/workflows/pages.yml` (only `site/` is published; Settings → Pages → Source must be "GitHub Actions"). Update its "Last updated" date with any change.
 - [x] **Store assets** (2026-10-20, brief `docs/tasks/s4-store-images.md`): sizes confirmed against Amazon's [Images and videos](https://developer.amazon.com/docs/app-submission/appstore-details.html#images-and-videos) page (table in `docs/STORE-LISTING.md`). `scripts/store-images.sh <dir>` renders the 114×114 small icon (the Sail alone), the 1280×720 Fire TV icon (Sail + wordmark inside the 882×448 safe area) and the 1920×1080 background (Sail on the right, no text); five 1920×1080 screenshots from the demo server on an x86_64 Release build in the simulator: Home, Sahara details, Pioneer One S1 E1 details, the player paused with the overlay, the Movies grid. All in `../caravela-wt/store-assets/` (not committed). Large icon: `assets/image/app_icon.png`.
-- [ ] **Description:** what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
-- [ ] **Reviewer notes:** the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.
-- [ ] Content rating questionnaire, then the "Developer Console" steps below.
-- [x] Tag the release in git and keep the source available (R0-2) (2026-10-20): the release workflow (`major`) committed "Release v1.0.0" (`d9b01b7`) and pushed tag `v1.0.0` to the public repo; the **draft** release v1.0.0 holds `caravela-v1.0.0-armv7.vpkg` (stays a draft while R0-1 is open). Re-checked on the Fire TV with that exact file (see Binary).
+- [x] **Description** (submitted from `docs/STORE-LISTING.md`): what it does, that it needs your own Jellyfin 12.0+ server, "unofficial, not affiliated with the Jellyfin project". Nothing that hints at piracy, and no "Vega".
+- [x] **Reviewer notes** (submitted from `docs/STORE-LISTING.md`): the stable demo server `https://demo.jellyfin.org/stable` (12.2.0 on 2026-10-13), user `demo`, no password. Its trickplay sheets answer with a bot-check page, so the seek bar has no thumbnails there; say so.
+- [x] Content rating questionnaire, then the "Developer Console" steps below.
+- [x] Tag the release in git and keep the source available (R0-2) (2026-10-20): the release workflow (`major`) committed "Release v1.0.0" (`d9b01b7`) and pushed tag `v1.0.0` to the public repo; the **draft** release v1.0.0 holds `caravela-v1.0.0-armv7.vpkg` (stays a draft: Amazon's R0-1 answer is about the Appstore build only). Re-checked on the Fire TV with that exact file (see Binary).
+- [x] **Published** (submitted 2026-10-20, approved 2026-10-26): v1.0.0 (build 1000000) approved by Amazon and live on the Amazon Appstore for Fire TV: https://www.amazon.com/dp/B0HNR62RQ9.
 
 ### After v1.0
 
@@ -85,7 +87,7 @@ Task 12, Settings (task 14), Content Launcher, and the Follow-ups in `docs/HANDO
 
 ## Binary
 
-v1.0.0 checked 2026-10-20 against `caravela-v1.0.0-armv7.vpkg` from the draft release (sha256 `59725e48…ffc9c`), the file to upload.
+v1.0.0 checked 2026-10-20 against `caravela-v1.0.0-armv7.vpkg` from the draft release (sha256 `59725e48…ffc9c`), the file uploaded to the Appstore.
 
 - [x] Release VPKG, not Debug (Debug loads JS from Metro and starts blank): `build/<arch>-release/caravela_<arch>.vpkg` locally; the release workflow attaches it as `caravela-v<version>-armv7.vpkg`.
 - [x] `com.amazon.category.main` registered in `manifest.toml` (without it the app can't launch from the Fire TV home and fails submission).
@@ -111,10 +113,10 @@ Last run 2026-10-19 on 0.1.1 (1001), results in `docs/tasks/p3-certification-run
 
 ## Developer Console
 
-1. [ ] Amazon Developer account at <https://developer.amazon.com>.
-2. [ ] **Add a New App** → upload the VPKG.
-3. [ ] **Target Your App** → **Edit supported devices** → **Amazon Fire TV** tab → choose the device under **Amazon Vega TV**.
-4. [ ] **Appstore Details:** title, description, icons, Fire TV images and screenshots (the console lists the current sizes; `assets/image/app_icon.png` is 512×512). Don't mention "Vega" in any field.
-5. [ ] Content rating questionnaire.
-6. [ ] Privacy policy URL (the app stores server addresses, user names and access tokens, unencrypted; see README).
-7. [ ] **Review & Submit.**
+1. [x] Amazon Developer account at <https://developer.amazon.com>.
+2. [x] **Add a New App** → upload the VPKG.
+3. [x] **Target Your App** → **Edit supported devices** → **Amazon Fire TV** tab → choose the device under **Amazon Vega TV**.
+4. [x] **Appstore Details:** title, description, icons, Fire TV images and screenshots (the console lists the current sizes; `assets/image/app_icon.png` is 512×512). Don't mention "Vega" in any field.
+5. [x] Content rating questionnaire.
+6. [x] Privacy policy URL (the app stores server addresses, user names and access tokens, unencrypted; see README).
+7. [x] **Review & Submit.** Submitted 2026-10-20; approved and live 2026-10-26 (v1.0.0, build 1000000). The next submission needs a higher version and build number (see R2).

@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licence-GPL--2.0--or--later-blue" alt="Licence: GPL-2.0-or-later"></a>
   <img src="https://img.shields.io/badge/platform-Fire%20TV%20%C2%B7%20Vega%20OS-ff9900" alt="Platform: Fire TV · Vega OS">
   <img src="https://img.shields.io/badge/Jellyfin-12.0%2B-aa5cc3" alt="Jellyfin 12.0+">
-  <img src="https://img.shields.io/badge/status-work%20in%20progress-yellow" alt="Status: work in progress">
+  <a href="https://www.amazon.com/dp/B0HNR62RQ9"><img src="https://img.shields.io/badge/Amazon%20Appstore-available-ff9900" alt="Available on the Amazon Appstore"></a>
 </p>
 
 <p align="center">
@@ -57,7 +57,7 @@
 ## Status
 
 > [!NOTE]
-> Caravela is a **work in progress**. It isn't on the Amazon Appstore yet; for now you build it yourself and sideload it onto a Fire TV in developer mode.
+> Caravela 1.0 is **[available on the Amazon Appstore](https://www.amazon.com/dp/B0HNR62RQ9)** for Fire TV devices running Vega OS: search for "Caravela" on your Fire TV. It's still young and under active development; to try changes before they reach the store, build it yourself and sideload it onto a Fire TV in developer mode.
 
 What works today:
 
@@ -153,7 +153,7 @@ Amazon describes the package and its build in [Play adaptive content with Shaka 
 
 ## Releases
 
-There are no public downloads. Every build contains Amazon's proprietary Shaka polyfills (see above), so to run Caravela, build it yourself.
+Install Caravela from the [Amazon Appstore](https://www.amazon.com/dp/B0HNR62RQ9) on your Fire TV. There are no downloads on GitHub: every build contains Amazon's proprietary Shaka polyfills (see above), which Amazon has allowed in the Appstore build; a public download isn't covered by that. To run your own changes, build it yourself.
 
 For maintainers, the **Release** workflow (`.github/workflows/release.yml`) builds a release package for the Fire TV Stick 4K Select (armv7):
 
