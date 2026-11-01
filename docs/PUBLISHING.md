@@ -1,12 +1,12 @@
 # Publishing to the Amazon Appstore
 
-Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). **v1.0.0 was approved and is live on the Amazon Appstore (2026-10-26): https://www.amazon.com/dp/B0HNR62RQ9.** Written 2026-10-12 against the Vega SDK 0.24 docs; re-check them before submitting, since the Vega docs are still an open beta and may change.
+Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). **v1.0.0 was approved and is live on the Amazon Appstore (2026-10-26): https://www.amazon.com/dp/B0HNR62RQ9.** Written 2026-10-12 against the Vega SDK 0.24 docs; links moved to the 2.0 docs on 2026-11-01, when the app moved to SDK 2.0 and OS 2.0 (`min` and `target`). Re-check them before submitting, since the Vega docs are still an open beta and may change.
 
 Sources:
-- [App Submission for Vega](https://developer.amazon.com/docs/vega/0.24/app-submission.html)
-- [Test Your App Before Submitting](https://developer.amazon.com/docs/vega/0.24/test-before-submission.html)
-- [General requirements for media apps](https://developer.amazon.com/docs/vega/0.24/media-player-requirements.html)
-- [Version Your App](https://developer.amazon.com/docs/vega/0.24/app-version.html)
+- [App Submission for Vega](https://developer.amazon.com/docs/vega/2.0/app-submission.html)
+- [Test Your App Before Submitting](https://developer.amazon.com/docs/vega/2.0/test-before-submission.html)
+- [General requirements for media apps](https://developer.amazon.com/docs/vega/2.0/media-player-requirements.html)
+- [Version Your App](https://developer.amazon.com/docs/vega/2.0/app-version.html)
 - [Submit Your App to the Amazon Appstore](https://developer.amazon.com/docs/app-submission/submitting-apps-to-amazon-appstore.html)
 
 ## Plan to v1.0

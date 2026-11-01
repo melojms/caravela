@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VEGA_SDK_VERSION: 0.24.12112
+  VEGA_SDK_VERSION: 2.0.13986
   SHAKA_VERSION: 4.16.13
   SHAKA_TARBALL: https://amzndevresources.com/vega/media-player/shaka-rel-v4.16.13-r1.2-devices_scope.tar.gz
 

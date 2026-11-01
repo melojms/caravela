@@ -90,9 +90,9 @@ Coming next, roughly in this order:
 
 ## Requirements
 
-- Vega SDK 0.24 (`vega` CLI on your `PATH`)
+- Vega SDK 2.0 (`vega` CLI on your `PATH`)
 - Node.js ≥ 22.14
-- A Fire TV running Vega OS with developer mode on, or the Vega Virtual Device
+- A Fire TV running Vega OS 2.0 or later with developer mode on, or the Vega Virtual Device (OS 2.0 image)
 
 ## Build and run
 
