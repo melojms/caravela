@@ -43,6 +43,9 @@ jellyfin, media server, home media, movies, tv shows, personal library, self-hos
 - Price: free. No in-app purchases. No ads.
 - Target audience: not aimed at children (matches the privacy policy).
 
+## Release notes (1.1.0)
+Updated for the latest Fire TV software. Improves compatibility and stability.
+
 ## Release notes (1.0.0)
 First release.
 

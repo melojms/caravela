@@ -1,6 +1,6 @@
 # Publishing to the Amazon Appstore
 
-Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). **v1.0.0 was approved and is live on the Amazon Appstore (2026-10-26): https://www.amazon.com/dp/B0HNR62RQ9.** Written 2026-10-12 against the Vega SDK 0.24 docs; links moved to the 2.0 docs on 2026-11-01, when the app moved to SDK 2.0 and OS 2.0 (`min` and `target`). Re-check them before submitting, since the Vega docs are still an open beta and may change.
+Checklist for submitting Caravela to the Amazon Appstore for Fire TV (Vega OS). **v1.0.0 was approved and is live on the Amazon Appstore (2026-10-26): https://www.amazon.com/dp/B0HNR62RQ9. v1.1.0 (build 1001000, Vega SDK 2.0, OS 2.0 minimum) was submitted on 2026-11-01 and waits for review.** Written 2026-10-12 against the Vega SDK 0.24 docs; links moved to the 2.0 docs on 2026-11-01, when the app moved to SDK 2.0 and OS 2.0 (`min` and `target`). Re-check them before submitting, since the Vega docs are still an open beta and may change.
 
 Sources:
 - [App Submission for Vega](https://developer.amazon.com/docs/vega/2.0/app-submission.html)
@@ -95,6 +95,14 @@ v1.0.0 checked 2026-10-20 against `caravela-v1.0.0-armv7.vpkg` from the draft re
 - [x] `npm run licenses` after the release build leaves `src/about/licenses.json` unchanged (commit it if not). No diff on `4a7b9fe` (the release commit only bumps versions).
 - [x] Tested on a physical Fire TV Stick 4K Select running Vega OS (the Virtual Device isn't enough): fresh install of the release file, demo server sign-in, play, Home → warm relaunch (paused), About 1.0.0 (build 1000000).
 
+v1.1.0 checked 2026-11-01 against `caravela-v1.1.0-armv7.vpkg` from the draft release (sha256 `67a2d40c…b338`), the file uploaded to the Appstore:
+
+- [x] Release VPKG built by the release workflow (run `41306858195`, `minor`).
+- [x] `vpt info`: version 1.1.0, build 1001000 (higher than 1.0.0's 1000000). The packaged manifest has `[os.version]` `min` and `target` 2.0 and `IVega_2_0`; `vpt validate` passes.
+- [x] `npm run licenses` after the release build leaves `src/about/licenses.json` unchanged (on `9966d22`).
+- [x] Fire TV Stick 4K Select on OS 2.0: upgrade in place from the v1.0.0 Appstore file keeps the sign-in; demo server, Resume plays, Home → warm relaunch (paused, Play continues; the time shows 0:00 until Play, R7-m), About 1.1.0 (build 1001000). Fresh install checked on the OS 2.0 simulator.
+- Not re-run for 1.1.0: the lifecycle tests below (no app code changed since v1.0.0).
+
 ## Lifecycle tests Amazon runs
 
 Run each with on-demand content. Expected: no crash, no blank screen, no audio leaking onto the launcher, no A/V sync issues.
@@ -120,3 +128,5 @@ Last run 2026-10-19 on 0.1.1 (1001), results in `docs/tasks/p3-certification-run
 5. [x] Content rating questionnaire.
 6. [x] Privacy policy URL (the app stores server addresses, user names and access tokens, unencrypted; see README).
 7. [x] **Review & Submit.** Submitted 2026-10-20; approved and live 2026-10-26 (v1.0.0, build 1000000). The next submission needs a higher version and build number (see R2).
+
+**v1.1.0** (submitted 2026-11-01 by the user, waiting for review): **Add Upcoming Version**, upload the new VPKG. The console kept v1.0.0's VPKG as VPKG1 with the 3 devices and left the new one with none ("This VPKG currently supports no devices"). Delete VPKG1 from the upcoming version, then **Edit supported devices → Amazon Fire TV → Amazon Vega TV** and select all three: Fire TV Stick 4K Select (AFTCA002), Fire TV Stick HD 2nd gen (AFTCL001), Fire TV Stick 4K (AFTCR001). Each has an OS 2.0 build (SDK 2.0 release notes, "OS builds"), so the OS 2.0 minimum excludes none of them. Release notes from `docs/STORE-LISTING.md`.
